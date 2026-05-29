@@ -1,0 +1,71 @@
+{
+  "date": "2026-05-29",
+  "captured_at": "2026-05-29T20:00:00+08:00",
+  "session": "evening",
+  "source": "BlockBeats",
+  "channel": "Chrome MCP tabId 1271080758",
+  "screenshot_id": "ss_4739pehi4",
+  "aggregate_sentiment": "中性偏空",
+  "aggregate_reason": "施密德18:58鹰派表态+FedWatch加息概率0.6%→1.1%重定价+Strategy优先股股息压力+贝莱德向Coinbase存币 vs Raoul Pal看多；正负相抵后macro偏鹰，较早间‘中性’边际恶化",
+  "important_count": 4,
+  "sentiment_breakdown": {
+    "bearish": 3,
+    "bullish": 1,
+    "neutral": 2
+  },
+  "items": [
+    {
+      "time": "19:36",
+      "headline": "Real Vision联创Raoul Pal：比特币等加密资产价值被低估",
+      "category": "观点",
+      "sentiment": "中性偏多",
+      "important": false,
+      "screenshot": "ss_4739pehi4"
+    },
+    {
+      "time": "19:35",
+      "headline": "Arca CIO：Strategy每年付约15亿美元优先股股息，最终可能被迫出售BTC（Polymarket给90%概率年底前抛售）",
+      "category": "鲸鱼/机构",
+      "sentiment": "利空",
+      "important": true,
+      "screenshot": "ss_4739pehi4"
+    },
+    {
+      "time": "19:12",
+      "headline": "贝莱德向Coinbase存入2448枚BTC（1.8亿美元）和28683枚ETH（5762万美元）",
+      "category": "鲸鱼/机构",
+      "sentiment": "利空",
+      "important": true,
+      "screenshot": "ss_4739pehi4"
+    },
+    {
+      "time": "19:05",
+      "headline": "Tom Lee：标普500涨至7700点后进入调整，中期选举后强劲反弹",
+      "category": "宏观",
+      "sentiment": "中性",
+      "important": false,
+      "screenshot": "ss_4739pehi4"
+    },
+    {
+      "time": "18:58",
+      "headline": "美联储施密德：可能需要考虑如何使货币政策更加紧缩",
+      "category": "宏观/利率",
+      "sentiment": "利空",
+      "important": true,
+      "screenshot": "ss_4739pehi4"
+    },
+    {
+      "time": "09:47",
+      "headline": "Coinbase推出TRUSThub全球加密合规网络，BNY Mellon加入",
+      "category": "监管/合规",
+      "sentiment": "利多",
+      "important": true,
+      "screenshot": "ss_4739pehi4"
+    }
+  ],
+  "notes": [
+    "FedWatch量化已并入基本面（6月维持98.9%/加息1.1%，1日+0.5pp）",
+    "禁止AI生成新闻，所有条目源自BlockBeats实时抓取",
+    "important条目=与加密直接强相关"
+  ]
+}

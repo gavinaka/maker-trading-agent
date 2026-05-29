@@ -1,0 +1,30 @@
+{
+  "system_version": "2026.5",
+  "account_type": "risk",
+  "status": "active",
+  "risk_checks": {
+    "max_single_loss_pct": 3,
+    "max_continuous_loss_count": 3,
+    "require_stoploss_set": true,
+    "require_plan_recorded": true,
+    "require_market_confirmation": true,
+    "allowed_trading_time": "指定交易时间内",
+    "risk_exposure_limit": "根据账户总额动态调整"
+  },
+  "state_gate": {
+    "emotion_stable": true,
+    "continuous_stop_loss_count": 0,
+    "physical_condition": "normal",
+    "allow_trade_today": true
+  },
+  "alerts": {
+    "violation_today": false,
+    "violation_types": []
+  },
+  "last_update": "2026-05-29 20:30:00",
+  "notes": [
+    "风险检查严格遵循风控检核7项规则",
+    "主账户和Maker账户分别执行独立风险检查",
+    "任何未达标的条件，禁止当日开仓"
+  ]
+}

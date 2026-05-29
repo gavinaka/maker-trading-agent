@@ -1,0 +1,50 @@
+{
+  "system_version": "2026.5",
+  "account_type": "session",
+  "status": "active",
+
+  "current_day": "2026-05-29",
+
+  "tasks": {
+    "main_account_report_generated": true,
+    "maker_daily_plan_generated": true,
+    "score_updated_morning": false,
+    "score_updated_evening": true,
+    "risk_checks_completed": true,
+    "review_completed": false
+  },
+
+  "last_task_times": {
+    "main_account_report": "2026-05-29 20:00:00",
+    "maker_daily_plan": "2026-05-29 20:00:00",
+    "morning_score_update": null,
+    "evening_score_update": "2026-05-29 20:00:00",
+    "risk_check": "2026-05-29 20:00:00",
+    "review": null
+  },
+
+  "active_agents": {
+    "execution_agent": true,
+    "review_agent": true,
+    "emotional_agent": true,
+    "penalty_agent": true
+  },
+
+  "context_memory": {
+    "last_trade_event": "2026-05-26 BTC短线开空",
+    "last_review_event": "2026-05-26 Maker复盘完成",
+    "last_score_event": "2026-05-29 20:00评分63观望（盘口45+盘面18）",
+    "last_risk_event": "2026-05-29 20:00 7Gate预检：总分<70不进入开仓流程"
+  },
+
+  "notes": [
+    "Session.json保存当天任务状态，确保Agent闭环执行",
+    "避免重复生成日报或重复评分",
+    "辅助执行Agent按照当天状态完成任务",
+    "2026-05-29 晚间链B：5源采集(BlockBeats MCP + Exocharts/Coinglass/FedWatch/TradingView 用户截图)，总分63观望",
+    "morning_score未更新：早间链A盘口/盘面数据缺失([待补充])，未计算真实早间评分",
+    "23:00 review 尚未完成"
+  ],
+
+  "last_update": "2026-05-29 20:30:00"
+}

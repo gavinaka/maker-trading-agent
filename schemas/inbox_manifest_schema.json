@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InboxManifest",
+  "description": "data_sources/inbox/<YYYY-MM-DD>/_manifest.json 校验规则",
+  "type": "object",
+  "required": ["date", "captured_at", "sources", "all_complete", "missing"],
+  "properties": {
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "description": "采集日期（自然日，+08:00）"
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "manifest 最近一次更新的 ISO 8601 时间戳"
+    },
+    "sources": {
+      "type": "object",
+      "required": ["exocharts", "coinglass", "blockbeats", "fedwatch"],
+      "properties": {
+        "exocharts":  { "$ref": "#/definitions/source" },
+        "coinglass":  { "$ref": "#/definitions/source" },
+        "blockbeats": { "$ref": "#/definitions/blockbeats_source" },
+        "fedwatch":   { "$ref": "#/definitions/source" }
+      }
+    },
+    "all_complete": {
+      "type": "boolean",
+      "description": "true 表示 4 源全部 valid:true 且时效内"
+    },
+    "missing": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["exocharts", "coinglass", "blockbeats", "fedwatch"] },
+      "description": "缺失或过期的源列表"
+    }
+  },
+  "definitions": {
+    "source": {
+      "type": "object",
+      "required": ["captured_by", "captured_at", "files", "valid"],
+      "properties": {
+        "captured_by": {
+          "type": "string",
+          "enum": ["A", "B", "C"],
+          "description": "A=Chrome MCP自动 / B=WebFetch / C=用户手动投递"
+        },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "files": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "相对 inbox/<date>/ 的文件路径"
+        },
+        "valid": { "type": "boolean" },
+        "error": {
+          "type": "string",
+          "description": "valid:false 时的失败原因"
+        },
+        "raw_summary": {
+          "type": "object",
+          "description": "采集到的关键字段，供下游 agent 快速读取，不替代原始文件"
+        }
+      }
+    },
+    "blockbeats_source": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/definitions/source" }],
+      "required": ["captured_by", "captured_at", "files", "valid", "screenshot_count"],
+      "properties": {
+        "captured_by": {
+          "type": "string",
+          "enum": ["A", "C"],
+          "description": "BlockBeats 禁止通道 B（必须截图）"
+        },
+        "screenshot_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "当日截图数量；0 视为失败"
+        }
+      }
+    }
+  }
+}

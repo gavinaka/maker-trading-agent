@@ -1,0 +1,114 @@
+{
+"system_version": "2026.5",
+"account_type": "maker",
+"exchange": "OKX",
+"status": "active",
+
+"execution_mode": "intraday",
+"primary_strategy": "高空 / 反弹空",
+"default_entry_type": "left_side",
+
+"main_account_binding": {
+"enabled": true,
+"follow_main_bias": true,
+"current_main_cannot_do": ["做多"],
+"allowed_direction": [
+"short"
+]
+},
+
+"score_requirement": {
+"minimum_total_score": 70,
+"require_orderflow_score": true,
+"require_market_structure_score": true
+},
+
+"position_rules": {
+"default_position_size_usd": {
+"BTC": [500, 1000],
+"ETH": [300, 800]
+},
+
+
+"default_leverage": 5,
+
+"allow_overnight": false,
+
+"max_daily_trades": 3,
+
+"allow_multiple_positions": false
+
+
+},
+
+"entry_rules": {
+"require_liquidity_confirmation": true,
+"require_support_resistance_zone": true,
+"require_risk_reward_ratio": ">=1:2.5",
+
+
+"left_side_priority": true,
+"right_side_allowed": true
+
+},
+
+"floating_profit_defense": {
+"enabled": true,
+
+
+"layer_1": {
+  "name": "dynamic_stop_loss",
+  "active": true
+},
+
+"layer_2": {
+  "name": "breakeven_protection",
+  "active": true
+},
+
+"layer_3": {
+  "name": "partial_take_profit",
+  "active": true
+}
+
+
+},
+
+"maker_behavior_rules": {
+"allow_fomo": false,
+"allow_chasing": false,
+"allow_random_entry": false,
+"allow_unplanned_trade": false,
+"allow_manual_stoploss_change": false
+},
+
+"state_gate": {
+"emotion_stable": true,
+"continuous_stop_loss_count": 0,
+"physical_condition": "normal",
+"allow_trade_today": true
+},
+
+"clean_sample_system": {
+"enabled": true,
+"target_clean_trades": 50,
+"current_progress_pct": 22,
+"count_violation_trade": false
+},
+
+"current_focus": [
+"洁净样本打造",
+"系统一致性",
+"降低随机性",
+"严格执行评分系统"
+],
+
+"last_update": "2026-05-29 20:30:00",
+
+"notes": [
+"Maker账户属于日内执行层",
+"禁止脱离主账户方向限制",
+"允许错过，不允许乱做",
+"系统一致性高于短期盈亏"
+]
+}

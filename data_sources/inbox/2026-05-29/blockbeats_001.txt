@@ -1,0 +1,85 @@
+Source: BlockBeats (https://www.theblockbeats.info/newsflash)
+Captured: 2026-05-29 (via Chrome MCP, tabId 1271080545)
+Channel: A
+Screenshot IDs (Chrome MCP inline): ss_4739pehi4
+
+=== 2026-05-29 当日重要快讯（按时间倒序）===
+
+[10:43] 纽交所母公司CEO：Hyperliquid比纳斯达克还大，我们正在和他们交流
+内容：纽交所母公司 ICE CEO Jeff Sprecher 在伯恩斯坦战略决策会议上谈及 Hyperliquid。Sprecher 表示：「我们现在谈论的这个 Hyperliquid，如果你还没听说过它，它已经比纳斯达克还大了。事实上，我们正在和他们交流，并试着了解这个领域。」
+分类：交易所 / 监管
+单条 sentiment：中性偏多（传统金融关注链上衍生品 → 长期合规化预期）
+
+[10:39] 派盾：DxSale遭攻击，BSC上旧LP被抽取730万美元
+内容：派盾监测，DxSale 在 BNB Chain 上约 1400 个 2021 年旧 LP 被抽取 730 万美元，攻击者利用后门合约操控所有权。涉事地址将 2958 BNB（约 187 万美元）转入两个主钱包，随后存入 Binance 地址并通过 PancakeSwap 交换。
+分类：链上 / 黑客
+单条 sentiment：利空（链上安全风险）
+
+[10:33] Citrini：今天起市场或迎全面反弹，暂别AI一枝独秀
+内容：「AI 末日报告」发布机构 Citrini Research 表示，今天可能是全面反弹的开始（而不是 AI 一枝独秀）。该机构今年2月发布"全球智力危机"报告曾引发美股大跌。
+分类：宏观
+单条 sentiment：中性偏多
+
+[10:29] Ventuals 回应 SPACEX-USDH 暴跌：预言机错误数据导致异常清算，将对用户赔偿
+内容：Hyperliquid 上 SpaceX 盘前合约闪崩 45%。Ventuals 称是预言机组件链下数据返回错误，导致市场预言机价格与标记价格剧烈波动。已采取紧急措施，48 小时内赔偿受影响用户。
+分类：链上 / 衍生品事故
+单条 sentiment：中性偏空（衍生品风险事件）
+
+[10:25] 彭博社：欧盟将与Anthropic就获取Mythos展开谈判
+内容：欧盟委员会计划与 Anthropic 会面，请求开放 Mythos 模型（具网络安全风险）。OpenAI 已开放 GPT-5.5-Cyber，Anthropic 尚未提供。
+分类：其他
+单条 sentiment：中性
+
+[10:21] 沃什偏爱通胀指标跌至2.3%，但经济学家警告可能低估
+内容：达拉斯联储「截尾平均」通胀 4 月同比降至 2.3%（前值 2.4%）。新美联储主席 Kevin Warsh 重点强调该指标。但多位经济学家（含 Tyler Atkinson / Jason Furman / 渣打）警告该指标在关税政策下系统性低估真实通胀。同期核心 PCE 升至 3.3%（2023 年以来最快）。
+分类：宏观 / 利率
+单条 sentiment：混合 → 中性
+  - 表面利多（通胀温和支持降息）
+  - 实质利空（核心 PCE 偏热 + 指标可信度争议）
+
+[10:13] AI成本爆炸反噬企业：微软砍掉Claude授权，传有公司单月烧掉5亿美元
+内容：微软取消大部分 Claude Code 授权（成本过高）。Uber COO 称 AI 开支"难以合理化"。某客户单月花费 5 亿美元。企业开始用裁员对冲 AI 支出。
+分类：其他
+单条 sentiment：中性（与加密直接相关性低）
+
+[10:11] Strategy向Coinbase Prime存入411.48枚BTC，价值3030万美元
+内容：lookonchain 监测，Strategy 刚刚向 Coinbase Prime 存入 411.48 枚 BTC（3030 万美元）。
+分类：鲸鱼
+单条 sentiment：利空（机构疑似准备抛售，配合主账户中线做空判断）
+
+[09:49] SpaceX IPO 估值调降至至少 1.8 万亿美元
+内容：原 2 万亿目标下调。最快 6 月 4 日启动路演，6 月 11 日定价。2025 年营收 187 亿（前 140 亿），但由 2024 年盈利 7.91 亿转为 2025 年亏损 49.4 亿（2 月收购 xAI 影响）。
+分类：宏观
+单条 sentiment：中性（与 BTC 直接相关性弱）
+
+[09:47] Coinbase 推出 TRUSThub 全球加密合规网络
+内容：扩展 TRUST 网络，支持跨平台合规信息交换。BNY Mellon 加入，新增多个司法辖区。降低 VASP 接入门槛。
+分类：监管 / 合规
+单条 sentiment：中性偏多
+
+[09:37] 联想集团盘中涨超 30%，与天津签署 AI 基础设施协议
+内容：联想集团 (00992.HK) 涨超 30%，联想控股涨超 15%。
+分类：其他
+单条 sentiment：中性（与 BTC 无直接关联）
+
+=== 链上侦探数据（侧栏，过去 1 小时）===
+- Strategy 向 Coinbase Prime 存入 411.48 枚 BTC（已列上方）
+- 某巨鲸杠杆增持 2 万枚 ETH，持仓 14.4 万枚 ETH 现浮亏 5050 万美元
+- 巨鲸 Loracle 做空 HYPE 浮亏超 2900 万美元，疑似开始止损减仓
+- Galaxy Digital 解质押 100 万枚 HYPE，其中 50 万枚已转至 CEX
+
+=== 加密事件日历（本周）===
+- 周五（今日 5/29）：日本 4 月失业率、美联储理事鲍曼讲话、芝商所推出全天候加密期货期权、2028 FOMC 票委施密德讲话
+
+=== news_agent 聚合判断 ===
+重要新闻条数（与加密直接强相关）：4 条
+- 利空：2（DxSale 黑客 / Strategy 大额存入交易所）
+- 利多：1（Coinbase TRUSThub 合规推进）
+- 中性偏空：1（Ventuals 衍生品事故）
+
+利空 > 利多 但差距仅 1 条
+按 news_agent.md aggregate 规则（差 < 2 → 中性）：
+aggregate_sentiment = 中性
+aggregate_reason = "黑客与机构大额存入 vs Coinbase 合规扩张，正负相抵；同时美联储利率信号矛盾"
+
+附注：宏观层面美联储数据混合（Warsh 关注的截尾通胀降至 2.3%，但核心 PCE 升至 3.3%），FedWatch 综合判断需见 fedwatch.json。

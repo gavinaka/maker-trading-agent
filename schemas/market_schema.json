@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MarketData",
+  "description": "盘口 + 盘面采集数据统一结构（exocharts_*.json / coinglass_*.json 内容遵循此 schema）",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/definitions/exocharts_record" },
+    { "$ref": "#/definitions/coinglass_funding_record" },
+    { "$ref": "#/definitions/coinglass_oi_record" },
+    { "$ref": "#/definitions/coinglass_cvd_record" }
+  ],
+  "definitions": {
+    "direction_enum": {
+      "type": "string",
+      "enum": ["up", "down", "sideways", "neutral"]
+    },
+    "trend_enum": {
+      "type": "string",
+      "enum": ["up", "down", "sideways"]
+    },
+    "structure_enum": {
+      "type": "string",
+      "enum": [
+        "higher_high",
+        "lower_low",
+        "range",
+        "breakout_up",
+        "breakout_down",
+        "uncertain"
+      ]
+    },
+    "exocharts_record": {
+      "type": "object",
+      "required": ["source", "symbol", "timeframe", "captured_at", "last_close", "cvd_direction", "price_direction", "recent_structure"],
+      "properties": {
+        "source": { "const": "exocharts" },
+        "symbol": { "type": "string", "enum": ["BTCUSDT", "ETHUSDT"] },
+        "timeframe": { "type": "string", "enum": ["15m", "1h", "4h", "1d"] },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "last_close": { "type": "number" },
+        "cvd_direction": { "$ref": "#/definitions/direction_enum" },
+        "price_direction": { "$ref": "#/definitions/direction_enum" },
+        "recent_structure": { "$ref": "#/definitions/structure_enum" },
+        "key_levels": {
+          "type": "object",
+          "properties": {
+            "support": { "type": "array", "items": { "type": "number" } },
+            "resistance": { "type": "array", "items": { "type": "number" } }
+          }
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "coinglass_funding_record": {
+      "type": "object",
+      "required": ["source", "captured_at", "btc"],
+      "properties": {
+        "source": { "const": "coinglass_funding" },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "btc": {
+          "type": "object",
+          "required": ["weighted_avg_pct", "direction"],
+          "properties": {
+            "binance_funding_pct": { "type": "number" },
+            "okx_funding_pct": { "type": "number" },
+            "weighted_avg_pct": { "type": "number" },
+            "direction": {
+              "type": "string",
+              "enum": ["positive", "negative", "neutral"]
+            }
+          }
+        },
+        "eth": {
+          "type": "object",
+          "properties": {
+            "weighted_avg_pct": { "type": "number" },
+            "direction": { "type": "string", "enum": ["positive", "negative", "neutral"] }
+          }
+        }
+      }
+    },
+    "coinglass_oi_record": {
+      "type": "object",
+      "required": ["source", "captured_at", "btc_total_oi_usd", "trend"],
+      "properties": {
+        "source": { "const": "coinglass_oi" },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "btc_total_oi_usd": { "type": "number" },
+        "change_24h_pct": { "type": "number" },
+        "trend": { "$ref": "#/definitions/trend_enum" }
+      }
+    },
+    "coinglass_cvd_record": {
+      "type": "object",
+      "required": ["source", "captured_at", "cvd_direction"],
+      "properties": {
+        "source": { "const": "coinglass_cvd" },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "cvd_direction": { "$ref": "#/definitions/direction_enum" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

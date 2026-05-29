@@ -1,0 +1,283 @@
+{
+  "system_version": "2026.5",
+  "module": "market",
+  "status": "active",
+
+  "core_philosophy": {
+    "market_definition": [
+      "流动性争夺",
+      "杠杆博弈",
+      "情绪循环",
+      "资金驱动",
+      "结构演化"
+    ],
+
+    "system_goal": "在高概率结构中执行系统",
+
+    "core_principles": [
+      "错过不是错误",
+      "乱做才是错误",
+      "系统一致性高于单笔盈亏"
+    ]
+  },
+
+  "trading_markets": {
+    "primary": "BTCUSDT_PERPETUAL",
+    "secondary": "ETHUSDT_PERPETUAL",
+    "hedging_asset": "XAUUSDT"
+  },
+
+  "exchange_structure": {
+    "binance": {
+      "role": "main_account",
+      "purpose": [
+        "中线持仓",
+        "趋势锚定",
+        "方向限制"
+      ]
+    },
+
+    "okx": {
+      "role": "maker_account",
+      "purpose": [
+        "日内交易",
+        "高空",
+        "低多",
+        "反弹空"
+      ]
+    }
+  },
+
+  "market_structure": {
+    "bull_trend": {
+      "definition": [
+        "高点持续抬高",
+        "低点持续抬高",
+        "流动性持续向上"
+      ],
+
+      "execution_logic": [
+        "回调低多优先",
+        "避免逆势做空"
+      ],
+
+      "risks": [
+        "FOMO追多",
+        "情绪化加速"
+      ]
+    },
+
+    "bear_trend": {
+      "definition": [
+        "高点持续降低",
+        "低点持续降低",
+        "抛压主导市场"
+      ],
+
+      "execution_logic": [
+        "高空优先",
+        "反弹空优先",
+        "避免盲目抄底"
+      ],
+
+      "current_main_bias": "BTC中线做空结构"
+    },
+
+    "range_structure": {
+      "definition": [
+        "无明确趋势",
+        "双向流动性猎杀",
+        "高频假突破"
+      ],
+
+      "execution_logic": [
+        "降低交易频率",
+        "提高评分门槛",
+        "避免追单"
+      ],
+
+      "risks": [
+        "连续止损",
+        "节奏断裂"
+      ]
+    }
+  },
+
+  "orderflow_system": {
+    "priority": "highest",
+
+    "required_data_sources": [
+      "Exocharts",
+      "Coinglass"
+    ],
+
+    "core_metrics": [
+      "CVD",
+      "OpenInterest",
+      "FundingRate",
+      "PriceAction"
+    ]
+  },
+
+  "extreme_signal_logic": {
+    "bearish_divergence": {
+      "conditions": [
+        "CVD上涨",
+        "价格下跌",
+        "持仓上升或横盘",
+        "资金费率为正"
+      ],
+
+      "logic": "多头被套，空头燃料充足",
+
+      "score": 70,
+
+      "action": "强制做空"
+    },
+
+    "bullish_divergence": {
+      "conditions": [
+        "CVD下降",
+        "价格上涨",
+        "持仓上升或横盘",
+        "资金费率为负"
+      ],
+
+      "logic": "空头被套，多头燃料充足",
+
+      "score": 70,
+
+      "action": "强制做多"
+    }
+  },
+
+  "score_system": {
+    "total_score": 100,
+
+    "minimum_entry_score": 70,
+
+    "orderflow_score": {
+      "max": 70,
+      "weight": "70%"
+    },
+
+    "market_structure_score": {
+      "max": 30,
+      "weight": "30%"
+    }
+  },
+
+  "market_structure_scoring": {
+    "support_resistance": {
+      "max_score": 10
+    },
+
+    "liquidity_sweep": {
+      "max_score": 10
+    },
+
+    "sma20": {
+      "max_score": 5
+    },
+
+    "volume_price_relation": {
+      "max_score": 3
+    },
+
+    "fibonacci_trendline": {
+      "max_score": 2
+    }
+  },
+
+  "entry_requirements": {
+    "minimum_score_required": true,
+    "state_gate_required": true,
+    "risk_check_required": true,
+
+    "conditions": [
+      "总评分>=70",
+      "状态门禁通过",
+      "风控检核通过"
+    ]
+  },
+
+  "main_to_maker_mapping": {
+    "cannot_long": {
+      "maker_allowed_direction": [
+        "short"
+      ],
+
+      "execution_style": [
+        "高空",
+        "反弹空"
+      ]
+    },
+
+    "cannot_short": {
+      "maker_allowed_direction": [
+        "long",
+        "short"
+      ],
+
+      "execution_style": [
+        "低多",
+        "反弹空"
+      ]
+    },
+
+    "cannot_chase": {
+      "maker_behavior": "观望优先"
+    }
+  },
+
+  "liquidity_logic": {
+    "core_definition": "市场本质是流动性争夺",
+
+    "focus_areas": [
+      "清算区域",
+      "双顶双底",
+      "极点高低点",
+      "止损密集区"
+    ]
+  },
+
+  "volatility_logic": {
+    "high_volatility_response": [
+      "结构修复",
+      "流动性重新积累",
+      "优先观望"
+    ]
+  },
+
+  "news_rules": {
+    "sources": [
+      "BlockBeats",
+      "FedWatch",
+      "宏观事件"
+    ],
+
+    "requirements": [
+      "新闻必须截图",
+      "禁止AI生成新闻",
+      "禁止历史新闻替代实时数据"
+    ]
+  },
+
+  "trading_philosophy": {
+    "allowed": [
+      "错过",
+      "等待",
+      "观望"
+    ],
+
+    "forbidden": [
+      "追单",
+      "FOMO",
+      "情绪化交易",
+      "随机开仓",
+      "破坏系统一致性"
+    ]
+  },
+
+  "last_update": "2026-05-29 20:30:00"
+}

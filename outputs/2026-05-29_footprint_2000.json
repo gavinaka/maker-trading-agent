@@ -1,0 +1,50 @@
+{
+  "date": "2026-05-29",
+  "session": "evening",
+  "captured_at": "2026-05-29T20:00:00+08:00",
+  "symbol": "BTCUSDT",
+  "exchange": "Bybit",
+  "raw_state": {
+    "cvd_direction": "down",
+    "cvd_value": "-15.664K",
+    "price_direction": "down",
+    "price_last": 73474.8,
+    "funding_rate": 0.0036,
+    "funding_direction": "positive",
+    "oi_coins": 56015,
+    "oi_trend": "down",
+    "oi_note": "62K→56K，回落9.6%"
+  },
+  "mapped_state": {
+    "cvd": "下降",
+    "price": "下降",
+    "funding_rate": "为正值",
+    "oi": "下降"
+  },
+  "combination_code": "C09",
+  "combination_label": "CVD↓ Price↓ OI↓ Funding+冷却",
+  "combination_description": "趋势末期出货特征：卖盘主导一致但空头止盈平仓，多头未屈服",
+  "is_extreme": false,
+  "extreme_type": null,
+  "signal_type": "中性偏空",
+  "rationale": "CVD与价格双降=卖盘主导趋势一致；OI缩减（62K→56K）=空头平仓获利不是新空持续进场；Funding仍正值但已从0.0090降至0.0036=多头情绪转弱未屈服；综合为趋势末期出货，非极端组合",
+  "orderflow_score": 45,
+  "score_breakdown": {
+    "base": 45,
+    "note": "非极端组合（不属C01/C02自动70），方向一致+10，OI缩减-15（动能减弱），Funding降温-10，手动综合45"
+  },
+  "tradingview_check": {
+    "timeframe": "15min",
+    "source": "用户截图 BTCUSDT 15m Binance",
+    "structure": "上升通道（熊旗/counter-trend，处更大下跌趋势中）",
+    "current_price": 73464,
+    "position_in_channel": "中部",
+    "vrvp_poc_zone": [73200, 73600],
+    "key_resistance": [74000, 74400],
+    "key_support": 72400,
+    "entry_quality_check": "入场位置不优（通道中部=不在边缘）→ 印证观望",
+    "rebound_short_trigger": "上探74000-74400通道上沿被拒 + Funding重新冲高 + CVD恢复下行，三者共振才入场"
+  },
+  "allow_trade": false,
+  "reason": "总分63<70门槛，且TradingView盘面执行Check确认通道中部位置不优"
+}

@@ -1,0 +1,10 @@
+# Claude Code internal files
+.claude/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Temp files
+*.tmp
+*.bak

@@ -1,0 +1,136 @@
+{
+"system_version": "2026.5",
+"account_type": "score",
+"status": "active",
+
+"score_system": {
+"total_score_max": 100,
+"minimum_entry_score": 70,
+
+
+"orderflow_score_max": 70,
+"market_structure_score_max": 30
+
+
+},
+
+"current_score": {
+"total_score": 63,
+
+
+"orderflow_score": 45,
+"market_structure_score": 18,
+
+"result": "观望"
+
+
+},
+
+"update_schedule": {
+"morning_update": "11:00",
+"evening_update": "20:00"
+},
+
+"orderflow_analysis": {
+"cvd_direction": "down",
+"price_direction": "down",
+"open_interest": "down",
+"funding_rate": "positive",
+
+
+"signal_type": "中性偏空",
+"extreme_signal": false,
+"rationale": "CVD↓+Price↓卖盘主导一致，但OI 62K→56K缩减=空头止盈平仓非新空进场，Funding正值降温(0.0036)=多头未屈服但情绪转弱；趋势末期出货特征，非C01/C02极端组合"
+
+
+},
+
+"extreme_signal_conditions": {
+"bearish_divergence": {
+"cvd": "up",
+"price": "down",
+"open_interest": "up_or_sideways",
+"funding_rate": "positive"
+},
+
+
+"bullish_divergence": {
+  "cvd": "down",
+  "price": "up",
+  "open_interest": "up_or_sideways",
+  "funding_rate": "negative"
+}
+
+
+},
+
+"market_structure_analysis": {
+"support_resistance_score": 6,
+"liquidity_sweep_score": 5,
+"sma20_score": 4,
+"volume_price_score": 2,
+"fibonacci_score": 1
+},
+
+"market_structure_check_tradingview": {
+"source": "用户截图 BTCUSDT 15min Binance",
+"structure": "上升通道(熊旗/counter-trend，处更大下跌趋势中)",
+"current_price": 73464,
+"position_in_channel": "中部",
+"resistance_5_29": [74000, 74400],
+"support_5_29": 72400,
+"channel_lower": [72800, 73000],
+"vrvp_poc_zone": [73200, 73600],
+"entry_quality": "入场位置不优(通道中部)→印证观望",
+"rebound_short_trigger": "上探通道上沿74000-74400(压力5.29)被拒 + Funding重新冲高 + CVD恢复下行 三者共振"
+},
+
+"execution_logic": {
+"allow_trade": false,
+
+
+"require_total_score_above_threshold": true,
+
+"require_state_gate_pass": true,
+
+"require_risk_check_pass": true
+
+
+},
+
+"historical_reference": {
+"2026-05-18": {
+"score": 85,
+"signal": "看跌背离"
+},
+
+
+"2026-05-24": {
+  "score": 70,
+  "signal": "回调做多机会"
+},
+
+"2026-05-26": {
+  "score": 50,
+  "signal": "观望"
+},
+
+"2026-05-29": {
+  "score": 63,
+  "signal": "观望"
+}
+
+
+},
+
+"last_update": "2026-05-29 20:00:00",
+
+"notes": [
+"评分系统是当前交易系统核心门槛",
+"总评分低于70禁止开仓",
+"盘口评分优先级高于主观判断",
+"极端组合属于系统级强信号",
+"2026-05-29 20:00：盘口45+盘面18=63，未达70门槛，Maker观望",
+"TradingView 15min 盘面执行Check为第5/最重要check，把关入场位置精度"
+]
+}

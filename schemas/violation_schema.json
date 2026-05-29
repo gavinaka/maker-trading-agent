@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ViolationRecord",
+  "description": "违规记录统一 schema（图谱十八节）。两个数据库共享部分字段，分别遵循 penalty_record / violation_cost_record",
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/definitions/penalty_record" },
+    { "$ref": "#/definitions/violation_cost_record" }
+  ],
+  "definitions": {
+    "penalty_level_enum": {
+      "type": "string",
+      "enum": ["轻", "中", "重", "系统级", "不罚"],
+      "description": "对应 governance/penalty_system.md Level 1-4 + 不可抗力豁免"
+    },
+    "violation_type_enum": {
+      "type": "string",
+      "enum": [
+        "V001_移动止损",
+        "V002_未执行计划",
+        "V003_分时高频",
+        "V004_赌徒心态",
+        "V005_冒然Taker",
+        "V006_破坏闭环",
+        "V007_KOL影响",
+        "V008_无计划补仓",
+        "V009_被动加速",
+        "V010_不可抗力",
+        "V011_情绪化加单",
+        "V012_未取消策略",
+        "V013_Taker无计划",
+        "V014_追单",
+        "V_NEW"
+      ],
+      "description": "历史违纪库 ID（图谱十三节 + agents/penalty_agent.md 模式库）"
+    },
+    "account_type_enum": {
+      "type": "string",
+      "enum": ["main", "maker", "system"]
+    },
+    "penalty_record": {
+      "type": "object",
+      "title": "PenaltyRecord (惩罚机制数据库, 13 字段)",
+      "description": "governance/violations/<date>_<NNN>.json 遵循此 schema",
+      "required": [
+        "date",
+        "account_type",
+        "error_type",
+        "error_description",
+        "trigger_analysis",
+        "emotion_score",
+        "penalty_level",
+        "penalty_action",
+        "penalty_executed",
+        "fix_action",
+        "recurred",
+        "learning_summary",
+        "in_weekly_or_monthly_report"
+      ],
+      "properties": {
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "account_type": { "$ref": "#/definitions/account_type_enum" },
+        "error_type": { "$ref": "#/definitions/violation_type_enum" },
+        "error_description": { "type": "string", "minLength": 5 },
+        "trigger_analysis": {
+          "type": "string",
+          "description": "诱因：情绪/外部信息/疲惫/连续止损"
+        },
+        "emotion_score": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "penalty_level": { "$ref": "#/definitions/penalty_level_enum" },
+        "penalty_action": {
+          "type": "string",
+          "description": "执行内容。轻=当日剩余禁开仓；中=暂停1-3日；重=暂停5-7日+重读宪法；系统级=停3-7日+复盘"
+        },
+        "penalty_executed": { "type": "boolean" },
+        "fix_action": { "type": "string", "description": "修复动作" },
+        "recurred": { "type": "boolean", "description": "是否复发" },
+        "learning_summary": { "type": "string", "description": "可学习点总结" },
+        "in_weekly_or_monthly_report": {
+          "type": "string",
+          "enum": ["周", "月", "两者", "无"]
+        }
+      }
+    },
+    "violation_cost_record": {
+      "type": "object",
+      "title": "ViolationCostRecord (违规成本机制数据库, 14 字段)",
+      "description": "governance/violation_costs/<date>_<NNN>.json 遵循此 schema",
+      "required": [
+        "violation_date",
+        "violation_type",
+        "account_type",
+        "trigger_scenario",
+        "emotional_state_at_time",
+        "violated_constitution_articles",
+        "objective_consequence",
+        "subjective_destruction_score",
+        "direct_capital_loss_usd",
+        "opportunity_cost_loss_usd",
+        "system_consistency_pollution_score",
+        "penalty_level",
+        "penalty_measure",
+        "review_completed",
+        "secondary_prevention_measure"
+      ],
+      "properties": {
+        "violation_date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "violation_type": { "$ref": "#/definitions/violation_type_enum" },
+        "account_type": { "$ref": "#/definitions/account_type_enum" },
+        "trigger_scenario": { "type": "string" },
+        "emotional_state_at_time": {
+          "type": "string",
+          "enum": ["平静", "FOMO", "Revenge Trade", "Result Dependency", "Rhythm Breakdown", "其他"]
+        },
+        "violated_constitution_articles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "如 ['constitution/trading_constitution.md 第十节', 'risk/risk_checklist.md 第7项']"
+        },
+        "objective_consequence": { "type": "string" },
+        "subjective_destruction_score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "主观破坏程度"
+        },
+        "direct_capital_loss_usd": { "type": "number", "minimum": 0 },
+        "opportunity_cost_loss_usd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "机会成本（估算）"
+        },
+        "system_consistency_pollution_score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "系统一致性污染度。1=单次孤立；2=当日心态影响；3=影响一周判断；4=影响一月信心；5=动摇系统根本"
+        },
+        "penalty_level": { "$ref": "#/definitions/penalty_level_enum" },
+        "penalty_measure": { "type": "string" },
+        "review_completed": { "type": "boolean" },
+        "secondary_prevention_measure": {
+          "type": "string",
+          "description": "二次预防措施"
+        }
+      }
+    }
+  }
+}

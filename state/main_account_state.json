@@ -1,0 +1,69 @@
+{
+"system_version": "2026.5",
+"account_type": "main",
+"exchange": "Binance",
+"status": "active",
+
+"current_market_bias": "bearish",
+"trend_confirmation": "空头趋势（中短线）",
+
+"cannot_do": [
+"做多"
+],
+
+"position_status": {
+"symbol": "BTCUSDT",
+"direction": "short",
+"holding_status": "holding",
+"position_size_usd": 500,
+"position_ratio": "50%",
+"average_entry": 79150,
+"leverage": 5
+},
+
+"mid_term_structure": {
+"active_plan": true,
+"plan_type": "中线做空",
+"layer_count": 5,
+"current_defense_layer": 5,
+"breakeven_active": true,
+"dynamic_stop_loss": true
+},
+
+"risk_management": {
+"max_single_loss_pct": 3,
+"allow_add_position": true,
+"allow_revenge_trade": false,
+"allow_emotional_trade": false
+},
+
+"state_gate": {
+"emotion_stable": true,
+"rhythm_consistent": true,
+"result_dependency": false,
+"continuous_stop_loss_count": 0,
+"physical_condition": "normal",
+"allow_trade_today": true
+},
+
+"execution_rules": {
+"follow_score_system": true,
+"follow_main_account_restrictions": true,
+"allow_manual_override": false,
+"require_full_checklist": true
+},
+
+"data_sources_required": [
+"Exocharts",
+"Coinglass",
+"BlockBeats",
+"CME FedWatch"
+],
+
+"last_update": "2026-05-29 20:30:00",
+"notes": [
+"主账户负责中线方向锚定",
+"Maker账户和主账户互不干扰",
+"当前系统核心目标：洁净样本打造"
+]
+}
