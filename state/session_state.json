@@ -3,7 +3,7 @@
   "account_type": "session",
   "status": "active",
 
-  "current_day": "2026-05-29",
+  "current_day": "2026-05-30",
 
   "tasks": {
     "main_account_report_generated": true,
@@ -15,11 +15,11 @@
   },
 
   "last_task_times": {
-    "main_account_report": "2026-05-29 20:00:00",
-    "maker_daily_plan": "2026-05-29 20:00:00",
+    "main_account_report": "2026-05-30 20:00:00",
+    "maker_daily_plan": "2026-05-30 20:00:00",
     "morning_score_update": null,
-    "evening_score_update": "2026-05-29 20:00:00",
-    "risk_check": "2026-05-29 20:00:00",
+    "evening_score_update": "2026-05-30 20:00:00",
+    "risk_check": "2026-05-30 20:00:00",
     "review": null
   },
 
@@ -33,18 +33,19 @@
   "context_memory": {
     "last_trade_event": "2026-05-26 BTC短线开空",
     "last_review_event": "2026-05-26 Maker复盘完成",
-    "last_score_event": "2026-05-29 20:00评分63观望（盘口45+盘面18）",
-    "last_risk_event": "2026-05-29 20:00 7Gate预检：总分<70不进入开仓流程"
+    "last_score_event": "2026-05-30 20:00评分62观望（盘口45+盘面17）",
+    "last_risk_event": "2026-05-30 20:00 7Gate预检：总分<70不进入开仓流程"
   },
 
   "notes": [
     "Session.json保存当天任务状态，确保Agent闭环执行",
     "避免重复生成日报或重复评分",
     "辅助执行Agent按照当天状态完成任务",
-    "2026-05-29 晚间链B：5源采集(BlockBeats MCP + Exocharts/Coinglass/FedWatch/TradingView 用户截图)，总分63观望",
-    "morning_score未更新：早间链A盘口/盘面数据缺失([待补充])，未计算真实早间评分",
-    "23:00 review 尚未完成"
+    "2026-05-30 晚间链B：5源全采集(BlockBeats JS直取 + Exocharts/Coinglass/FedWatch/TradingView 用户截图)，总分62观望",
+    "2026-05-30 仅出晚间报告：早间无09-11点数据，morning_score未更新",
+    "基本面今日偏空(欧盟加密征税+cUSDC冻结+鲸鱼risk-off+美伊地缘)，较5/29中性偏空走弱",
+    "盘口同5/29组合(CVD↓价↓OI↓Funding正降温)，日线今日Delta翻正+波幅593.9筑底特征"
   ],
 
-  "last_update": "2026-05-29 20:30:00"
+  "last_update": "2026-05-30 20:30:00"
 }
