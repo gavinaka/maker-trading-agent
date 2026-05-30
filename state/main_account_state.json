@@ -5,30 +5,35 @@
 "status": "active",
 
 "current_market_bias": "bearish",
-"trend_confirmation": "空头趋势（中短线）",
+"trend_confirmation": "空头趋势（中短线）— 当前持结构性支撑反弹多（逆短线趋势）",
 
 "cannot_do": [
-"做多"
+"追空"
 ],
 
 "position_status": {
 "symbol": "BTCUSDT",
-"direction": "short",
+"direction": "long",
 "holding_status": "holding",
-"position_size_usd": 500,
-"position_ratio": "50%",
-"average_entry": 79150,
-"leverage": 5
+"position_size_usd": 1000,
+"position_ratio": "30%（底仓）",
+"average_entry": 73500,
+"leverage": 5,
+"take_profit": 78000,
+"stop_loss": 71000,
+"entry_date": "2026-05-28",
+"entry_reason": "结构性支撑区间+高盈亏比反弹+大级别趋势确认价格行为关键点（左侧 Taker）",
+"_correction": "原 short @79150 已于 5/27 到达中线TP止盈出局；本地此前误挂为持空+35%，2026-05-30 据 Notion（主）交易Check 校正"
 },
 
 "mid_term_structure": {
 "active_plan": true,
-"plan_type": "中线做空",
-"layer_count": 5,
-"current_defense_layer": 5,
-"breakeven_active": true,
-"dynamic_stop_loss": true
-},
+"plan_type": "中线做多（结构性支撑反弹）",
+"layer_count": 2,
+"current_defense_layer": 0,
+"defense_plan": "第一层：价格触及75500 设日线级别低点为止损并取消加仓；第二层：价格触及76200 设保本损",
+"breakeven_active": false,
+"dynamic_stop_loss": false},
 
 "risk_management": {
 "max_single_loss_pct": 3,
@@ -60,10 +65,12 @@
 "CME FedWatch"
 ],
 
-"last_update": "2026-05-29 20:30:00",
+"last_update": "2026-05-30（据 Notion 交易Check 校正持仓）",
 "notes": [
 "主账户负责中线方向锚定",
 "Maker账户和主账户互不干扰",
-"当前系统核心目标：洁净样本打造"
+"当前系统核心目标：洁净样本打造",
+"2026-05-30 重要校正：原挂 short@79150+35% 为过期数据；真实为 5/27 空单止盈出局后、5/28 反手做多 @73500（底仓30%/$1000/5x，TP78000 SL71000，持仓中）。来源 Notion（主）交易Check 最新行。",
+"Maker 当前无持仓：最近一笔 5/29 做多 $800 短线已止损出局（小亏~$9）。来源 Notion（Maker）交易Check。"
 ]
 }
