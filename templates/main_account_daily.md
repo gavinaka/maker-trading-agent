@@ -38,7 +38,7 @@ CVD{{上升 | 下降 | 横盘}} 价格{{方向}} 资金费率{{状态}}（{{为�
 
 | 字段 | 来源 |
 |---|---|
-| 不能做 | `state/main_account_state.json` → `cannot_do[]` 拼接 |
+| 不能做 | 当天 Maker 市场推导（禁追最拥挤一边），写完全文最后回填；**非主账户字段**（2026-05-31 订正） |
 | 基本面 | `outputs/<today>_news_summary.json` → `aggregate_sentiment` + `aggregate_reason` |
 | 价格兑现 | 用户输入 / 上日预测对照（review_agent 输出） |
 | 重要新闻列表 | `outputs/<today>_news_summary.json` → `items[]`（仅引用 screenshot 文件名 + headline） |

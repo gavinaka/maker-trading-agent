@@ -32,52 +32,46 @@
 
 ---
 
-# 链 A：早间盘前（生成主账户日报 + Maker 上午计划）
+# 链 A：早间盘前（按用户工作流序：门禁→主账户→评分→Maker）
+
+> 顺序权威 `sessions/日报SOP.md` §0.0。开场已校准两库持仓（notion-positions）。
 
 ```
-1. emotional_agent.update()
-   ├─ 询问/读入用户当日情绪/节奏/身体状态
-   └─ 写 state/risk_state.state_gate.*
+1. 门禁：emotional_agent.gate_check()
+   ├─ 读「开仓前门禁 / 心力监控」当日行（由昨晚链 C 写入）
+   └─ ⛔ 门禁=关闭 / 主观=不可交易 → 硬停：直接跳 Step 7 只出"门禁关闭·今日观望"，
+        **不写任何计划（主账户/Maker 都不写）**
 
-2. data_collection_agent.run(date=today)
-   ├─ 通道 A 优先
-   ├─ 4 源采集 → inbox/<today>/_manifest.json
-   └─ 失败 → 走降级 B/C；全失败 → 中止链 A，写错误日志
+2. 前置采集：data_collection_agent.run（五源）+ news_agent.run
+   ├─ 通道 A 优先；失败走降级 B/C
+   └─ 输出 inbox/<today>/_manifest.json + outputs/<today>_news_summary.json
 
-3. news_agent.run()
-   ├─ 校验 BlockBeats 合规
-   └─ 输出 outputs/<today>_news_summary.json
+3. 主账户 plan（中线，基本面>盘面>盘口，**不依赖评分**）
+   └─ 由 news_summary(基本面) + 盘面结构 组装主账户日报「基本面/技术面盘面/趋势/策略」段
 
-4. footprint_agent.run()
-   └─ 输出 outputs/<today>_footprint_<HHMM>.json
-      （<HHMM> 取调用时刻，如 1055；与 collector 一致）
+4. 评分：footprint_agent.run → scoring_agent.run(slot="morning")
+   ├─ footprint 盘口 70 + 盘面 30
+   └─ 更新 state/score_state.json + session_state.tasks.score_updated_morning = true
 
-5. scoring_agent.run(slot="morning")
-   ├─ 读最新 footprint_<HHMM>.json
-   ├─ 计算盘面 30 分
-   ├─ 更新 state/score_state.json
-   └─ 更新 session_state.tasks.score_updated_morning = true
+5. Maker plan（盘口>盘面>基本面，受评分≥70门槛）
+   ├─ risk_agent.precheck(account="maker")：跑 Gate 1-5（占位 request，方向由当天 footprint signal_type 推）
+   └─ 组装 Maker 上午计划段
 
-6. risk_agent.precheck(account="maker")
-   ├─ mode="precheck"：跑 Gate 1-5（不含具体仓位检查 4，无具体 request）
-   ├─ 用占位 request：{account:"maker", action:"open", direction:由 cannot_do 推, size_usd:null, sl:null}
-   └─ 输出 outputs/<today>_risk_decisions/precheck_<HHMM>.json
+6. 「不能做」回填（当天 Maker 收口结论）+ 当天有实际开仓 → 补「交易 Check」
 
-7. output_agent.run(reports=["main_account_daily", "maker_morning"])
-   ├─ 渲染模板 → outputs/<today>_main_account_daily.txt
-   ├─ 渲染模板 → outputs/<today>_maker_morning.txt
+7. output_agent.run(reports=["main_account_daily"(Step3), "maker_morning"(Step5)])
+   ├─ 渲染 → outputs/<today>_main_account_daily.txt + maker_morning.txt
    └─ 桌面合并 → C:/Users/31702/Desktop/<today>_交易计划.txt
 
 8. 更新 session_state:
-   - tasks.main_account_report_generated = true
-   - tasks.maker_daily_plan_generated = true
+   - tasks.main_account_report_generated = true / maker_daily_plan_generated = true
    - last_task_times.*
 ```
 
 **失败处理**：
-* Step 1 失败 → 中止（无情绪数据不允许跑评分）
-* Step 2 全失败 → 跳到 Step 7（output_agent 标"待补充"全字段）
-* Step 3-5 部分失败 → 继续，对应字段降级
+* Step 1 门禁关闭 → 硬停，仅出"门禁关闭·观望"骨架（不写计划），不算失败
+* Step 2 全失败 → 跳 Step 7（output_agent 标"待补充"全字段）
+* Step 3/4/5 部分失败 → 继续，对应字段降级
 * Step 7 必须执行（即使全降级也输出报告骨架）
 
 ---
@@ -101,26 +95,33 @@
 
 ---
 
-# 链 C：23:00 复盘
+# 链 C：晚间反思·复盘（~23:00，按用户工作流四件套顺序）
+
+> 顺序权威 `sessions/日报SOP.md` §0.0 晚间。心智自控/心力在此**写入**（早间链 A 门禁只读）。
 
 ```
-1. review_agent.run()
-   ├─ 读 outputs/<today>_*.txt
-   ├─ 询问/读入用户 5 个核心问题答案
+1. emotional_agent.write_diary() → 心智自控日记表
+
+2. emotional_agent.write_monitor() → 心力监控模块
+   └─ 写 state/risk_state.state_gate.*（供**次日早间链 A Step1 门禁**读取）
+
+3. clean_sample.check() → 50 笔结晶/洁净样本系统进度更新
+   └─ 写 outputs/<today>_check_records.json
+
+4. review_agent.run() → 交易 review
+   ├─ 读 outputs/<today>_*.txt + 用户 5 个核心问题答案
    ├─ 生成 reviews/<today>.md
-   ├─ 写 outputs/<today>_check_records.json
    └─ 更新 session_state.tasks.review_completed = true
 
-2. penalty_agent.run()
-   ├─ 扫当日 risk_decisions + check_records
-   ├─ 匹配历史违纪库
+5. penalty_agent.run()
+   ├─ 扫当日 risk_decisions + check_records，匹配历史违纪库
    ├─ 写 governance/violations/<today>_*.json + violation_costs/<today>_*.json
    └─ 通知 review_agent 调整洁净样本计数
 
-3. 周日 22:00：触发 review_agent.weekly_report()
-4. 月末 23:00：触发 review_agent.monthly_report()
+6. 周日 22:00：触发 review_agent.weekly_report()
+7. 月末 23:00：触发 review_agent.monthly_report()
 
-5. 写 outputs/<today>_session_log.json（当日完整执行轨迹）
+8. 写 outputs/<today>_session_log.json（当日完整执行轨迹）
 ```
 
 ---
@@ -143,12 +144,12 @@
 "tasks": {
   "main_account_report_generated":  // 链 A Step 7 后
   "maker_daily_plan_generated":     // 链 A Step 7 后
-  "score_updated_morning":          // 链 A Step 5 后
+  "score_updated_morning":          // 链 A Step 4 后
   "score_updated_evening":          // 链 B Step 3 后
   "risk_checks_completed":          // 实际开仓时由 risk_agent 写
-  "review_completed":               // 链 C Step 1 后
-  "data_collection_done":           // 新增字段：链 A Step 2 后 / 链 B Step 1 后
-  "emotional_check_done":           // 新增字段：链 A Step 1 后
+  "review_completed":               // 链 C Step 4 后
+  "data_collection_done":           // 链 A Step 2 后 / 链 B Step 1 后
+  "emotional_check_done":           // 早间链 A Step1 门禁读取后；写入在晚间链 C Step1-2
 }
 ```
 

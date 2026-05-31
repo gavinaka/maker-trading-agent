@@ -30,7 +30,7 @@ Trading-System/
 │   ├── execution_philosophy.md        ← 执行哲学
 │   ├── maker_principles.md            ← Maker 策略原则
 │   ├── review_principles.md           ← 复盘原则
-│   ├── cannot_do_mapping.md           ← 主→Maker 方向映射
+│   ├── cannot_do_mapping.md           ← 当天Maker"不能做"→可做方向（Maker内部，与中线无关）
 │   └── terminology.md                 ← 词汇标准库
 │
 ├── agents/                            ← 10 个 Agent
@@ -153,7 +153,7 @@ Trading-System/
 ├──────────────┼────────────────────────┼──────────────────────────┤
 │ 低频中长线       │ 日内交易（波段/博弈）     │ 机会博弈（右侧/盘口）      │
 │ 日/周/月级别     │ 高空 / 低多 / 反弹空      │ 每日≤1次，周≤3次          │
-│ 决定大方向禁令   │ 受主账户"不能做"约束     │ 2026.3.8 起合并至主账户   │
+│ 自身中线大方向   │ 自身日内"不能做"(末位)  │ 2026.3.8 起合并至主账户   │
 │ Binance（中线）  │ OKX（2026.5 起）         │ 历史上 OKX 执行           │
 └──────────────┴────────────────────────┴──────────────────────────┘
 ```
@@ -298,7 +298,7 @@ C:/Users/31702/Desktop/<today>_交易计划.txt
 | 总评分 ≥ 70 才允许开仓 | 硬规则 | scoring_system.md |
 | 单笔止损 ≤ 3% | 硬规则 | risk_checklist.md |
 | 5 项状态门禁任一触发 → 禁交易 | 硬规则 | state_gate.md |
-| 主账户 cannot_do 约束 Maker 方向 | 硬规则 | cannot_do_mapping.md |
+| 当天 Maker"不能做"→Maker方向（与主账户无关，互不干扰） | 硬规则 | cannot_do_mapping.md |
 | BlockBeats 必须截图（非文字替代） | 硬规则 | source_rules.md |
 | Maker 不隔夜 | 硬规则 | maker_execution.md |
 | Maker 每日 ≤ 3 笔 | 硬规则 | maker_state.json |

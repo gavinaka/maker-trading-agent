@@ -49,12 +49,12 @@ BTC（策略）：[有计划]
 |---|---|
 | 是否观望 | `state/score_state.json.current_score.total_score >= 70` AND `risk_agent.precheck.decision == "allow"` |
 | 总评分 | `state/score_state.json` |
-| 主账户方向限制 | `state/main_account_state.json.cannot_do[]` |
+| 当天 Maker 不能做（市场推导，非主账户） | footprint signal_type 推导：禁追最拥挤一边（见 `constitution/cannot_do_mapping.md`） |
 | 状态门禁阻断项 | `outputs/<today>_emotional_log.json.blocked_reasons[]` |
 | 数据源失效 | `inbox/<today>/_manifest.json.missing[]` |
 | 执行概率 / 胜率 | 用户输入（基于历史样本） |
 | 已执行 % | `state/maker_state.json.clean_sample_system.current_progress_pct`（参考） |
-| 策略方向 | `state/main_account_state.json.cannot_do[]` 推导 + footprint signal_type |
+| 策略方向 | footprint signal_type + 当天 Maker 不能做（禁追最拥挤一边）推导 |
 | 价格区间 | `inbox/<today>/exocharts_btc_1h.json.key_levels` |
 | 持仓金额 | `state/maker_state.json.position_rules.default_position_size_usd.BTC` 区间 |
 | 入场方式 | `state/maker_state.json.default_entry_type` 默认 left_side（左侧） |
@@ -73,7 +73,7 @@ BTC（策略）：[有计划]
 BTC（策略）：[观望]
   理由：
     - 总评分 50 未达 70 门槛（数据陈旧 3 日，待 11:00 重评）
-    - 主账户限制：不能做多 → Maker 仅允许做空，但分数未达
+    - 当天 Maker 不能做多（拥挤侧）→ 仅偏空，但分数未达
     - 4 个数据源全部待采集（Exocharts / Coinglass / BlockBeats / FedWatch）
 
   执行概率：0%

@@ -3,7 +3,9 @@
 ## 角色
 情绪 / 节奏 / 身体状态的**采集 + 评估 + 状态门禁写入**。
 
-每日链 A 的第一个 step（早于数据采集）。**没有情绪门禁通过 → 链 A 不启动**。
+### 早/晚分工（2026-05-31 迭代 · 对齐用户工作流 `sessions/日报SOP.md` §0.0）
+* **早间（链 A Step1）= 开仓前门禁（读+判）**：得出 `allow_trade_today`。⛔ **门禁关闭 → 今日工作暂停，不写任何计划**（主账户/Maker 都不写）。是早间工作流第一硬前置。
+* **晚间（链 C Step1-2）= 心智自控日记表 + 心力监控模块（写）**：当日详细反思记录，写入 `state/risk_state.state_gate.*`，**供次日早间门禁读取**。
 
 依据：`governance/emotional_tracking.md`（5 种情绪状态 + 状态门禁）+ 图谱第四节状态门禁 5 项。
 
@@ -150,14 +152,20 @@ blocked_reasons 记录所有 false 的项。
 
 # 与 session_orchestrator 的协作
 
-链 A Step 1 调用本 Agent：
+**早间链 A Step 1（门禁·读+判）**：
 
 ```
-emotional_agent.update() 返回 allow_trade_today
-  ├─ true  → session_orchestrator 继续 Step 2 数据采集
-  └─ false → session_orchestrator 跳过链 A 后续 step
-              直接调用 output_agent 生成"今日无交易资格"版日报
-              （仍输出主账户中线持仓状态 + Maker"观望"+ 阻断理由）
+emotional_agent.gate_check() 返回 allow_trade_today（读昨晚链C写入 + 必要时晨间快速确认）
+  ├─ true  → session_orchestrator 继续 Step 2 五源采集 → 主账户plan → 评分 → Maker plan
+  └─ false → ⛔ 硬停：跳过链 A 后续所有计划撰写，直接 output_agent 生成"门禁关闭·今日观望"
+              （仍输出主账户中线持仓状态 + Maker"观望"+ 阻断理由；不写任何新计划）
+```
+
+**晚间链 C Step 1-2（写·心智自控日记表 + 心力监控模块）**：
+
+```
+emotional_agent.write_diary()   → 心智自控日记表
+emotional_agent.write_monitor() → 心力监控模块，写 state/risk_state.state_gate.*（供次日门禁读取）
 ```
 
 ---

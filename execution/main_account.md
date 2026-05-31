@@ -1,7 +1,8 @@
 # 主账户执行规则（图谱一节 + 十四节）
 
 > 主账户 = Binance 上的 BTC USDT 永续合约中线持仓账户。
-> 决定大方向"禁令"（不能做），约束 Maker 账户操作。
+> 决定**自身中线大方向**（基本面>盘面>盘口）；**与 Maker 计划互不干扰，一直如此**。
+> ⚠️ 订正（2026-05-31）：「不能做」是**当天 Maker** 字段、与中线无关，**不**由主账户决定，旧表述已改（见 `memory/cannot-do-is-maker-only.md`）。
 > 当前持仓：BTCUSDT short @ 79150 / 50% / 5x（截至 2026-05-29）。
 
 ---
@@ -15,7 +16,7 @@
 | 周期 | 日 / 周 / 月级别 |
 | 仓位规模 | $2000 - $4000（分批构建总额） |
 | 杠杆 | 5x（当前标准） |
-| 角色 | 决定大方向 + "不能做"禁令 + 约束 Maker |
+| 角色 | 决定自身中线大方向（基本面>盘面>盘口）；与 Maker 互不干扰（不约束、不发"不能做"） |
 
 ---
 
@@ -111,17 +112,13 @@ new_avg = (old_qty × old_avg + add_qty × add_price) / (old_qty + add_qty)
 
 ---
 
-## 与 Maker 的约束关系
+## 与 Maker 的关系：互不干扰（2026-05-31 订正）
 
-主账户的"**不能做**"是 Maker 的强制约束（图谱第五节）：
-
-| 主账户 cannot_do | Maker 允许方向 |
-|---|---|
-| 做多 | 只做空（高空 / 反弹空） |
-| 做空 | 双向（早间低多 / 晚间反弹空） |
-| 追多空 | 观望优先 |
-
-详见 `constitution/cannot_do_mapping.md`。
+**中线计划与 Maker 计划互不干扰，一直如此。**
+* 主账户**不**向 Maker 下达"不能做"，**不**约束 Maker 方向。
+* 「不能做」是**当天 Maker 自身**的日内禁令（写完日报后最后回填的收口结论），由当天市场（盘口>盘面>基本面）推导，与中线持仓方向无关。
+* Maker「不能做」→ Maker 可做方向的映射见 `constitution/cannot_do_mapping.md`（已改为 Maker 内部规则）。
+* 旧框架「主账户 cannot_do → Maker 允许方向」**已废弃**（误把两账户耦合）。
 
 ---
 
@@ -171,8 +168,9 @@ new_avg = (old_qty × old_avg + add_qty × add_price) / (old_qty + add_qty)
 |---|---|
 | position_status.* | 用户实际开/平仓后手动同步 |
 | mid_term_structure.current_defense_layer | review_agent 每日 Q5 时确认 + 用户校准 |
-| cannot_do[] | 用户每日早间根据中线结构判断更新 |
 | trend_confirmation | 用户每日早间根据日/小时级别判断 |
+
+> 注：「不能做」**不是主账户字段**，归当天 Maker（写完日报最后回填），不在本表维护。
 
 ---
 

@@ -21,12 +21,15 @@ BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，�
       {
         "screenshot": "blockbeats_001.png",
         "headline": "<标题摘录>",
-        "category": "监管 | 宏观 | 交易所 | 链上 | 鲸鱼 | 其他",
+        "tier": "T1政治 | T2行业",
+        "category": "地缘 | 货币政策 | 监管立法 | ETF资金流 | 交易所 | 链上 | 鲸鱼 | 项目技术 | 机构持仓 | 其他",
         "sentiment": "利多 | 利空 | 中性 | 中性偏多 | 中性偏空"
       }
     ],
+    "tier1_sentiment": "利多 | 利空 | 中性 | 中性偏多 | 中性偏空 | 无",
+    "tier2_sentiment": "利多 | 利空 | 中性 | 中性偏多 | 中性偏空 | 无",
     "aggregate_sentiment": "利多 | 利空 | 中性 | 中性偏多 | 中性偏空",
-    "aggregate_reason": "<一句话总结>"
+    "aggregate_reason": "<一句话总结，主导层须点明>"
   }
   ```
 
@@ -47,14 +50,26 @@ BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，�
 
 # 处理流程
 
-## Step 1：分类
-对每条截图（按 .txt 辅助索引）：
-* 标题关键词匹配 category：
-  * "美联储 / FOMC / 利率 / SEC / 监管 / 制裁" → 监管 / 宏观
-  * "Binance / OKX / Coinbase 事故 / 上币" → 交易所
-  * "鲸鱼 / 巨鲸地址 / 大额转账" → 鲸鱼
-  * "DeFi / TVL / 合约漏洞 / 黑客" → 链上
-  * 其余 → 其他
+## Step 1：分类（先定 tier 再定 category）
+
+**基本面内部优先级：政治 > 行业资讯（2026-05-31 用户拍板）。**
+先判 tier，再细分 category：
+
+### Tier 1 — 政治/宏观（高权重，主导层）
+* **地缘**：战争 / 冲突 / 制裁 / 外交 / 选举（如 伊朗议长拒批协议、美伊谈判）
+* **货币政策**：美联储 / FOMC / 利率 / 升息降息 / 流动性 / QT·QE / 缩表（含 CME/FedWatch 概率异动）
+* **监管立法**：SEC 决定 / 政策 / 执法 / 法案 / **ETF 批准或拒绝**（注：ETF *日常资金流* 归 T2，见下）
+
+### Tier 2 — 行业资讯（低权重，确认/微调用）
+* **ETF资金流**：ETF 日常净流入/流出（如本周净流出 14.2 亿）
+* **交易所**：Binance / OKX / Coinbase 事故 / 上币 / 宕机
+* **链上**：DeFi / TVL / 合约漏洞 / 黑客
+* **鲸鱼**：巨鲸地址 / 大额转账 / 交易所流入流出
+* **项目技术**：升级 / 路线图 / 主网 / 合作
+* **机构持仓**：公开披露的增减持
+* 其余 → 其他（T2）
+
+> 判 tier 后写入 item.tier；ETF 区分：批准/拒绝=T1监管立法，资金流=T2。
 
 ## Step 2：单条 sentiment 判断
 基于截图内容（不基于 AI 自由推理）。判断词必须来自 `constitution/terminology.md`：
@@ -94,12 +109,22 @@ BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，�
 * 必须能在 .txt 摘录中指出具体证据词
 * 同条新闻含正反信号 → 标"中性"，写 note 说明
 
-## Step 3：aggregate
-* 全部利多 → 利多
-* 全部利空 → 利空
-* 利多 > 利空（差 ≥ 2 条）→ 中性偏多
-* 利空 > 利多（差 ≥ 2 条）→ 中性偏空
-* 其余 → 中性
+## Step 3：aggregate（分层主导，政治 > 行业）
+
+先各自汇总 tier1_sentiment / tier2_sentiment（各层内用下方 count-based），再合成：
+
+1. **Tier 1 有明确方向**（利多/利空/中性偏多/偏空）→ **以 Tier 1 为主导**：
+   * Tier 2 同向 → 增强（可由"中性偏X"升为"利X"）。
+   * Tier 2 反向 → **不得翻转 Tier 1 方向**，最多把"利X"降一档为"中性偏X"。
+   * aggregate_reason 必须点明"主导层=政治"。
+2. **Tier 1 全中性 / 无 T1 新闻** → 退回 **Tier 2 count-based**（即下方计数法）。
+3. 任一层内的 count-based：
+   * 全部利多 → 利多；全部利空 → 利空
+   * 利多 > 利空（差 ≥ 2 条）→ 中性偏多；利空 > 利多（差 ≥ 2 条）→ 中性偏空
+   * 其余 → 中性
+
+> 用途分流：本 aggregate 主要服务**中线（主账户）方向**（基本面>盘面>盘口）；
+> 对**日内 Maker** 仅作风险否决/降频，不参与方向打分（见 `constitution/trading_constitution.md` §框架优先级）。
 
 ## Step 4：写 outputs/
 

@@ -24,6 +24,7 @@
     "cvd_direction": "up | down | sideways",
     "price_direction": "up | down | sideways",
     "open_interest": "up | down | sideways",
+    "funding_rate_trend": "up | down | sideways",
     "funding_rate_state": "positive | negative | near_zero"
   },
   "combination_id": "<C01-C16>",
@@ -41,27 +42,40 @@
 
 # 4 维状态判定规则
 
+## 统一读取法（2026-05-31 修正 · 取代旧的固定窗口/绝对阈值）
+**趋势(上升/横盘/下降)适用全部 4 维：CVD / 价格 / OI / 资金费率。**
+**资金费率额外再读「正/负」水平（双轨：趋势 + 正负），见下。**
+* **周期固定 1H**（看 coinglass 1h 面板，不混用 4h）。
+* **读取起始点 = 该面板当前最近的一个「阶段性高点或低点」**（最近一个明显的摆动极值点），不再用「近 N 根累积」或「24h 变化%」。
+* 从起始点连一条趋势线到最新值，**按斜率分类**：
+  * 明显向上 → `up`（上升）
+  * 明显向下 → `down`（下降）
+  * 基本走平 / 在起始点水平附近来回 → `sideways`（横盘）
+* **不要求精确数值**：是趋势方向判断，不再套 ±0.5% / ±3% 绝对阈值；解读落到文本（上升/横盘/下降 + 一句话含义）。
+* 起始点优先采用用户截图上已手绘的趋势线；无手绘线时自行目测最近阶段性高低点。
+* 三维各自独立取自己的阶段性高低点（CVD 的极值、价格的极值、OI 的极值不必同一根 K）。
+
 ## CVD 方向（exocharts 优先；coinglass 辅助确认）
-* 近 N 根（1h 取 6 根 / 4h 取 4 根）累积方向：
-  * 净增长 ≥ +阈值 → `up`
-  * 净下降 ≤ -阈值 → `down`
-  * 区间内 → `sideways`
+* 按上「统一读取法」：1h 面板最近阶段性高/低点 → 当前值斜率 → `up | down | sideways`。
 * exocharts 与 coinglass 方向冲突 → 标 `data_quality:"conflict"`，**优先 exocharts**（按 market_state.orderflow_system.priority="highest"）
 
-## Price 方向（exocharts）
-* 取对应 timeframe 的 last_close 与 N 根前 close 比较
-* ≥ +0.5% → `up`，≤ -0.5% → `down`，区间内 → `sideways`
+## Price 方向
+* 按「统一读取法」：1h 价格面板最近阶段性高/低点 → 当前价斜率 → `up | down | sideways`。
 
-## OI（coinglass_oi）
-* `change_24h_pct > +3%` → `up`
-* `change_24h_pct < -3%` → `down`
-* 区间内 → `sideways`
-* **注**：评分规则中"up_or_sideways"含义 = `up` OR `sideways`
+## OI（coinglass 持仓量 1h 面板）
+* 按「统一读取法」：1h OI 面板最近阶段性高/低点 → 当前 OI 斜率 → `up | down | sideways`。
+* **注**：评分规则中"up_or_sideways"含义 = `up` OR `sideways`。
 
-## Funding（coinglass_funding，BTC weighted_avg_pct）
-* `> +0.01%` → `positive`
-* `< -0.01%` → `negative`
-* 区间内 → `near_zero`
+## Funding（coinglass 资金费率 · 双轨：趋势 + 正负，2026-05-31 据 5 样本校验改）
+**两个字段都要输出，都是盘口行一等字段（真实样本无一例外双轨写）：**
+* `funding_rate_trend`（按统一读取法，最近阶段性高/低点斜率）：
+  * 上升 → `up` / 下降 → `down` / 走平 → `sideways`
+* `funding_rate_state`（相对零轴的水平，供 C01/C02 背离判定）：
+  * `> +0.01%` → `positive` / `< -0.01%` → `negative` / 区间内 → `near_zero`
+* 呈现写法照用户样本：「资金费率{上升/横盘/下降}（为正值/为负值/低于正常值/极负值）」。
+  * 例：「下降（为负值）」「上涨略低于正常值」「横盘（为正值）」。
+* 理由：趋势=拥挤度在变化（升=多头加杠杆/降=去杠杆出清）；正负=多空谁付钱（C01/C02 背离依赖符号）。二者信息不同，缺一不可。
+* 16 组合表仍用 `funding_rate_state`（正/负）判定 C01/C02；趋势作叙事与拥挤度判断。
 
 ---
 

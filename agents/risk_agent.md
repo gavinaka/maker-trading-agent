@@ -15,7 +15,7 @@
 * `state/score_state.json`
 * `state/session_state.json`
 * `outputs/<today>_news_summary.json`
-* `constitution/cannot_do_mapping.md`
+* `constitution/cannot_do_mapping.md`（不能做→Maker 方向映射，Gate 3 用）
 
 ## 输出
 ```json
@@ -26,7 +26,7 @@
   "gates": {
     "state_gate":          { "pass": bool, "failed_items": [...] },
     "risk_checklist":      { "pass": bool, "failed_items": [...] },
-    "main_to_maker_bind":  { "pass": bool, "reason": "..." },
+    "direction_gate":      { "pass": bool, "allowed": ["short|long|none"], "reason": "第二层·当天不能做判定" },
     "position_limits":     { "pass": bool, "reason": "..." },
     "score_threshold":     { "pass": bool, "current_score": N, "required": 70 },
     "defense_layer":       { "current_layer": N, "must_action": "..." }
@@ -50,6 +50,10 @@
 
 **任一不通过** → `decision: deny`，理由："状态门禁阻断 - [项]"，无 override。
 
+> ⚠️ **门禁是用户第一优先级主观判断，agent 算不了（2026-05-31 用户拍板）**：
+> agent 只**读取**用户当日填的「开仓前状态门禁」结论（可交易 / 不可交易），**不自行用算法推翻或替用户判定**。上表 5 项是用户权衡的输入项，最终裁定权在用户；其中"连续止损≥3"是客观硬触发可由系统直接读。
+> 门禁=不可交易 → **硬停：今日不写任何计划**。不要在门禁逻辑上过度设计。
+
 ---
 
 # Gate 2：风控检核清单（7 项，开仓前必须全 pass）
@@ -71,25 +75,24 @@
 
 ---
 
-# Gate 3：主账户 → Maker 方向约束
+# Gate 3：方向门禁（**第二层·宪法级**）—— 当天 Maker「不能做」
 
-源：`constitution/cannot_do_mapping.md`
+> **宪法两层（2026-05-31 用户拍板）**：第一层=**门禁**（用户填，"今天能不能交易"）；第二层=**不能做**（**系统填**，"今天禁哪个方向"）。本 Gate = 第二层。
+> **谁填**：「不能做」由**系统**通过当天数据分析推导（盘口>盘面>基本面 = 禁止追当下最拥挤的一边，见 `constitution/cannot_do_mapping.md`），在写完当日 plan 后**回填**（= 数据分析的收口结论，**不是**"全天交易做完后"补）。
+> **它是决定当日 Maker 交易方向的标准**，开仓执行时作方向门禁（宪法级，无 override）。
+> **时序**：早间 precheck 在不能做回填前跑 → 用 footprint signal_type 作临时方向占位；执行时段实际开仓 → 用**已回填的不能做**判定。
+
+> ⚠️ **「做X」禁全部，「追X」只禁右侧追单、对侧左侧反应单仍可（2026-05-31 据 10 样本·4/8 校验）**。需读 `request.direction` + `request.entry_type`(left/right)。
 
 ```
-main_account_state.cannot_do == "做多"
-  → 允许 Maker 方向：[short]
-  → request.direction != short → deny
-
-main_account_state.cannot_do == "做空"
-  → 允许 Maker 方向：[long, short]
-  → request.direction ∈ allowed → pass
-
-main_account_state.cannot_do == "追多空"
-  → 允许 Maker 方向：[]（观望优先）
-  → 任何开仓请求 → deny，理由"主账户进入震荡禁区"
+不能做 == "做多"   → 允许 {short:左/右}                  ；做多 → deny
+不能做 == "追多"   → 允许 {short:左/右, long:左(回调低多)}；long 右侧追高 → deny
+不能做 == "做空"   → 允许 {long:左/右}                   ；做空 → deny
+不能做 == "追空"   → 允许 {long:左/右, short:左(反弹高空)}；short 右侧追低 → deny（4/8 实证：反弹高空=左侧 pass）
+不能做 == "追多空" → 允许 {}（观望）；仅极端结构性反转左侧单可酌情，余皆 deny
 ```
 
-`request.account == "main"` 跳过此 Gate（主账户自身定义 cannot_do）。
+`request.account == "main"`（中线主账户）**不受此 Gate 约束**（中线与 Maker 互不干扰）。
 
 ---
 

@@ -40,7 +40,7 @@
 ```text
 [YYYY-MM-DD]
 
-不能做：[追多空 / 做多 / 做空]   ← 取 main_account_state.cannot_do
+不能做：[追多空 / 做多 / 做空]   ← 当天 Maker 市场推导(禁追最拥挤一边)，写完全文最后回填；非主账户字段
 
 基本面：[利多/利空/中性/中性偏多/中性偏空]（[原因]）价格[已兑现/未兑现/已兑现部分]
                                     ↑ 取 news_summary.aggregate_sentiment + aggregate_reason
@@ -106,7 +106,7 @@ BTC（策略）：
 
 ```text
 【晚20:30新增计划】[YYYY-MM-DD]
-不能做：[操作禁令]   ← 同主账户 cannot_do
+不能做：[操作禁令]   ← 当天 Maker 市场推导，写完最后回填（非主账户）
 
 BTC（策略）：[同模板 B 格式]
 ```
