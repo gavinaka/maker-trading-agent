@@ -119,7 +119,12 @@ score_state.current_score.total_score < 70 AND extreme_signal == false
 
 score_state.current_score.total_score == null（数据不全）
   → deny，理由"评分缺失"
+
+score_state.current_score.total_score >= 70（或 extreme_signal）
+  → pass：≥70 必须挂 Maker 单（2026-06-01 用户拍板"≥70 必开"）
 ```
+
+> **≥70 不得再以"入场位置不优"为由 deny/观望**（旧 ⑤源位置否决已废）。位置质量改由**挂单价=高质量边缘**保证：Maker 限价单挂在边缘等待，价不触及自然不成交，绝不追价。本 Gate 仍只管"分够不够 + 数据新不新"，门禁(Gate1)/不能做(Gate3)/风控(Gate2)仍可独立 deny。见 `memory/score70-must-place-maker.md`。
 
 时效检查（联动 freshness_rules.md）：
 * `score_state.last_update` 超过 6 小时 → deny + 触发重评分
