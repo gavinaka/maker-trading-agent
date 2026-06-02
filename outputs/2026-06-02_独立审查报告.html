@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>2026-06-02 日报独立审查（倒推 · 去系统逻辑）</title>
+<style>
+  :root{--bg:#0f1115;--card:#171a21;--card2:#1d2129;--line:#2a2f3a;--txt:#e6e8ec;--mut:#8b929e;
+        --red:#ff5d5d;--grn:#3ddc84;--yel:#ffcf5c;--blu:#5aa9ff;--pur:#c08bff;--ora:#ff9f43;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--txt);font-family:"Microsoft YaHei","Segoe UI",sans-serif;
+       padding:32px;line-height:1.55;font-size:14px;}
+  .wrap{max-width:1080px;margin:0 auto;}
+  h1{font-size:24px;font-weight:800;letter-spacing:.5px;}
+  .sub{color:var(--mut);font-size:13px;margin:6px 0 22px;}
+  .tag{display:inline-block;background:#222733;color:var(--blu);border:1px solid var(--line);
+       border-radius:6px;padding:2px 9px;font-size:11px;font-weight:700;margin-right:6px;}
+  .banner{background:linear-gradient(90deg,#1c2530,#171a21);border:1px solid var(--line);
+          border-left:5px solid var(--grn);border-radius:12px;padding:18px 22px;margin-bottom:24px;}
+  .banner b{font-size:18px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:22px;}
+  .card h2{font-size:16px;margin-bottom:4px;}
+  .ttl{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .pill{font-size:11px;font-weight:700;border-radius:20px;padding:3px 12px;}
+  .pA{background:#10331f;color:var(--grn);border:1px solid #1d5a36;}
+  .pB{background:#2f2a12;color:var(--yel);border:1px solid #5a4d1d;}
+  .pC{background:#331a10;color:var(--ora);border:1px solid #5a341d;}
+  .row{margin:10px 0;}
+  .row .lab{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;}
+  .row .lab span:last-child{font-weight:800;}
+  .bar{height:9px;background:#23272f;border-radius:6px;overflow:hidden;}
+  .bar i{display:block;height:100%;border-radius:6px;}
+  .ladder{position:relative;font-size:12.5px;}
+  .lr{display:grid;grid-template-columns:92px 1fr;gap:14px;align-items:center;
+      border-top:1px dashed #232833;padding:7px 0;}
+  .price{font-variant-numeric:tabular-nums;font-weight:700;text-align:right;color:var(--mut);}
+  .lr .desc{color:var(--mut);}
+  .mk{font-weight:700;padding:1px 8px;border-radius:5px;font-size:11.5px;margin-right:7px;}
+  .mkStart{background:#243042;color:var(--blu);}
+  .mkNow{background:#10331f;color:var(--grn);}
+  .mkShortMiss{background:#3a1414;color:var(--red);border:1px dashed #6a2222;}
+  .mkShortPend{background:#332915;color:var(--yel);border:1px dashed #6a541d;}
+  .mkBreak{background:#3a1414;color:var(--red);}
+  .mkTP{background:#10331f;color:var(--grn);}
+  .hot{color:var(--red);font-weight:700;}
+  .ok{color:var(--grn);font-weight:700;}
+  .find{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:11px 0;}
+  .find .n{display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:50%;
+           background:#222733;color:var(--blu);font-weight:800;margin-right:8px;font-size:12px;}
+  .find h3{font-size:14px;display:inline;}
+  .find p{color:var(--mut);margin-top:7px;font-size:13px;}
+  .verdict{border-left:5px solid var(--ora);}
+  .callout{background:#1a1410;border:1px solid #3a2a14;border-left:5px solid var(--ora);
+           border-radius:12px;padding:18px 22px;margin:22px 0;}
+  .callout h2{color:var(--ora);font-size:16px;margin-bottom:8px;}
+  .foot{color:var(--mut);font-size:11.5px;margin-top:26px;border-top:1px solid var(--line);padding-top:14px;}
+  table.cmp{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;}
+  table.cmp th,table.cmp td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top;}
+  table.cmp th{background:#1d2129;color:var(--mut);font-weight:700;}
+  .em{color:var(--yel);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>2026-06-02 日报独立审查</h1>
+  <div class="sub">
+    <span class="tag">倒推复盘</span><span class="tag">去除系统逻辑</span><span class="tag">第一性原理</span>
+    审查人 = 系统自身（独立思考）｜对象 = 今日早间(11:00 @71,285) + 晚间(20:00 @69,462) 两份报告
+  </div>
+
+  <div class="banner">
+    <b>盘后实况 = 早间的天然回测：</b> 价格从 11:00 的 <b>71,285</b> 一路单边下行至 20:00 的
+    <b class="ok">69,462</b>（<b class="hot">−2.56%</b>，日线 −2.72% 收阴、几乎收在最低）。
+    <br>→ <b class="ok">方向(看空)被市场证明完全正确</b>；但<b class="em">交易结构(只挂反弹空)在单边下跌日完全没吃到这波</b>——早间空单挂在 71,800-72,000，价格往下走、永远没碰到，实际成交 0%。
+  </div>
+
+  <!-- 价格阶梯 -->
+  <div class="card">
+    <div class="ttl"><h2>价格阶梯 · 两份报告的挂单落在哪里（倒推）</h2></div>
+    <div class="ladder">
+      <div class="lr"><div class="price">72,000</div><div class="desc">大级别共振支撑（盘中被跌穿）</div></div>
+      <div class="lr"><div class="price">71,824</div><div class="desc">0.618 fib(4H)</div></div>
+      <div class="lr"><div class="price">71,800–72,000</div><div class="desc"><span class="mk mkShortMiss">早间Maker空·未成交</span>挂在现价上方等反弹 → 价格反向下走，从未触及（估60%可达，实际0%）</div></div>
+      <div class="lr"><div class="price">71,464</div><div class="desc">0.5 fib(日)</div></div>
+      <div class="lr"><div class="price">71,285</div><div class="desc"><span class="mk mkStart">11:00 早间现价 · 起点</span></div></div>
+      <div class="lr"><div class="price">71,000</div><div class="desc"><span class="mk mkBreak">多头最后防守 · 跌穿</span><span class="mk mkBreak">主账户多单止损位 · 击穿</span></div></div>
+      <div class="lr"><div class="price">70,751</div><div class="desc">1H SMA20</div></div>
+      <div class="lr"><div class="price">70,000–70,400</div><div class="desc"><span class="mk mkShortPend">晚间Maker空·挂单中</span>破位回踩带，距现价仅 +0.8~1.4%，比早间更可能成交</div></div>
+      <div class="lr"><div class="price">69,462</div><div class="desc"><span class="mk mkNow">20:00 晚间现价 · 当前</span></div></div>
+      <div class="lr"><div class="price">68,758</div><div class="desc"><span class="mk mkTP">晚间TP1区</span>0.618 fib(日) · R:R 1:2.5 落点合理</div></div>
+      <div class="lr"><div class="price">65,543</div><div class="desc">下方延伸支撑</div></div>
+    </div>
+  </div>
+
+  <!-- 两份报告评分 -->
+  <div class="grid2">
+    <div class="card">
+      <div class="ttl"><h2>🌅 早间报告</h2><span class="pill pB">综合 77 / B</span></div>
+      <div class="row"><div class="lab"><span>方向判断</span><span class="ok">90</span></div><div class="bar"><i style="width:90%;background:var(--grn)"></i></div></div>
+      <div class="row"><div class="lab"><span>入场结构</span><span style="color:var(--ora)">60</span></div><div class="bar"><i style="width:60%;background:var(--ora)"></i></div></div>
+      <div class="row"><div class="lab"><span>风险框架</span><span class="em">72</span></div><div class="bar"><i style="width:72%;background:var(--yel)"></i></div></div>
+      <div class="row"><div class="lab"><span>数据精度</span><span class="ok">92</span></div><div class="bar"><i style="width:92%;background:var(--grn)"></i></div></div>
+      <div class="row"><div class="lab"><span>内在一致性</span><span class="em">70</span></div><div class="bar"><i style="width:70%;background:var(--yel)"></i></div></div>
+    </div>
+    <div class="card">
+      <div class="ttl"><h2>🌙 晚间报告</h2><span class="pill pA">综合 89 / A−</span></div>
+      <div class="row"><div class="lab"><span>方向判断</span><span class="ok">92</span></div><div class="bar"><i style="width:92%;background:var(--grn)"></i></div></div>
+      <div class="row"><div class="lab"><span>入场结构</span><span class="ok">85</span></div><div class="bar"><i style="width:85%;background:var(--grn)"></i></div></div>
+      <div class="row"><div class="lab"><span>风险框架</span><span class="ok">88</span></div><div class="bar"><i style="width:88%;background:var(--grn)"></i></div></div>
+      <div class="row"><div class="lab"><span>数据精度</span><span class="ok">93</span></div><div class="bar"><i style="width:93%;background:var(--grn)"></i></div></div>
+      <div class="row"><div class="lab"><span>内在一致性</span><span class="ok">88</span></div><div class="bar"><i style="width:88%;background:var(--grn)"></i></div></div>
+    </div>
+  </div>
+
+  <!-- 核心矛盾 -->
+  <div class="callout">
+    <h2>⚠️ 今天暴露的核心矛盾（最该看的一条）</h2>
+    今天是一个<b>干净的单边下跌日</b>，奖励的是"破位顺势做空/不碰多头"，惩罚的是"等一个完美的反弹再空"。
+    两份报告方向都对（看空），但唯一被允许的交易（反弹空）<b class="hot">早间根本没触发</b>——价格直接往下走，
+    挂在 71,800 上方的空单全程是空气。<br><br>
+    真正吃到这波的动作 = 在 71,000 跌穿时顺势追空（被定义为"不能做·右侧追空"而禁止）。
+    <b class="em">所以这套方法的结构性代价是：高胜率/安全成交 ⇄ 在强趋势日错过主升/主跌段。</b>
+    这不是 bug，是风格取舍——但今天它让"判断对、却没赚到"成为现实。
+  </div>
+
+  <!-- 关键发现 -->
+  <div class="card">
+    <div class="ttl"><h2>独立发现（倒推得出）</h2></div>
+
+    <div class="find"><span class="n">1</span><h3 class="ok">方向是全程稳的——五源共振看空，被走势证实</h3>
+      <p>CVD↓ + OI↓ + 资金费率仍正(多头未投降) + 放量破位，这套组合在早间就指向"下方仍有去杠杆空间"。晚间明确写出"下跌中继未竭"，并被 −2.6% 的续跌验证。方向层面两份都合格，晚间表述更锐利。</p></div>
+
+    <div class="find"><span class="n">2</span><h3 style="color:var(--ora)">早间入场结构是最大短板：60%可达 → 实际0%成交</h3>
+      <p>在一个 OI↓/费率正(预期还要跌)的环境里，却把空单挂在现价<b>上方</b> +0.7~1.0% 等反弹，逻辑上自相矛盾：既然预期续跌，为何押注先反弹到 71,800？结果价格反向走，单子never fill，−2.6% 的下跌一分没参与。"执行概率~60%"在强趋势里是高估的。</p></div>
+
+    <div class="find"><span class="n">3</span><h3 class="hot">主账户多单是今天真正的失血点，且与自家看空判断直接打架</h3>
+      <p>报告全天看空，账户却扛着一张 5x 多单(@73,500)。早间−3.0%、晚间−5.5%(账户级约−27.5%)，止损位 71,000 被击穿。"死守 71,000"的措辞让一张<b>方向已被自己证伪</b>的多单又多亏了 2.5%。独立看：当 5/5 源都看空时，继续持多本身就是该被红色警告的最大风险，而非"守纪律"。</p></div>
+
+    <div class="find"><span class="n">4</span><h3 class="em">早间的"日内支撑 70,600-71,000"被秒穿——支撑位给高了</h3>
+      <p>把 71,000 当强支撑/最后防守，但同一份报告的盘口信号(多头未投降)其实预示它守不住。结果开盘没多久就破。支撑判断与盘口动能读数没对齐 = 内在一致性扣分。晚间把支撑下修到 68,500-68,800(0.618日线)，更稳健。</p></div>
+
+    <div class="find"><span class="n">5</span><h3 class="ok">晚间是明显的进步：更近、更可成交、TP锚在真实结构</h3>
+      <p>空单下移到 70,000-70,400(仅+0.8~1.4%、破位回踩带)，可成交性远高于早间；TP1 锚在 0.618日线 68,758、R:R 1:2.5 干净；并诚实把执行概率压到 60%(没再臆造高数)。风险侧也第一时间点名"主账户止损已破、应止损出局"。这版接近一份独立交易员会认可的稿子。</p></div>
+
+    <div class="find"><span class="n">6</span><h3 class="ok">数据精度合格——两份都没出现模糊位</h3>
+      <p>价格/百分比都是核过的确切值(69,462 / −5.49% / POC 69,354…)，跨 5~6 源交叉一致，POC 与现价吻合。这块是今天的硬质量项。</p></div>
+  </div>
+
+  <!-- 倒推总结 -->
+  <div class="card verdict">
+    <div class="ttl"><h2>倒推总结 · 一句话</h2></div>
+    <table class="cmp">
+      <tr><th>维度</th><th>早间</th><th>晚间</th></tr>
+      <tr><td>方向（事后验证）</td><td class="ok">对（看空，价格续跌）</td><td class="ok">对（续跌延续）</td></tr>
+      <tr><td>交易结果（倒推）</td><td class="hot">空单未成交，0 参与</td><td>挂单中，更可能成交</td></tr>
+      <tr><td>最该改的</td><td class="em">强趋势日不该只押"等反弹"，入场离现价太远</td><td>入场结构已修好</td></tr>
+      <tr><td>没被正面处理的</td><td colspan="2" class="hot">扛着的 5x 多单与全程看空判断直接冲突，是真正的风险敞口</td></tr>
+    </table>
+    <p style="margin-top:12px;color:var(--mut)">
+      <b>核心一句：</b>今天"看得对、却没赚到、还亏在不该扛的多单上"。报告的<b>分析质量</b>(方向+数据)是 A 级，
+      但<b>交易转化</b>(早间入场结构) 和 <b>对自相矛盾持仓的处理力度</b>是短板。晚间已自我修正了入场，唯一没解决的是那张逆向多单。
+    </p>
+  </div>
+
+  <div class="foot">
+    本报告为系统对自身产出的独立审查，刻意不引用用户的 70+30 评分 / ≥70必挂 / footprint 16组合等系统框架，纯以走势倒推 + 独立交易逻辑评判。生成于 2026-06-02 晚间收工时。
+  </div>
+</div>
+</body>
+</html>
