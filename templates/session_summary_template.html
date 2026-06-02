@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<!--
+  会话/任务 可视化汇总模板（2026-05-31 起·每次任务结束自动套用）
+  用法：复制本文件 → 改 <title>/标题/各 section 内容 → 存 outputs/<日期>_<任务名>_汇总.html
+  规则：暗色主题不变；CSS 不要改；按需增删 section（保留：数字条 + 改动卡片 + 收尾条）。
+  常用类：
+    卡片 .card / 三列 .grid.g3 / 四列 .g4 / 两列 .g2
+    标签 .tag.t-new(迭代绿) .t-fix(订正红) .t-cal(校验黄)
+    数字 .stat>.num   diff块 .diff>.old/.new
+    流程 .flow>.step(.gate红)   表格 table td.ok(绿勾)
+    分层 .layer>.lc.l1/.l2   收尾 .foot>code
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务汇总 · YYYY-MM-DD</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --card2:#1c2330; --line:#2a3343;
+    --txt:#e6edf3; --mut:#8b97a7; --grn:#3fb950; --red:#f85149;
+    --blu:#58a6ff; --yel:#d29922; --pur:#bc8cff; --cyan:#39d0d8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.6;padding:32px 16px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:26px;font-weight:700;margin-bottom:4px}
+  .sub{color:var(--mut);font-size:14px;margin-bottom:24px}
+  .sub b{color:var(--grn)}
+  h2{font-size:18px;margin:34px 0 14px;padding-left:10px;border-left:3px solid var(--blu)}
+  .grid{display:grid;gap:14px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:760px){.g3,.g2,.g4{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .card h3{font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .card p{font-size:13px;color:var(--mut)}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600}
+  .t-new{background:rgba(63,185,80,.15);color:var(--grn)}
+  .t-fix{background:rgba(248,81,73,.15);color:var(--red)}
+  .t-cal{background:rgba(210,153,34,.18);color:var(--yel)}
+  .num{font-size:34px;font-weight:800;line-height:1}
+  .stat .num{color:var(--grn)}
+  .stat small{display:block;color:var(--mut);font-size:12px;margin-top:6px}
+  .stat{text-align:center;background:var(--card2)}
+  .diff{font-family:Consolas,monospace;font-size:12.5px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin-top:8px}
+  .diff div{padding:5px 10px}
+  .old{background:rgba(248,81,73,.10);color:#ffb4ae}
+  .new{background:rgba(63,185,80,.10);color:#a7e9b0}
+  .old::before{content:"− ";color:var(--red);font-weight:700}
+  .new::before{content:"+ ";color:var(--grn);font-weight:700}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px}
+  .step{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:7px 11px;white-space:nowrap}
+  .step b{color:var(--cyan)}
+  .step.gate{border-color:var(--red);color:#ffd3d0}
+  .arr{color:var(--mut)}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600;font-size:12px}
+  td.ok{color:var(--grn);font-weight:600}
+  .layer{display:flex;gap:12px;align-items:stretch}
+  .layer .lc{flex:1;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .layer .l1{border-top:3px solid var(--red)}
+  .layer .l2{border-top:3px solid var(--blu)}
+  .who{font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(88,166,255,.15);color:var(--blu)}
+  .who.u{background:rgba(210,153,34,.18);color:var(--yel)}
+  .pill{font-size:12px;color:var(--mut);background:var(--card2);border:1px solid var(--line);padding:6px 11px;border-radius:20px;display:inline-block;margin:3px 4px 0 0}
+  .foot{margin-top:34px;padding:16px;background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px;color:var(--mut)}
+  .foot code{background:#0d1117;padding:2px 6px;border-radius:4px;color:var(--cyan);font-size:12px}
+  .chk{color:var(--grn);font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🛠️ 【任务标题】</h1>
+  <div class="sub">YYYY-MM-DD · 会话 #N ｜ 【一句话概述】</div>
+
+  <!-- 数字条（保留·按任务填 2~4 个关键数字） -->
+  <div class="grid g4">
+    <div class="card stat"><div class="num">N</div><small>指标说明</small></div>
+    <!-- ... -->
+  </div>
+
+  <!-- 改动/成果卡片（保留·按任务） -->
+  <h2>本次改动</h2>
+  <div class="grid g3">
+    <div class="card"><h3><span class="tag t-new">迭代</span> 标题</h3><p>说明。</p></div>
+    <div class="card"><h3><span class="tag t-fix">订正</span> 标题</h3><p>说明。</p></div>
+    <div class="card"><h3><span class="tag t-cal">校验改</span> 标题</h3><p>说明。</p></div>
+  </div>
+
+  <!-- 可选：前后对比 .diff / 流程 .flow / 分层 .layer / 校验表 table —— 视任务类型增删 -->
+
+  <!-- 收尾条（保留） -->
+  <div class="foot">
+    <b style="color:var(--txt)">📦 落库</b>：commit / 文件 / 分支<br>
+    <b style="color:var(--txt)">🧠 记忆同步</b>：...<br>
+    <b style="color:var(--txt)">📅 待办</b>：...<br>
+    <span style="color:var(--mut)">任务闭环 ✓</span>
+  </div>
+
+</div>
+</body>
+</html>
