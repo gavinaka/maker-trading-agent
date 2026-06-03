@@ -1,16 +1,26 @@
 # -*- coding: utf-8 -*-
 """
 Notion 出稿稳定性自检器（机械化·不靠记忆）。
-用法：py notion_verify_against_yesterday.py <today_page_id> <yesterday_page_id>
-对比两页的「block 类型序列 / 每块所用字体颜色集合 / 图片数量与位置」，
-任一不一致即打印 [MISMATCH]，全绿打印 ALL CHECKS PASS。
-出稿 push 后必须跑此脚本，PASS 才算完成（见 memory/notion-publish-checklist.md）。
+对比今日页 vs 【2026.6.2 固定金标模板】的「block 类型序列 / 每块字体颜色集合 / 图片数与位置」。
+2026-06-03 用户拍板：以 6/2 为冻结模板长期对照（非"昨日"，避免错误逐日传播）。
+
+用法：
+  py notion_verify_against_yesterday.py <today_page_id> [morning|evening|review]   # 默认 morning，对照 6/2 金标
+  py notion_verify_against_yesterday.py <today_page_id> <任意参照page_id>          # 显式指定参照页
+PASS 才算出稿完成（见 memory/notion-publish-checklist.md）。
 """
 import sys, os, requests
 
 TOK = os.environ.get("NOTION_TOKEN", "")
 assert TOK, "请先 $env:NOTION_TOKEN"
 H = {"Authorization": f"Bearer {TOK}", "Notion-Version": "2022-06-28"}
+
+# 2026.6.2 固定金标模板（用户认可·长期对照基准）
+GOLD = {
+    "morning": "373fda35-a098-81dc-a674-cc236149c457",  # 🌅 2026.6.2 早间
+    "evening": "373fda35-a098-816d-bd9e-d7227943e9d2",  # 🌙 2026.6.2 晚间
+    "review":  "373fda35-a098-81e3-b197-c8d84f7d3e01",  # 🔍 2026.6.2 独立审查
+}
 
 def children(pid):
     out, cur = [], None
@@ -41,9 +51,12 @@ def profile(pid):
     return rows
 
 def main():
-    today, yest = sys.argv[1], sys.argv[2]
-    A, B = profile(today), profile(yest)
-    print(f"今日块数={len(A)}  昨日块数={len(B)}")
+    today = sys.argv[1]
+    ref = sys.argv[2] if len(sys.argv) > 2 else "morning"
+    gold = GOLD.get(ref, ref)  # 关键词->6/2金标id；否则当作显式page_id
+    label = f"6/2金标:{ref}" if ref in GOLD else "参照页"
+    A, B = profile(today), profile(gold)
+    print(f"今日块数={len(A)}  {label}块数={len(B)}")
     n = max(len(A), len(B)); bad = 0
     for i in range(n):
         a = A[i] if i < len(A) else ("<缺>", [], "")
@@ -55,11 +68,11 @@ def main():
         if flag: bad += 1
         ta = "type!=" if not type_ok else ""
         ca = "color!=" if not col_ok else ""
-        print(f"{i+1:2} 今[{a[0]:11}|{','.join(a[1]) or '-':20}] 昨[{b[0]:11}|{','.join(b[1]) or '-':20}] {ta}{ca}{flag}")
+        print(f"{i+1:2} 今[{a[0]:11}|{','.join(a[1]) or '-':20}] 标[{b[0]:11}|{','.join(b[1]) or '-':20}] {ta}{ca}{flag}")
     ia = sum(1 for r in A if r[0] == "image")
     ib = sum(1 for r in B if r[0] == "image")
     img_ok = ia == ib
-    print(f"\n图片数：今={ia} 昨={ib} {'OK' if img_ok else '<<< MISMATCH 基本面配图缺失/多余'}")
+    print(f"\n图片数：今={ia} 标={ib} {'OK' if img_ok else '<<< MISMATCH 基本面配图缺失/多余'}")
     if bad == 0 and img_ok and len(A) == len(B):
         print("\n[PASS] ALL CHECKS PASS — 块类型/颜色/图片/块数 全对齐")
     else:
