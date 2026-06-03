@@ -39,7 +39,7 @@ blocks = [
     # 9 CVD line paragraph (bold, no color)
     para([R("CVD下降　价格下降　资金费率上升（为正值）　持仓横盘", None, True)]),
     # 10 解读 heading_3
-    h3([R("解读："), R("利空", RED, True),
+    h3([R("解读："), R("利空", YEL, True),
         R("（"), R("6/2放天量678M破位、主动卖压持续不竭", RED, True),
         R("，CVD累积深负+资费仍正=残余多头未投降，属下跌中继/多头出清；唯6/3早盘砸至日线POC 66,666后微现正Delta，关注超卖反弹）")]),
 
