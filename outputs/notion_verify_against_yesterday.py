@@ -9,11 +9,29 @@ Notion 出稿稳定性自检器（机械化·不靠记忆）。
   py notion_verify_against_yesterday.py <today_page_id> <任意参照page_id>          # 显式指定参照页
 PASS 才算出稿完成（见 memory/notion-publish-checklist.md）。
 """
-import sys, os, requests
+import sys, os, re, requests
 
 TOK = os.environ.get("NOTION_TOKEN", "")
 assert TOK, "请先 $env:NOTION_TOKEN"
 H = {"Authorization": f"Bearer {TOK}", "Notion-Version": "2022-06-28"}
+
+
+def title_of(pid):
+    p = requests.get(f"https://api.notion.com/v1/pages/{pid}", headers=H).json()
+    for v in p.get("properties", {}).values():
+        if v.get("type") == "title":
+            return "".join(x.get("plain_text", "") for x in v["title"])
+    return ""
+
+
+def _norm_title(s):
+    # 抹掉日期 token（2026.6.3 / 2026.06.03）后比标题格式
+    return re.sub(r"\d{4}\.\d{1,2}\.\d{1,2}", "<DATE>", s).strip()
+
+
+def _disp(s):
+    # 显示安全：剔除 emoji 等 GBK 不可编码字符（PS 控制台 GBK 会崩）
+    return s.encode("gbk", "ignore").decode("gbk")
 
 # 2026.6.2 固定金标模板（用户认可·长期对照基准）
 GOLD = {
@@ -55,28 +73,56 @@ def main():
     ref = sys.argv[2] if len(sys.argv) > 2 else "morning"
     gold = GOLD.get(ref, ref)  # 关键词->6/2金标id；否则当作显式page_id
     label = f"6/2金标:{ref}" if ref in GOLD else "参照页"
+    # ⓪ 标题门：子页标题格式须对齐金标（抹日期后逐字比，防"漏（20:00 评分点）"类漂移）
+    ta, tb = title_of(today), title_of(gold)
+    title_ok = _norm_title(ta) == _norm_title(tb)
+    print(f"标题门：今「{_disp(ta)}」 标「{_disp(tb)}」 {'OK' if title_ok else '<<< MISMATCH 标题格式不对齐金标'}")
+
     A, B = profile(today), profile(gold)
     print(f"今日块数={len(A)}  {label}块数={len(B)}")
+    # ① 结构门：块类型序列对照金标（颜色不再硬比金标——金标自身配色不一致，
+    #    配色权威改由 report_colors 按【情绪词→颜色唯一规则】逐 run 校验，见门①b）
     n = max(len(A), len(B)); bad = 0
     for i in range(n):
         a = A[i] if i < len(A) else ("<缺>", [], "")
         b = B[i] if i < len(B) else ("<缺>", [], "")
         type_ok = a[0] == b[0]
-        # 颜色集合（忽略重复次数差异，比对所用颜色种类是否一致）
-        col_ok = set(a[1]) == set(b[1])
-        flag = "" if (type_ok and col_ok) else "  <<< MISMATCH"
-        if flag: bad += 1
-        ta = "type!=" if not type_ok else ""
-        ca = "color!=" if not col_ok else ""
-        print(f"{i+1:2} 今[{a[0]:11}|{','.join(a[1]) or '-':20}] 标[{b[0]:11}|{','.join(b[1]) or '-':20}] {ta}{ca}{flag}")
+        col_note = "" if set(a[1]) == set(b[1]) else "  (色差·交规则门校验)"
+        flag = "  <<< MISMATCH" if not type_ok else ""
+        if not type_ok: bad += 1
+        print(f"{i+1:2} 今[{a[0]:11}|{','.join(a[1]) or '-':20}] 标[{b[0]:11}|{','.join(b[1]) or '-':20}] {'type!=' if not type_ok else ''}{flag}{col_note}")
     ia = sum(1 for r in A if r[0] == "image")
     ib = sum(1 for r in B if r[0] == "image")
     img_ok = ia == ib
     print(f"\n图片数：今={ia} 标={ib} {'OK' if img_ok else '<<< MISMATCH 基本面配图缺失/多余'}")
-    if bad == 0 and img_ok and len(A) == len(B):
-        print("\n[PASS] ALL CHECKS PASS — 块类型/颜色/图片/块数 全对齐")
+    struct_ok = (bad == 0 and img_ok and len(A) == len(B))
+
+    # ① b 配色门：morning/evening 按情绪词唯一规则逐 run 校验语义配色（review 用分析配色·跳过）
+    color_ok = True
+    if ref in ("morning", "evening"):
+        try:
+            from report_colors import audit_page
+            viol, checked = audit_page(today)
+            print(f"\n语义配色门：校验 {checked} 个情绪/角色 run", end="")
+            if viol:
+                color_ok = False
+                print("  <<< 配色错配")
+                for bi, ri, exp, act, txt in viol:
+                    print(f"   blk{bi} run{ri}: 应={exp} 实={act}  「{txt}」")
+            else:
+                print("  OK")
+        except Exception as e:
+            color_ok = False
+            print(f"\n语义配色门：执行失败 {e}")
+
+    if title_ok and struct_ok and color_ok:
+        print("\n[PASS] ALL CHECKS PASS — 标题 + 块类型/块数/图片 对齐金标 + 语义配色符合唯一规则")
     else:
-        print(f"\n[FAIL] {bad} 块类型或颜色不一致" + ("" if img_ok else " + 图片数不符") + ("" if len(A)==len(B) else " + 块数不符") + " —— 必须修复后重跑")
+        msg = []
+        if not title_ok: msg.append("标题格式不对齐金标")
+        if not struct_ok: msg.append(f"{bad} 块类型不一致" + ("" if img_ok else "+图片数不符") + ("" if len(A)==len(B) else "+块数不符"))
+        if not color_ok: msg.append("语义配色错配")
+        print(f"\n[FAIL] " + " / ".join(msg) + " —— 必须修复后重跑")
 
 if __name__ == "__main__":
     main()
