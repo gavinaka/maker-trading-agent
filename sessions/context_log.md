@@ -35,6 +35,15 @@
 - **关键事件**:主账户中线多单5/28@73,500本轮**止损出局@68,000兑现**(连同6/2系统预判),中线计划终结;教训=5/28左侧Taker抄底@73,500后价持续下行、浮盈防守层从未激活=位置与趋势背离。
 - 连续止损数升至2(主账户中线+6/1 Maker),逼近≥3门禁锁定线,需降频。
 
+### F. 🔁 出稿稳定性根治(2026-06-03用户连环纠错→深度修)
+- 用户三连纠错:漏基本面配图→漏块类型对齐→漏字体颜色,根因=反应式补丁。最终要求「深度优化稳定性·禁飘逸/幻觉/违规」。
+- **早间Notion页重建3次**,最终页=`374fda35-a098-8121-b51a-c4eb0ec3d796`(前几版已archived);28块逐块+逐run配色100%对齐6/2金标,基本面块后插3张PIL快讯卡(fed鹰派/iran强硬/longs被套)。
+- **新建三道机械门**:门①`outputs/notion_verify_against_yesterday.py <id> morning|evening|review`(对照**2026.6.2冻结金标**GOLD字典·比类型+颜色+图+块数);门②`outputs/report_lint.py <combined.md>`(抓模糊位/占位/臆造约数·负向后顾排除区间);门③回复前自查清单。**全PASS才交付**。
+- **金标page_id**:morning`373fda35…c457`/evening`373fda35…e9d2`/review`373fda35…3e01`。
+- 新记忆:`stability-contract.md`(MEMORY索引第一条·最高优先)、`notion-publish-checklist.md`、`basemian-needs-news-cards.md`(均含配色锚点:红利空/黄中性·理由·策略·**解读标签**/绿利多·支撑·止盈/紫注意事项)。
+- 坑:解读块开头标签恒yellow(即便结论利空)、颜色跟块位置不跟情绪词;脚本禁print emoji(GBK崩,用[PASS]/[FAIL])。
+- 本会话已commit 4次(623dae9日报/c3beaac verifier/91eb9dc金标/3ea200d lint),工作树干净。用户未要求推送其它,收工。
+
 ---
 
 ## 2026-06-02(会话 #9 · 晚间日报 · 系统独立稿)
