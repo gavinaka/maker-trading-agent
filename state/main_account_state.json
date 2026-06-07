@@ -1,4 +1,5 @@
 {
+"_status": "参考设计快照·真相源=Notion+skill·不保证实时（见仓库 README 双层说明）",
 "system_version": "2026.5",
 "account_type": "main",
 "exchange": "Binance",
@@ -14,7 +15,7 @@
 "position_status": {
 "symbol": "BTCUSDT",
 "direction": "long",
-"holding_status": "holding",
+"holding_status": "closed",
 "position_size_usd": 1000,
 "position_ratio": "30%（底仓）",
 "average_entry": 73500,
@@ -22,16 +23,20 @@
 "take_profit": 78000,
 "stop_loss": 71000,
 "entry_date": "2026-05-28",
+"exit_date": "2026-05",
+"exit_price": 68000,
+"realized_pnl_usd": -40,
+"realized_pct": "-8%",
 "entry_reason": "结构性支撑区间+高盈亏比反弹+大级别趋势确认价格行为关键点（左侧 Taker）",
-"_correction": "原 short @79150 已于 5/27 到达中线TP止盈出局；本地此前误挂为持空+35%，2026-05-30 据 Notion（主）交易Check 校正"
+"_correction": "【❌已订正】此前误记为 holding（持仓中·TP78000/SL71000）。据 Notion（主）交易Check 实际为：触发第三层防守计划后止损出局@68000，盈亏 -40USD / PCT -8%，状态=已平仓（2026-06-06 据 Notion 真值订正）。// 更早：原 short @79150 已于 5/27 中线TP止盈出局，5/30 据 Notion 校正为反手做多。"
 },
 
 "mid_term_structure": {
-"active_plan": true,
-"plan_type": "中线做多（结构性支撑反弹）",
-"layer_count": 2,
-"current_defense_layer": 0,
-"defense_plan": "第一层：价格触及75500 设日线级别低点为止损并取消加仓；第二层：价格触及76200 设保本损",
+"active_plan": false,
+"plan_type": "中线做多（结构性支撑反弹）— 已于 5 月止损出局",
+"layer_count": 3,
+"current_defense_layer": 3,
+"defense_plan": "第一层：触及75500 设日线低点止损并取消加仓；第二层：触及76200 设保本损；第三层：触及74400 设日线低点止损（实际：流动性持续流出+买方势能极弱→触发第三层后止损出局@68000）",
 "breakeven_active": false,
 "dynamic_stop_loss": false},
 
@@ -54,6 +59,7 @@
 "execution_rules": {
 "follow_score_system": true,
 "follow_main_account_restrictions": true,
+"_follow_main_account_restrictions_note": "指主账户自身执行受其自有规则约束；不表示主账户约束 Maker（两账户互不干扰，2026-05-31 订正）",
 "allow_manual_override": false,
 "require_full_checklist": true
 },
@@ -65,12 +71,12 @@
 "CME FedWatch"
 ],
 
-"last_update": "2026-05-30（据 Notion 交易Check 校正持仓）",
+"last_update": "2026-06-06（据 Notion 交易Check 校正：5/28 中线做多已止损平仓）",
 "notes": [
 "主账户负责中线方向锚定",
 "Maker账户和主账户互不干扰",
 "当前系统核心目标：洁净样本打造",
-"2026-05-30 重要校正：原挂 short@79150+35% 为过期数据；真实为 5/27 空单止盈出局后、5/28 反手做多 @73500（底仓30%/$1000/5x，TP78000 SL71000，持仓中）。来源 Notion（主）交易Check 最新行。",
+"2026-06-06 重要校正：5/28 反手做多 @73500（底仓30%/$1000/5x）已止损出局——触发第三层防守计划后于 68000 平仓，盈亏 -40USD / PCT -8%，状态=已平仓。来源 Notion（主）交易Check（唯一真实数据源）。月末主账户空仓。",
 "Maker 当前无持仓：最近一笔 5/29 做多 $800 短线已止损出局（小亏~$9）。来源 Notion（Maker）交易Check。"
 ]
 }

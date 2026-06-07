@@ -12,7 +12,7 @@
 * `state/maker_state.json`（持仓 / 计划状态）
 * `state/main_account_state.json`
 * `state/score_state.json`
-* `outputs/<today>_*.txt`（当日所有计划与日报）
+* `outputs/<today>_*.md` / `_*.docx`（当日所有计划与日报；原 .txt 已迭代为 .md/.docx）
 * `outputs/<today>_news_summary.json`
 * `outputs/<today>_footprint_*.json`
 * `outputs/<today>_risk_decisions/*.json`（risk_agent allow/deny 历史）

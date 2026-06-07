@@ -1,6 +1,7 @@
 # 输出报告总规范（图谱第十六节）
 
 > 系统所有产出文件的统一规范。任何 agent 写文件前必须读本文件。
+> ⚠️【已迭代·2026-05/06】实际交付格式 = **.docx（python-docx）+ Notion 子页（🌅/🌙/🔍）**，见 agents/output_agent.md 与 /daily-report skill。下文的 `.txt 桌面合并版` 为参考设计层旧格式、已停用。
 
 ---
 

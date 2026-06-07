@@ -1,4 +1,5 @@
 {
+"_status": "参考设计快照·真相源=Notion+skill·不保证实时（见仓库 README 双层说明）",
 "system_version": "2026.5",
 "account_type": "maker",
 "exchange": "OKX",
@@ -8,13 +9,9 @@
 "primary_strategy": "高空 / 反弹空",
 "default_entry_type": "left_side",
 
-"main_account_binding": {
-"enabled": true,
-"follow_main_bias": true,
-"current_main_cannot_do": ["做多"],
-"allowed_direction": [
-"short"
-]
+"maker_direction": {
+"_note": "方向由当天 Maker『不能做』回填决定·与中线/主账户互不干扰（2026-05-31 订正）·映射见 constitution/cannot_do_mapping.md",
+"today_cannot_do": null
 },
 
 "score_requirement": {
@@ -93,6 +90,7 @@
 "enabled": true,
 "target_clean_trades": 50,
 "current_progress_pct": 22,
+"_source": "真值见 Notion『系统50笔』库；current_progress_pct 为历史快照、不保证实时",
 "count_violation_trade": false
 },
 
@@ -107,7 +105,7 @@
 
 "notes": [
 "Maker账户属于日内执行层",
-"禁止脱离主账户方向限制",
+"Maker 与中线互不干扰，方向以当天 Maker『不能做』为准（2026-05-31 订正）",
 "允许错过，不允许乱做",
 "系统一致性高于短期盈亏"
 ]

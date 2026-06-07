@@ -3,7 +3,7 @@
 > 主账户 = Binance 上的 BTC USDT 永续合约中线持仓账户。
 > 决定**自身中线大方向**（基本面>盘面>盘口）；**与 Maker 计划互不干扰，一直如此**。
 > ⚠️ 订正（2026-05-31）：「不能做」是**当天 Maker** 字段、与中线无关，**不**由主账户决定，旧表述已改（见 `memory/cannot-do-is-maker-only.md`）。
-> 当前持仓：BTCUSDT short @ 79150 / 50% / 5x（截至 2026-05-29）。
+> 当前持仓：动态数据，**真值以 Notion（主）交易Check 为准**（5/29-30 曾因沿用过期 short@79150 失真）；下文具体点位为历史示例、仅示意结构。
 
 ---
 
@@ -70,10 +70,9 @@ TP1：66000（减仓）
 | 第四层 | 价格触及 XXXX | 减仓 20% |
 | 第五层 | 价格再次触及 XXXX | 止损设为当周线级别极点高点 |
 
-### 当前持仓的 5 层实例（BTCUSDT short @ 79150，2026/04/19 起）
+### 5 层防守实例（历史示例 · BTCUSDT short @ 79150，2026/04/19 起）
 
-> 取自 `state/main_account_state.json.mid_term_structure`
-> 当前已激活：第 5 层（保本损 + 动态止损均生效）
+> ⚠️ 此为历史持仓的结构示例（仅示意 5 层防守如何展开）；**当前真实持仓以 Notion（主）交易Check 为准**，该 short@79150 实为已平仓旧单。
 
 | 层 | 触发条件（当前持仓的具体价位） | 操作 |
 |---|---|---|
@@ -136,7 +135,9 @@ new_avg = (old_qty × old_avg + add_qty × add_price) / (old_qty + add_qty)
 
 ---
 
-## 当前持仓快照（state/main_account_state.json）
+## 持仓快照（历史示例 · 真相源=Notion（主）交易Check）
+
+> ⚠️ 持仓为动态数据，以 Notion 最新行为准；`state/` 为参考快照。下方 JSON 为历史结构示例（short@79150 实为已平仓旧单）。
 
 ```json
 "position_status": {

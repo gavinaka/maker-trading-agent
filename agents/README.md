@@ -1,5 +1,7 @@
 # Agents 索引
 
+> ⚠️ **参考设计层**：本目录的 10 个 Agent + `session_orchestrator` 自动机为**设计稿**，当前**未作为自动机运行**；每日实际运行 = `/daily-report` skill + `sessions/日报SOP.md` + 项目 `memory/` + Notion REST + `outputs/*.py`。真相源 = Notion 对应库。详见仓库 README「双层架构说明」。
+>
 > Trading-System 内 **10 个 Agent** 的总览 + 调用关系图。
 > 所有 Agent 由 `session_orchestrator` 统一调度（agent 之间不互相直接调用）。
 

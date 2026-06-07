@@ -1,4 +1,5 @@
 {
+  "_status": "参考设计快照·真相源=Notion+skill·不保证实时（见仓库 README 双层说明）",
   "system_version": "2026.5",
   "module": "market",
   "status": "active",
@@ -32,8 +33,7 @@
       "role": "main_account",
       "purpose": [
         "中线持仓",
-        "趋势锚定",
-        "方向限制"
+        "趋势锚定"
       ]
     },
 
@@ -201,33 +201,11 @@
     ]
   },
 
-  "main_to_maker_mapping": {
-    "cannot_long": {
-      "maker_allowed_direction": [
-        "short"
-      ],
-
-      "execution_style": [
-        "高空",
-        "反弹空"
-      ]
-    },
-
-    "cannot_short": {
-      "maker_allowed_direction": [
-        "long",
-        "short"
-      ],
-
-      "execution_style": [
-        "低多",
-        "反弹空"
-      ]
-    },
-
-    "cannot_chase": {
-      "maker_behavior": "观望优先"
-    }
+  "maker_cannot_do_mapping": {
+    "_note": "当天 Maker『不能做』→可做方向（Maker 内部·与主账户无关，2026-05-31 订正）。权威=constitution/cannot_do_mapping.md（做X禁全方向 / 追X只禁右侧追单）",
+    "cannot_long":  { "maker_allowed_direction": ["short"], "execution_style": ["高空", "反弹空"] },
+    "cannot_short": { "maker_allowed_direction": ["long"], "execution_style": ["低多"] },
+    "cannot_chase": { "maker_behavior": "观望优先" }
   },
 
   "liquidity_logic": {

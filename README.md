@@ -6,6 +6,16 @@
 
 ---
 
+## ⚠️ 双层架构说明（先读 · 2026-06）
+
+> 本仓库分两层：
+> - **参考设计层**：`agents/` + `state/` + `session_orchestrator`（链 A/B/C/D 自动机）—— **设计稿，当前未作为自动机运行**。
+> - **实际运行层（每天真跑）**：`/daily-report` skill + `sessions/日报SOP.md` + 项目 `memory/` 用户拍板决策 + Notion REST + `outputs/*.py`（出 .docx + 推 Notion 🌅🌙🔍 子页 + verifier/lint 三门）。
+>
+> **真相源 = Notion 对应库**：持仓→（主/Maker）交易Check；门禁→开仓前状态门禁库；心力/心智→对应库；洁净进度→系统50笔库。**`state/` 6 个 JSON 为历史快照、不保证实时**。下文具体持仓/进度数字均以 Notion 为准。
+
+---
+
 ## 核心理念（来自宪法）
 
 > "错过不是错误，乱做才是。"
@@ -15,7 +25,7 @@
 
 ## 系统目标
 
-完成 **50 笔 100% 按系统执行的洁净 Maker 交易**（当前进度 22% / 11 笔）
+完成 **50 笔 100% 按系统执行的洁净 Maker 交易**（进度以 Notion『系统50笔』库为准；22% / 11 笔为 2026.4 末快照）
 
 ---
 
@@ -175,14 +185,13 @@ Trading-System/
 
 ---
 
-## 当前持仓快照（state/main_account_state.json）
+## 当前持仓快照（真相源：Notion 两库交易Check）
 
-- **BTCUSDT short @ 79150**
-- 仓位 $500 / 50% / 5x
-- 中线计划：5 层防守已激活（保本损 + 动态止损）
-- cannot_do：做多
+> ⚠️ 持仓为动态数据，**以 Notion（主）/（Maker）交易Check 最新行为准**，README 不再硬编码点位
+> （避免陈旧：5/29-30 曾因沿用过期 short@79150 失真）。开场由 `/notion-positions` 校准，详见 `sessions/日报SOP.md` §2。
 
-→ Maker 仅允许做空（高空 / 反弹空，左侧为主）
+- 主账户：中线持仓 + 防守层状态 → 见 `state/main_account_state.json`（同样以 Notion 为准）
+- Maker：方向由**当天 Maker『不能做』**回填决定，**与主账户互不干扰**（2026-05-31 订正）
 
 ---
 
