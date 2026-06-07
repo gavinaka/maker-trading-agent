@@ -77,8 +77,8 @@
 - **永远走 REST API，永远用 PowerShell `Invoke-RestMethod`。**
   - ❌ 不调 `mcp__...__notion-*`（连接器一直 403，已弃用）。
   - ❌ 不用 `python3`/`python`（本机是 Windows 商店 stub，curl|python3 静默返回空）。
-- **令牌唯一**：`***REMOVED***`（用户确认从未更新；对话里出现的其它串忽略；除非报 401 才换）。
-- **header**：`@{ "Authorization"="Bearer $tok"; "Notion-Version"="2022-06-28"; "Content-Type"="application/json" }`
+- **令牌唯一**：从环境变量 `$env:NOTION_TOKEN` 读取（**禁止把 token 明文写进任何入库文件**）。本机未设时临时设置：`$env:NOTION_TOKEN="<你的_ntn_token>"`（仅当前会话有效、不落盘）。token 由用户私下提供，对话里出现的其它串忽略；除非报 401 才换。
+- **header**：`$tok=$env:NOTION_TOKEN; @{ "Authorization"="Bearer $tok"; "Notion-Version"="2022-06-28"; "Content-Type"="application/json" }`
 - **持仓在两库**（取最新一条，按 created_time desc）：
   - （主）交易Check：`212fda35-a098-809f-bb92-c681fad1b12f`
   - （Maker）交易Check：`21bfda35-a098-8062-a0a5-c7cb3f3e1f34`
