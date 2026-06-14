@@ -17,21 +17,22 @@
     },
     "sources": {
       "type": "object",
-      "required": ["exocharts", "coinglass", "blockbeats", "fedwatch"],
+      "required": ["exocharts", "coinglass", "blockbeats", "fedwatch", "tradingview"],
       "properties": {
         "exocharts":  { "$ref": "#/definitions/source" },
         "coinglass":  { "$ref": "#/definitions/source" },
         "blockbeats": { "$ref": "#/definitions/blockbeats_source" },
-        "fedwatch":   { "$ref": "#/definitions/source" }
+        "fedwatch":   { "$ref": "#/definitions/source" },
+        "tradingview": { "$ref": "#/definitions/tradingview_source" }
       }
     },
     "all_complete": {
       "type": "boolean",
-      "description": "true 表示 4 源全部 valid:true 且时效内"
+      "description": "true 表示 5 源全部 valid:true 且时效内（TradingView 须日/4H/1H/15m 四档齐）"
     },
     "missing": {
       "type": "array",
-      "items": { "type": "string", "enum": ["exocharts", "coinglass", "blockbeats", "fedwatch"] },
+      "items": { "type": "string", "enum": ["exocharts", "coinglass", "blockbeats", "fedwatch", "tradingview"] },
       "description": "缺失或过期的源列表"
     }
   },
@@ -77,6 +78,20 @@
           "type": "integer",
           "minimum": 1,
           "description": "当日截图数量；0 视为失败"
+        }
+      }
+    },
+    "tradingview_source": {
+      "type": "object",
+      "allOf": [{ "$ref": "#/definitions/source" }],
+      "required": ["captured_by", "captured_at", "files", "valid", "timeframes"],
+      "properties": {
+        "timeframes": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["1d", "4h", "1h", "15m"] },
+          "minItems": 4,
+          "uniqueItems": true,
+          "description": "🟥 必须四档齐 [1d,4h,1h,15m]，缺任一档 valid 视为 false（五源未齐=硬停）"
         }
       }
     }

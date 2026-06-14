@@ -5,8 +5,9 @@
 
 ## 输入
 * `inbox/<today>/_manifest.json`
-* `inbox/<today>/exocharts_*.json`
-* `inbox/<today>/coinglass_*.json`
+* `inbox/<today>/exocharts_*.json`（盘口印证/footprint）
+* `inbox/<today>/coinglass_*.json`（盘口核心读数）
+* `inbox/<today>/tradingview_*.json`（盘面30核心源·日/4H/1H/15m 四档）
 * `scoring/scoring_system.md`
 * `scoring/orderflow_scoring.md`
 * `scoring/chart_scoring.md`
@@ -31,10 +32,11 @@
 ## Phase 1: 前置检查
 
 1. 读 manifest
-2. 校验：
-   * `sources.exocharts.valid == true`
-   * `sources.coinglass.valid == true`
-   * 两者 `freshness_minutes <= 240`（4小时新鲜，按 freshness_rules.md）
+2. 校验（🟥 五源缺一不可，盘口+盘面各自核心源必须有效）：
+   * `sources.coinglass.valid == true`（盘口70核心）
+   * `sources.exocharts.valid == true`（盘口印证）
+   * `sources.tradingview.valid == true`（盘面30核心·须日/4H/1H/15m 四档齐）
+   * 各源 `freshness_minutes <= 240`（4小时新鲜，按 freshness_rules.md）
 3. 任一不通过 → **中止评分**，写：
    ```
    score_state.current_score.result = "数据不全，无法评分"
@@ -42,21 +44,18 @@
    ```
    退出。不允许沿用上次 score。
 
-## Phase 2: 极端信号检查（优先级最高）
+## Phase 2: 极端候选检查（优先级最高）
 
-按 `scoring/score_thresholds.md` 极端组合：
+按 `scoring/score_thresholds.md` 极端候选；**2026-06-14 改：极端=候选，非机械必做 70**：
 
 ```
-看跌背离：CVD up + Price down + OI up_or_sideways + Funding positive
-  → orderflow_score = 70, total_score = 70（直接达门槛）, signal="看跌背离", extreme_signal=true
-  → 推荐方向：做空
+看跌背离候选：CVD up + Price down + OI up_or_sideways + Funding positive  → extreme_signal=true, signal="看跌背离", 推荐做空
+看涨背离候选：CVD down + Price up + OI up_or_sideways + Funding negative  → extreme_signal=true, signal="看涨背离", 推荐做多
 
-看涨背离：CVD down + Price up + OI up_or_sideways + Funding negative
-  → orderflow_score = 70, total_score = 70, signal="看涨背离", extreme_signal=true
-  → 推荐方向：做多
+⚠️ orderflow_score 不再锁 70：取 footprint.suggested_orderflow_score（真极端 70 / 接近极端 60，由个人综合·备注定）。
 ```
 
-命中 → 直接跳到 Phase 5。
+命中 → 标记 extreme_signal=true，**仍走 Phase 3 取 footprint 分（不跳过、不锁 70）**。
 
 ## Phase 3: 盘口评分（满分 70）
 
@@ -71,9 +70,9 @@
 校验：
 * `orderflow_score ∈ [0, 70]`
 * `data_quality != "partial"`（否则中止）
-* 命中极端（C01/C02）→ orderflow_score 必须等于 70（footprint_agent 保证）
+* 命中极端候选 → orderflow_score 取 footprint（真极端 70 / 接近极端 60，**非机械锁 70**；由个人综合·备注定）
 
-完整 16 组合分值表见 `agents/footprint_agent.md`。
+完整 81 组合客观骨架 + 综合权衡引擎见 `scoring/orderflow_methodology.md`（旧 16 组合死查表废弃）。
 
 ## Phase 4: 盘面评分（满分 30）
 
@@ -88,12 +87,15 @@
 | 5 | 斐波/趋势线接近度 | **2** | 价格接近关键斐波位（0.618/0.786）或趋势线 → 高 |
 | | **合计上限** | **30** | |
 
-各项独立打分，求和 → `market_structure_score ∈ [0, 30]`。
+各项独立打分，求和 → `market_structure_score ∈ [0, 30]`。极致分档阈值见 [`scoring/chart_methodology.md`](../scoring/chart_methodology.md) 四节（每项 0→max 触发条件 + 校准锚）。
 
 **说明**：
-* 结构性趋势仅作背景参考，不计入此项评分
+* 🟥 **两轴分离**：盘面30 = 机会质量/结构清晰度，**与方向/趋势无关**；方向由「结构性趋势」（道氏理论·见方法论三节）单独给，严禁把高盘面分读成看多/看空。
+* 结构性趋势 = 道氏（HH+HL多头/LH+LL空头/否则震荡），逐周期独立、日报只报短线/中短线，仅作背景参考、不计入此项评分
+* SMA20 项测「价格与 SMA20 的交互/远近」，非趋势强度：单边远离=0
+* 早 11:00 / 晚 20:00 各自独立重评，禁沿用上一次
 * 单项可为 0（指标不适用 / 无数据）
-* 单项给分必须可追溯到 inbox 内 exocharts 截图证据
+* 单项给分必须可追溯到 inbox 内 **TradingView 四档（日/4H/1H/15m）截图证据**（盘面=TradingView 核心源，非 exocharts；2026-06-14 订正）
 
 ---
 
@@ -109,7 +111,7 @@ scoring_agent 输出必须能复现以下历史样本（误差 ±10 内）：
 | 2026-05-24 11:00 | 50 | 20 | 70 | 刚达标，回调做多 |
 | 2026-05-26 11:00 | 40 | 10 | 50 | 未达，观望 |
 
-若给定相同四维数据与同期截图无法复现这些值 → footprint_agent 的 14 普通组合分值需校准。
+若给定相同四维数据与同期截图无法复现这些值 → 按 `scoring/orderflow_methodology.md`（81 骨架 + 综合权衡 + 真实校准锚）重新校准。
 
 ## Phase 5: 汇总
 
@@ -151,5 +153,5 @@ total_score = orderflow_score + market_structure_score
 # 异常处理
 
 * 数据字段缺失 → 该子项 0 分，记 note，不猜
-* exocharts 与 coinglass 方向冲突 → 按 exocharts 优先（按 `market_state.orderflow_system.priority: highest`），但写 note 提示冲突
+* exocharts 与 coinglass 方向冲突 → **以 coinglass 核心读数为准**（盘口四变量解读核心=coinglass 截图；exocharts 仅印证/更细颗粒参照），写 note 提示冲突。`orderflow_system.priority: highest` 指盘口系统整体优先级最高，非 exocharts 优先（2026-06-14 用户校准）
 * signal_type 不确定 → "中性"

@@ -1,13 +1,14 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "MarketData",
-  "description": "盘口 + 盘面采集数据统一结构（exocharts_*.json / coinglass_*.json 内容遵循此 schema）",
+  "description": "盘口(exocharts印证/coinglass核心) + 盘面(tradingview核心) 采集数据统一结构（2026-06-14 订正：盘面源=TradingView 四档·非exocharts）",
   "type": "object",
   "oneOf": [
     { "$ref": "#/definitions/exocharts_record" },
     { "$ref": "#/definitions/coinglass_funding_record" },
     { "$ref": "#/definitions/coinglass_oi_record" },
-    { "$ref": "#/definitions/coinglass_cvd_record" }
+    { "$ref": "#/definitions/coinglass_cvd_record" },
+    { "$ref": "#/definitions/tradingview_record" }
   ],
   "definitions": {
     "direction_enum": {
@@ -48,7 +49,46 @@
             "resistance": { "type": "array", "items": { "type": "number" } }
           }
         },
+        "footprint_signals": {
+          "type": ["object", "null"],
+          "description": "exocharts 微观订单流印证因子（无档位则 null·禁臆造，2026-06-14 增）",
+          "properties": {
+            "absorption": { "type": "string", "enum": ["buy_absorbed", "sell_absorbed", "none"] },
+            "imbalance": { "type": "string", "enum": ["stacked_bid", "stacked_ask", "scattered", "none"] },
+            "poc": {
+              "type": "object",
+              "properties": {
+                "shift": { "type": "string", "enum": ["up", "down", "flat"] },
+                "price_vs_poc": { "type": "string", "enum": ["far", "near"] }
+              }
+            }
+          }
+        },
         "note": { "type": "string" }
+      }
+    },
+    "tradingview_record": {
+      "type": "object",
+      "description": "盘面30核心源·四档之一（2026-06-14 增）",
+      "required": ["source", "symbol", "timeframe", "captured_at", "trend"],
+      "properties": {
+        "source": { "const": "tradingview" },
+        "symbol": { "type": "string", "enum": ["BTCUSDT", "ETHUSDT"] },
+        "exchange": { "type": "string" },
+        "timeframe": { "type": "string", "enum": ["15m", "1h", "4h", "1d"] },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "last_close": { "type": "number" },
+        "trend": { "type": "string", "enum": ["up", "down", "range"] },
+        "structure": { "$ref": "#/definitions/structure_enum" },
+        "sma20_relation": { "type": "string", "enum": ["above", "below", "retest_confirm", "none"] },
+        "support": { "type": "array", "items": { "type": "number" } },
+        "resistance": { "type": "array", "items": { "type": "number" } },
+        "fib_or_trendline": { "type": "string", "enum": ["near_0.618", "near_0.786", "near_trendline", "none"] },
+        "vrvp_poc": { "type": "number" },
+        "price_vs_poc": { "type": "string", "enum": ["far", "near"] },
+        "channel_position": { "type": "string", "enum": ["upper_edge", "mid", "lower_edge", "none"] },
+        "volume_price": { "type": "string", "enum": ["放量上涨", "放量下跌", "缩量震荡", "背离", "none"] },
+        "level_conclusion": { "type": "string", "enum": ["中性", "利多", "利空"] }
       }
     },
     "coinglass_funding_record": {

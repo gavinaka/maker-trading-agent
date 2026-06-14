@@ -63,18 +63,20 @@ Trading-System/
 │   ├── freshness_rules.md             ← 数据时效（≤4h/6h）
 │   ├── blockbeats_rules.md            ← BlockBeats 专项
 │   ├── fedwatch.md                    ← FedWatch 专项
-│   ├── collectors/                    ← 4 个采集 SOP
+│   ├── collectors/                    ← 5 个采集 SOP
 │   │   ├── exocharts.md
 │   │   ├── coinglass.md
 │   │   ├── blockbeats.md
-│   │   └── fedwatch.md
+│   │   ├── fedwatch.md
+│   │   └── tradingview.md
 │   └── inbox/                         ← 每日采集投递盒
 │       └── YYYY-MM-DD/
 │           ├── _manifest.json         ← 采集清单
 │           ├── exocharts_btc_*.{png,json}
 │           ├── coinglass_*.{png,json}
 │           ├── blockbeats_*.{png,txt}
-│           └── fedwatch.{png,json}
+│           ├── fedwatch.{png,json}
+│           └── tradingview_btc_*.{png,json}  ← 日/4H/1H/15m 四档
 │
 ├── scoring/                           ← 评分系统
 │   ├── scoring_system.md              ← 70+30 总框架
@@ -239,14 +241,15 @@ Trading-System/
 
 ---
 
-## 4 个必抓数据源（图谱二节）
+## 5 个必抓数据源（图谱二节 · 缺一不可，2026-06-14 订正补回 TradingView）
 
-| 源 | URL | 记录方式 |
-|---|---|---|
-| Exocharts | https://exocharts.com/web/ | 文字 + 截图 |
-| Coinglass | https://www.coinglass.com/tv/zh/Bybit_BTCUSDT | 文字 + 截图 |
-| **BlockBeats** | https://www.theblockbeats.info/newsflash | **必须截图（硬规则）** |
-| CME FedWatch | https://www.cmegroup.com/.../cme-fedwatch-tool.html | 文字 + 截图 |
+| 源 | URL | 记录方式 | 评分角色（2026-06-14 校准） |
+|---|---|---|---|
+| **Coinglass** | https://www.coinglass.com/tv/zh/Bybit_BTCUSDT | 文字 + 截图 | 🟥 **盘口(70)解读核心源**·四变量同屏(CVD/价格/OI/资金费率) |
+| Exocharts | https://exocharts.com/web/ | 文字 + 截图 | 盘口**印证** + 更细颗粒度(footprint)参照·**非主源**·冲突以 Coinglass 为准 |
+| **BlockBeats** | https://www.theblockbeats.info/newsflash | **必须截图（硬规则）** | 基本面/行业新闻 |
+| CME FedWatch | https://www.cmegroup.com/.../cme-fedwatch-tool.html | 文字 + 截图 | 宏观/利率预期 |
+| **TradingView** | BTCUSDT·Binance | **截图（日/4H/1H/15m 四档齐）** | 🟥 **盘面(30)解读核心源**·日线/小时→技术评分+趋势+支撑压力·15m→Maker入场把关 |
 
 ---
 

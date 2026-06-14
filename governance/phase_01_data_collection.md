@@ -1,8 +1,9 @@
 # Phase 01 — Data Collection（拆分细则）
 
 > 本文件细化 `governance/workflow.md` 的 Phase 01。
-> 原 Phase 01 仅描述"读取 4 个数据源"，未定义采集失败、数据时效、降级路径。
+> 原 Phase 01 仅描述"读取数据源"，未定义采集失败、数据时效、降级路径。
 > 本文件补齐采集流程契约。
+> 🟥 **2026-06-14 订正：必抓源为 5 个（缺一不可）= BlockBeats / Exocharts / Coinglass / FedWatch / TradingView（TV 须日/4H/1H/15m 四档齐）。** 旧文"4 源"漏了 TradingView。
 
 ---
 
@@ -85,9 +86,10 @@ session_state.current_day 触发 →
 
 # 失败传播规则
 
-* Phase 01b 全部 4 源失败 → scoring_agent 直接退出，写 `current_score.result = "数据完全缺失"`
-* Phase 01b 部分失败 → scoring_agent 仍可运行，但 result 自动降级（缺 exocharts → orderflow_score 不可算 → total 必 < 70 → 强制观望）
-* output_agent 永远可以生成日报；缺失字段标"待补充（数据源失败）"
+* Phase 01b 全部 5 源失败 → scoring_agent 直接退出，写 `current_score.result = "数据完全缺失"`
+* 🟥 **五源缺一不可（含 TradingView 四档）→ 任一源缺失即硬停，不评分、不出稿**（宪法级，见 `data_sources/required_sources.md` 数据缺失规则）
+* 缺 Coinglass → 盘口(70) orderflow_score 不可算；缺 TradingView → 盘面(30) market_structure_score 不可算；任一不可算 → total 必降级 → 强制观望
+* output_agent 永远可以生成日报骨架；缺失字段标"待补充（数据源失败）"
 
 ---
 

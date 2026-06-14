@@ -33,6 +33,9 @@
 | Coinglass | A → B → C |
 | BlockBeats | A → C（禁止 B） |
 | FedWatch | A → B → C |
+| TradingView | C（用户截图·日/4H/1H/15m 四档齐，2026-06-14 补） |
+
+> 🟥 必抓源为 5 个（缺一不可），TradingView 须四档齐，缺任一档=五源未齐=硬停。SOP 见 `data_sources/collectors/tradingview.md`。
 
 ## Phase 3: 按 SOP 采集
 
@@ -80,7 +83,7 @@
 {
   "date": "<today>",
   "captured_at": "<最近一次更新时间>",
-  "sources": { ... 4 源 ... },
+  "sources": { ... 5 源（exocharts/coinglass/blockbeats/fedwatch/tradingview）... },
   "all_complete": <bool>,
   "missing": [<失败源名>...]
 }
@@ -105,6 +108,6 @@
 
 # 时间预算
 
-* 4 源完整采集（全 A 通道顺序执行）目标 ≤ 5 分钟
+* 5 源完整采集目标 ≤ 5 分钟（TradingView 走 C 用户截图·四档齐）
 * 单源超时 60s 视为失败
 * 整体预算超 10 分钟 → 中止剩余源，记 `missing[]`，让 scoring_agent 走"待补充"分支

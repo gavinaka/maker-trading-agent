@@ -12,7 +12,8 @@
 
 # 评分数据（盘口 + 盘面）
 
-来源：Exocharts / Coinglass
+来源：盘口(70)=Coinglass（核心）/ Exocharts（印证）；盘面(30)=TradingView（日/4H/1H/15m 四档·核心）
+> 🟥 2026-06-14 订正：盘面源为 TradingView（旧文漏列）；四档缺一=五源未齐=硬停。
 
 | 采集时间 | 状态 | 允许动作 |
 |---|---|---|

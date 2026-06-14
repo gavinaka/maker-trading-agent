@@ -74,7 +74,7 @@ BTC（策略）：[观望]
   理由：
     - 总评分 50 未达 70 门槛（数据陈旧 3 日，待 11:00 重评）
     - 当天 Maker 不能做多（拥挤侧）→ 仅偏空，但分数未达
-    - 4 个数据源全部待采集（Exocharts / Coinglass / BlockBeats / FedWatch）
+    - 5 个数据源全部待采集（Exocharts / Coinglass / BlockBeats / FedWatch / TradingView 四档）
 
   执行概率：0%
   注意事项：若 11:00 评分点重评后达标且方向匹配（做空），可重新生成计划

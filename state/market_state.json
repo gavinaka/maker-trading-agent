@@ -168,6 +168,10 @@
   },
 
   "market_structure_scoring": {
+    "required_data_sources": ["TradingView"],
+    "required_timeframes": ["1d", "4h", "1h", "15m"],
+    "data_source_note": "盘面30核心源=TradingView四档（非Exocharts）·四档缺一=五源未齐硬停·2026-06-14订正",
+
     "support_resistance": {
       "max_score": 10
     },

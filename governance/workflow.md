@@ -18,15 +18,16 @@
 # Phase 01 — Market Data Collection
 每日必须读取：
 
-## Exocharts
+## Exocharts（🟥 非盘口主源·印证/细颗粒参照，2026-06-14 校准）
+> 核心作用 = 印证 + 更细颗粒度（footprint 足迹）的数据参照，确保 coinglass 盘口判断准确；与 coinglass 冲突时以 coinglass 为准复核，不单方覆盖。
 读取：
-* CVD
-* Price Action
-* 结构走势
+* footprint 足迹（吸收/失衡/POC·印证·无档位则 null）
+* CVD / Price Action / 结构走势（交叉印证，核心读数取 coinglass）
 
-## Coinglass
+## Coinglass（🟥 盘口解读核心源·四变量同屏，2026-06-14 校准）
 读取：
-* CVD方向
+* CVD方向（核心读数）
+* 价格
 * 资金费率
 * 持仓量变化
 
@@ -43,13 +44,20 @@
 * 美联储利率预期
 * 宏观流动性方向
 
+## TradingView（🟥 盘面解读核心源·缺一不可·日/4H/1H/15m 四档，2026-06-14 订正补回必抓源）
+> 旧文把 TradingView 仅列为下方 Phase 01.5 的"附属 check"且只认 15m 一档——已订正为**第 5 必抓源**：缺任一档=五源未齐=硬停。
+读取（BTCUSDT·Binance·四档截图）：
+* 日线 / 4H / 1H → 盘面(30)技术评分（支撑压力/流动性掠夺/SMA20/量价/斐波）+ 趋势确认 + 日内支撑压力
+* 15m → Maker 入场位置最终把关（见 Phase 01.5）
+* 各档含 VRVP 成交量分布 + 用户手绘支撑压力/通道线 + 交易宪法（图右 5 条）
+
 ---
 
-# Phase 01.5 — TradingView 盘面执行 Check（第 5 check，最重要）
+# Phase 01.5 — TradingView 15m 入场执行 Check（Maker 把关，最重要）
 
-> 此 check 是开仓前**入场位置精度**的最终把关，必须在 Maker 策略生成前完成。
+> 此 check 取 TradingView **15m 档**（必抓源四档之一，见上 Phase 01），是开仓前**入场位置精度**的最终把关，必须在 Maker 策略生成前完成。盘面(30)评分则取日线/4H/1H 档。
 
-数据来源：用户每日提供 TradingView BTCUSDT 15min 截图（Binance），含：
+数据来源：TradingView BTCUSDT 15min 截图（Binance），含：
 - VRVP（成交量分布）
 - 用户手绘支撑/压力水平线
 - 通道线（上升/下降通道）
@@ -72,26 +80,21 @@
 ---
 
 # Phase 02 — Score System
-每日固定两次评分：
-* 11:00
-* 20:00
+每日固定两次评分：11:00（早）/ 20:00（晚）。
+🟥 **两次完全独立重评**（市场实时在变，不沿用、不参考上一次）。
 
-评分结构：
+评分结构（🟥 两轴分离：评分=机会质量/清晰度，方向另由信号/趋势给）：
 
-## 盘口评分（70）
-核心：
-* CVD
-* OI
-* Funding
-* Price
+## 盘口评分（70）— 核心源 Coinglass（exocharts 印证）
+* CVD / OI / Funding / Price 四维 → 81 组合骨架 + 综合权衡
+> 权威：`scoring/orderflow_methodology.md`；引擎 `agents/footprint_agent.md`
 
-## 盘面评分（30）
-包含：
-* 支撑压力
-* 流动性
-* SMA20
-* 量价关系
-* 斐波趋势线
+## 盘面评分（30）— 核心源 TradingView 四档（日/4H/1H/15m）
+* 支撑压力(0-10) / 流动性(0-10) / SMA20(0-5) / 量价(0-3) / 斐波趋势线(0-2)
+* **方向轴 = 结构性趋势（道氏理论·HH+HL多头/LH+LL空头/否则震荡·逐周期独立·只报短线/中短线）**
+* 多周期职责：日线=定方向；小时=4H+1H综合；周线=仅每周首交易日(背景)；15m=仅日内Maker(日内支撑压力主参照)
+> 权威：`scoring/chart_methodology.md`；分档速查 `scoring/chart_scoring.md`；评分 `agents/scoring_agent.md` Phase 4
+> 🟥 盘面30 = 机会质量/结构清晰度，**与方向无关**；严禁把高盘面分读成看多/看空
 
 ---
 
