@@ -201,7 +201,7 @@ Trading-System/
 
 ```
 总评分 = 盘口评分（70）+ 盘面评分（30） = 满分 100
-开仓门槛 = ≥ 70 分
+开仓门槛 = ≥ 65 分
 评分频率 = 每日两次（11:00 + 20:00）
 ```
 
@@ -307,7 +307,7 @@ C:/Users/31702/Desktop/<today>_交易计划.txt
 
 | 约束 | 强度 | 来源 |
 |---|---|---|
-| 总评分 ≥ 70 才允许开仓 | 硬规则 | scoring_system.md |
+| 总评分 ≥ 65 才允许开仓 | 硬规则 | scoring_system.md |
 | 单笔止损 ≤ 3% | 硬规则 | risk_checklist.md |
 | 5 项状态门禁任一触发 → 禁交易 | 硬规则 | state_gate.md |
 | 当天 Maker"不能做"→Maker方向（与主账户无关，互不干扰） | 硬规则 | cannot_do_mapping.md |

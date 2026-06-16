@@ -26,7 +26,7 @@
 **胜率高于 60% 极强共振支撑**
 
 #### 核心要求
-* 必须经过完整评分系统（总分 ≥ 70）
+* 必须经过完整评分系统（总分 ≥ 65）
 * 需要多重技术信号共振：
   - 支撑压力
   - 流动性
@@ -100,7 +100,7 @@ risk_agent **Gate 4** 严格校验，超出 → deny。
 |---|---|---|
 | 做多 | 只做空（高空 / 反弹空） | 入场区：日内压力区间 |
 | 做空 | 只做多（低多） | 支撑区反弹买入 |
-| 追多空 | 观望优先 | 震荡结构，评分通常 < 70 |
+| 追多空 | 观望优先 | 震荡结构，评分通常 < 65 |
 
 详见 `constitution/cannot_do_mapping.md`（已改 Maker 内部）。
 
@@ -147,7 +147,7 @@ risk_agent **Gate 4** 严格校验，超出 → deny。
 "primary_strategy": "高空 / 反弹空",
 "default_entry_type": "left_side",
 "score_requirement": {
-  "minimum_total_score": 70
+  "minimum_total_score": 65
 },
 "clean_sample_system": {
   "enabled": true,

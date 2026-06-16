@@ -28,7 +28,7 @@
     "risk_checklist":      { "pass": bool, "failed_items": [...] },
     "direction_gate":      { "pass": bool, "allowed": ["short|long|none"], "reason": "第二层·当天不能做判定" },
     "position_limits":     { "pass": bool, "reason": "..." },
-    "score_threshold":     { "pass": bool, "current_score": N, "required": 70 },
+    "score_threshold":     { "pass": bool, "current_score": N, "required": 65 },
     "defense_layer":       { "current_layer": N, "must_action": "..." }
   }
 }
@@ -64,7 +64,7 @@
 |---|---|---|
 | 1 | 是否记录交易计划 | `request.plan_recorded == true` AND 计划已写入 `outputs/<today>_maker_*.txt` |
 | 2 | 是否符合风险敞口要求 | 单笔 size ≤ 账户净值 × 单笔风险上限 |
-| 3 | 是否完成技术面确认 | `score_state.current_score.total_score >= 70` AND footprint 输出存在 |
+| 3 | 是否完成技术面确认 | `score_state.current_score.total_score >= 65` AND footprint 输出存在 |
 | 4 | 是否设置好止损止盈 | `request.sl > 0` AND `request.tp > 0` AND R:R ≥ 1:2.5 |
 | 5 | 是否在规定交易时间内 | 当前时间在 risk_state.risk_checks.allowed_trading_time |
 | 6 | 是否严格按入场信号执行 | 当前价在计划入场区间 ±0.5% 内 |
@@ -114,17 +114,17 @@
 # Gate 5：评分门槛
 
 ```
-score_state.current_score.total_score < 70 AND extreme_signal == false
-  → deny，理由"评分 X < 70 且无极端信号"
+score_state.current_score.total_score < 65 AND extreme_signal == false
+  → deny，理由"评分 X < 65 且无极端信号"
 
 score_state.current_score.total_score == null（数据不全）
   → deny，理由"评分缺失"
 
-score_state.current_score.total_score >= 70（或 extreme_signal）
-  → pass：≥70 必须挂 Maker 单（2026-06-01 用户拍板"≥70 必开"）
+score_state.current_score.total_score >= 65（或 extreme_signal）
+  → pass：≥65 必须挂 Maker 单（2026-06-01 确立必开制，2026-06-16 门槛由 70 下调至 65）
 ```
 
-> **≥70 不得再以"入场位置不优"为由 deny/观望**（旧 ⑤源位置否决已废）。位置质量改由**挂单价=高质量边缘**保证：Maker 限价单挂在边缘等待，价不触及自然不成交，绝不追价。本 Gate 仍只管"分够不够 + 数据新不新"，门禁(Gate1)/不能做(Gate3)/风控(Gate2)仍可独立 deny。见 `memory/score70-must-place-maker.md`。
+> **≥65 不得再以"入场位置不优"为由 deny/观望**（旧 ⑤源位置否决已废）。位置质量改由**挂单价=高质量边缘**保证：Maker 限价单挂在边缘等待，价不触及自然不成交，绝不追价。本 Gate 仍只管"分够不够 + 数据新不新"，门禁(Gate1)/不能做(Gate3)/风控(Gate2)仍可独立 deny。见 `memory/score70-must-place-maker.md`。
 
 时效检查（联动 freshness_rules.md）：
 * `score_state.last_update` 超过 6 小时 → deny + 触发重评分

@@ -12,7 +12,7 @@
 
 BTC（策略）：[观望]
   理由（按优先级，至少 1 条，至多 3 条）：
-    {{- 总评分 X 未达 70 门槛}}
+    {{- 总评分 X 未达 65 门槛}}
     {{- 当天 Maker「不能做」方向不匹配}}
     {{- 状态门禁阻断：[项]}}
     {{- 数据源失效：[列表]}}
@@ -47,7 +47,7 @@ BTC（策略）：[有计划]
 
 | 字段 | 来源 |
 |---|---|
-| 是否观望 | `state/score_state.json.current_score.total_score >= 70` AND `risk_agent.precheck.decision == "allow"` |
+| 是否观望 | `state/score_state.json.current_score.total_score >= 65` AND `risk_agent.precheck.decision == "allow"` |
 | 总评分 | `state/score_state.json` |
 | 当天 Maker 不能做（市场推导，非主账户） | footprint signal_type 推导：禁追最拥挤一边（见 `constitution/cannot_do_mapping.md`） |
 | 状态门禁阻断项 | `outputs/<today>_emotional_log.json.blocked_reasons[]` |
@@ -72,7 +72,7 @@ BTC（策略）：[有计划]
 
 BTC（策略）：[观望]
   理由：
-    - 总评分 50 未达 70 门槛（数据陈旧 3 日，待 11:00 重评）
+    - 总评分 50 未达 65 门槛（数据陈旧 3 日，待 11:00 重评）
     - 当天 Maker 不能做多（拥挤侧）→ 仅偏空，但分数未达
     - 5 个数据源全部待采集（Exocharts / Coinglass / BlockBeats / FedWatch / TradingView 四档）
 

@@ -53,11 +53,11 @@
 ### 3. 是否完成技术面确认
 
 **判定**：
-* `state/score_state.json.current_score.total_score >= 70` AND
+* `state/score_state.json.current_score.total_score >= 65` AND
 * `outputs/<today>_footprint_<HHMM>.json` 存在且 `data_quality != "partial"`
 * 或：极端组合 C01/C02 命中（强制 70 分）
 
-**禁止**：评分未达 70 强行开仓（V004 / V011 违规）
+**禁止**：评分未达 65 强行开仓（V004 / V011 违规）
 
 ---
 

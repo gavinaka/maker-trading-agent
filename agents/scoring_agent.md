@@ -121,8 +121,8 @@ total_score = orderflow_score + market_structure_score
 
 按 `scoring/score_thresholds.md` 区间映射 result：
 * 0-49 → "强制观望"
-* 50-69 → "默认观望"
-* 70-84 → "允许标准 Maker 计划"
+* 50-64 → "默认观望"
+* 65-84 → "允许标准 Maker 计划"
 * 85-100 → "优先级最高 / 核心策略"
 
 ## Phase 6: 状态写回

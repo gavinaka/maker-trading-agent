@@ -53,7 +53,7 @@
    ├─ footprint 盘口 70 + 盘面 30
    └─ 更新 state/score_state.json + session_state.tasks.score_updated_morning = true
 
-5. Maker plan（盘口>盘面>基本面，受评分≥70门槛）
+5. Maker plan（盘口>盘面>基本面，受评分≥65门槛）
    ├─ risk_agent.precheck(account="maker")：跑 Gate 1-5（占位 request，方向由当天 footprint signal_type 推）
    └─ 组装 Maker 上午计划段
 

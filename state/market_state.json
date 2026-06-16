@@ -154,7 +154,7 @@
   "score_system": {
     "total_score": 100,
 
-    "minimum_entry_score": 70,
+    "minimum_entry_score": 65,
 
     "orderflow_score": {
       "max": 70,
@@ -199,7 +199,7 @@
     "risk_check_required": true,
 
     "conditions": [
-      "总评分>=70",
+      "总评分>=65",
       "状态门禁通过",
       "风控检核通过"
     ]

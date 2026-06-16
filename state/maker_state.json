@@ -15,7 +15,7 @@
 },
 
 "score_requirement": {
-"minimum_total_score": 70,
+"minimum_total_score": 65,
 "require_orderflow_score": true,
 "require_market_structure_score": true
 },
