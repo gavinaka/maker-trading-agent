@@ -50,14 +50,14 @@
 
 ---
 
-### 3. 是否完成技术面确认
+### 3. 是否满足开单双门槛（总评分 + 胜率）
 
-**判定**：
-* `state/score_state.json.current_score.total_score >= 65` AND
+**判定**（两门槛并列·任一不过即不开）：
+* 门槛① `state/score_state.json.current_score.total_score >= 65`（或极端组合 C01/C02 命中·强制 70 分）AND
+* 门槛② `plan.win_rate >= 60`（胜率自估 ≥60%·2026-06-16 升级为硬门槛）AND
 * `outputs/<today>_footprint_<HHMM>.json` 存在且 `data_quality != "partial"`
-* 或：极端组合 C01/C02 命中（强制 70 分）
 
-**禁止**：评分未达 65 强行开仓（V004 / V011 违规）
+**禁止**：评分未达 65 或 胜率未达 60% 强行开仓（V004 / V011 违规）；用执行概率 <50% 否决开仓（执行概率为软参考·非门槛·只调挂价）。
 
 ---
 

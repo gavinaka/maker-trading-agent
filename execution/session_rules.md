@@ -50,7 +50,7 @@
   │           └─ ⛔ 关闭/不可交易 → 硬停：不写任何计划，output 只出"门禁关闭·观望"
   ├─ Step 2 主账户 plan：基本面(news)>盘面结构>盘口 → 中线计划（**不依赖评分**）
   ├─ Step 3 评分：footprint_agent → scoring_agent (morning 11:00，盘口70+盘面30)
-  ├─ Step 4 Maker plan：risk_agent.precheck + 评分≥65门槛 → Maker 上午计划（盘口>盘面>基本面）
+  ├─ Step 4 Maker plan：risk_agent.precheck + 开单双门槛(评分≥65 且 胜率≥60%) → Maker 上午计划（盘口>盘面>基本面）
   ├─ Step 5 「不能做」回填（当天 Maker 收口）+ 有开仓补「交易 Check」
   └─ Step 6 output_agent → 渲染 主账户日报(Step2) + Maker 上午计划(Step4)
 

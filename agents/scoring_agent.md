@@ -119,11 +119,11 @@ scoring_agent 输出必须能复现以下历史样本（误差 ±10 内）：
 total_score = orderflow_score + market_structure_score
 ```
 
-按 `scoring/score_thresholds.md` 区间映射 result：
+按 `scoring/score_thresholds.md` 区间映射 result（评分仅门槛①；最终开单还需门槛② 胜率≥60% 同时满足）：
 * 0-49 → "强制观望"
 * 50-64 → "默认观望"
-* 65-84 → "允许标准 Maker 计划"
-* 85-100 → "优先级最高 / 核心策略"
+* 65-84 → "评分达标 → 胜率≥60% 则挂标准 Maker 计划，胜率<60% 仍观望"
+* 85-100 → "优先级最高 / 核心策略（仍受胜率≥60% 门槛约束）"
 
 ## Phase 6: 状态写回
 

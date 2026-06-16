@@ -29,6 +29,7 @@
     "direction_gate":      { "pass": bool, "allowed": ["short|long|none"], "reason": "第二层·当天不能做判定" },
     "position_limits":     { "pass": bool, "reason": "..." },
     "score_threshold":     { "pass": bool, "current_score": N, "required": 65 },
+    "winrate_threshold":   { "pass": bool, "plan_win_rate": N, "required": 60 },
     "defense_layer":       { "current_layer": N, "must_action": "..." }
   }
 }
@@ -111,20 +112,27 @@
 
 ---
 
-# Gate 5：评分门槛
+# Gate 5：开单双门槛（总评分 + 胜率，并列硬门槛，任一不过即 deny）
 
 ```
+# 门槛① 总评分 ≥ 65
 score_state.current_score.total_score < 65 AND extreme_signal == false
   → deny，理由"评分 X < 65 且无极端信号"
 
 score_state.current_score.total_score == null（数据不全）
   → deny，理由"评分缺失"
 
-score_state.current_score.total_score >= 65（或 extreme_signal）
-  → pass：≥65 必须挂 Maker 单（2026-06-01 确立必开制，2026-06-16 门槛由 70 下调至 65）
+# 门槛② 胜率（自估）≥ 60%（2026-06-16 用户拍板·升级为硬门槛）
+plan.win_rate < 60
+  → deny，理由"胜率自估 X% < 60% 门槛"
+
+# 两门槛全过 → pass
+(total_score >= 65 或 extreme_signal) AND plan.win_rate >= 60
+  → pass：必须挂 Maker 单（达标必开制·2026-06-01 确立；门槛 2026-06-16 = 总评分≥65 且 胜率≥60%，任一不满足即观望不挂）
 ```
 
-> **≥65 不得再以"入场位置不优"为由 deny/观望**（旧 ⑤源位置否决已废）。位置质量改由**挂单价=高质量边缘**保证：Maker 限价单挂在边缘等待，价不触及自然不成交，绝不追价。本 Gate 仍只管"分够不够 + 数据新不新"，门禁(Gate1)/不能做(Gate3)/风控(Gate2)仍可独立 deny。见 `memory/score70-must-place-maker.md`。
+> 🟢 **执行概率 ≥ 50% = 软参考·非门槛（2026-06-16 由 60% 下调并降级）**：只用于挑选挂价的可达性，**不参与 deny/pass 判定、不决定是否开仓**；够不到 50% 也照常开单，只尽量把挂价设在 ≥50% 可达的最近高质量边缘。
+> **≥65 且胜率≥60% 不得再以"入场位置不优"为由 deny/观望**（旧 ⑤源位置否决已废）。位置质量改由**挂单价=高质量边缘**保证：Maker 限价单挂在边缘等待，价不触及自然不成交，绝不追价。本 Gate 只管"分够不够 + 胜率够不够 + 数据新不新"，门禁(Gate1)/不能做(Gate3)/风控(Gate2)仍可独立 deny。见 `memory/score70-must-place-maker.md`。
 
 时效检查（联动 freshness_rules.md）：
 * `score_state.last_update` 超过 6 小时 → deny + 触发重评分
