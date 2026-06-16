@@ -12,3 +12,12 @@ desktop.ini
 # Python
 __pycache__/
 *.pyc
+
+# 日报运营产物（生成物 / 一次性脚本，不纳入版本）
+# 注：保留 outputs/ 下的复用工具（report_lint.py / report_colors.py /
+#     notion_push_lib.py / notion_verify_against_yesterday.py 等非下划线脚本）
+outputs/_*.py
+outputs/*.docx
+outputs/*.html
+outputs/*_combined.md
+outputs/blockbeats/

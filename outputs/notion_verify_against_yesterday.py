@@ -9,15 +9,26 @@ Notion 出稿稳定性自检器（机械化·不靠记忆）。
   py notion_verify_against_yesterday.py <today_page_id> <任意参照page_id>          # 显式指定参照页
 PASS 才算出稿完成（见 memory/notion-publish-checklist.md）。
 """
-import sys, os, re, requests
+import sys, os, re, time, requests
 
 TOK = os.environ.get("NOTION_TOKEN", "")
 assert TOK, "请先 $env:NOTION_TOKEN"
 H = {"Authorization": f"Bearer {TOK}", "Notion-Version": "2022-06-28"}
 
 
+def _get(url):
+    """GET with retry — Notion 偶发 SSL UNEXPECTED_EOF，重试 3 次（对齐 report_colors）。"""
+    for attempt in range(3):
+        try:
+            return requests.get(url, headers=H, timeout=30)
+        except requests.exceptions.RequestException:
+            if attempt == 2:
+                raise
+            time.sleep(1.5)
+
+
 def title_of(pid):
-    p = requests.get(f"https://api.notion.com/v1/pages/{pid}", headers=H).json()
+    p = _get(f"https://api.notion.com/v1/pages/{pid}").json()
     for v in p.get("properties", {}).values():
         if v.get("type") == "title":
             return "".join(x.get("plain_text", "") for x in v["title"])
@@ -45,7 +56,7 @@ def children(pid):
     while True:
         u = f"https://api.notion.com/v1/blocks/{pid}/children?page_size=100"
         if cur: u += f"&start_cursor={cur}"
-        d = requests.get(u, headers=H).json()
+        d = _get(u).json()
         out += d["results"]
         if d.get("has_more"): cur = d["next_cursor"]
         else: break
