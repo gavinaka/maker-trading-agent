@@ -123,6 +123,7 @@ score_state.current_score.total_score == null（数据不全）
   → deny，理由"评分缺失"
 
 # 门槛② 胜率（自估）≥ 60%（2026-06-16 用户拍板·升级为硬门槛）
+#   自估口径＝ scoring/winrate_methodology.md 三档 rubric（70/75/80·实际开单从不<70；估<70即观望）
 plan.win_rate < 60
   → deny，理由"胜率自估 X% < 60% 门槛"
 

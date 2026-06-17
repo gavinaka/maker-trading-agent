@@ -82,7 +82,8 @@ Trading-System/
 │   ├── scoring_system.md              ← 70+30 总框架
 │   ├── orderflow_scoring.md           ← 盘口 70（详见 footprint_agent）
 │   ├── chart_scoring.md               ← 盘面 30（5 项）
-│   ├── score_thresholds.md            ← 分数阈值映射
+│   ├── score_thresholds.md            ← 分数阈值映射（开单双门槛）
+│   ├── winrate_methodology.md         ← 胜率自估 rubric（70/75/80·开单门槛②）
 │   └── scoring_examples.md            ← 4 个历史样本
 │
 ├── risk/                              ← 风控
