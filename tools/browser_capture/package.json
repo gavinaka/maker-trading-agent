@@ -1,0 +1,18 @@
+{
+  "name": "browser-capture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "独立浏览器自动化采集(绕过 Claude-in-Chrome 扩展黑名单):TradingView 四档 + CME FedWatch 截图",
+  "type": "module",
+  "scripts": {
+    "all": "node capture_all.js",
+    "cleanup": "node cleanup.js",
+    "coinglass": "node capture_coinglass.js",
+    "exo": "node capture_exo.js",
+    "fedwatch": "node capture_fedwatch.js",
+    "tv": "node capture_tv.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}
