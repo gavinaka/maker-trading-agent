@@ -40,6 +40,55 @@ def coupling_check(lines):
                 hits.append((i, desc, m.group(0), ln.strip()[:60]))
     return hits
 
+# ---------------- 正文禁元叙事门（门②扩展·2026-06-19） ----------------
+# 见 memory/fundamentals-brief-core-priority.md：日报正文（① 正文 + ② Maker 段）禁出现
+# 内部规则/方法论/评分代号/门槛判定的元叙事，只用自然语言给结论与本质；代号/方法论/分数/门槛
+# 全部只进 ③ 后附。本门只扫「## ①」～「## ③」之间（稿首 > 自查块在 ## ① 之前=豁免；③ 后附=豁免）。
+# 命中即 HARD（替代"靠记忆主动套用"的失败路径——2026-06-19 晚报漂移事故根因=文档层迭代无机械闸）。
+META_FORBIDDEN = [
+    (r"价格锚点法",                              "方法论名（价格锚点法）→ 改自然语言/移③后附"),
+    (r"背离合成引擎",                            "方法论名（背离合成引擎）→ 移③后附"),
+    (r"投入产出比",                              "方法论名（投入产出比）→ 移③后附"),
+    (r"极端候选",                                "盘口极端代号 → 移③后附"),
+    (r"判定法|统一读取法",                        "方法论名 → 移③后附"),
+    (r"[Cc]\d{2}(?![\d%／/])",                   "盘口组合代号 CXX → 移③后附"),
+    (r"双门槛",                                  "门槛机制叙事 → 移③后附"),
+    (r"门槛\s*[①②⑴⑵12]|门槛\s*[①②]?\s*[✔✗√×]", "门槛判定叙事（门槛①/②/✔/✗）→ 移③后附"),
+    (r"[≥>]\s*65", "评分门槛阈值≥65 → 移③后附"),  # 注：金标 Maker 用「≥60%可达」描述可达性·合法→不禁 ≥60%/≥50%
+    (r"软参考",                                  "执行概率软参考机制叙事 → 移③后附"),
+    (r"rebound-short|judgment-synthesis|orderflow-|price-anchor|[A-Za-z]+-rule", "规则/记忆引用 → 移③后附"),
+    (r"参\s*[A-Za-z]",                           "规则引用（参 xxx-rule）→ 移③后附"),
+    (r"总评分\s*\d|总分\s*\d",                    "评分数值 → 移③后附"),
+    (r"盘口\s*\d{2}|盘面\s*\d{2}",                "评分分项数值 → 移③后附"),
+    (r"胜率自估",                                "胜率自估机制叙事 → 移③后附（值进后附）"),
+]
+# 金标豁免：Maker 段首行「执行概率X%（已执行X%）胜率X%」是 Notion 固定字段·照写不算元叙事。
+_GOLD_MAKER_LINE = r"执行概率.*胜率|BTC（策略）"
+
+def meta_narrative_check(lines):
+    """扫 '## ①' ～ '## ③' 之间正文，抓元叙事。返回 [(行号, 描述, 命中, 摘要)]。"""
+    start = end = None
+    for i, ln in enumerate(lines, 1):
+        if re.match(r"^##\s*①", ln):
+            start = i
+        elif re.match(r"^##\s*③", ln):
+            end = i
+            break
+    if start is None:                 # 无 ① 正文标记 → 退化为全文（保守）
+        start = 1
+    if end is None:
+        end = len(lines)
+    hits = []
+    for i in range(start, end):
+        ln = lines[i - 1]
+        if re.search(_GOLD_MAKER_LINE, ln):   # 金标固定字段行豁免
+            continue
+        for pat, desc in META_FORBIDDEN:
+            m = re.search(pat, ln)
+            if m:
+                hits.append((i, desc, m.group(0), ln.strip()[:60]))
+    return hits
+
 # 注：负向后顾 (?<![\d.]) 排除「数字~数字」区间写法(如 0.7~1.3%)，只抓独立的 ~约X 模糊位
 HARD = [
     (r"\d[xX]{2,}",                  "模糊价位 (如 71,2xx / 712XX)"),
@@ -202,12 +251,17 @@ def main():
                 warn_hits.append((i, desc, m.group(0), ln.strip()[:60]))
     ledger_issues, ledger_skip = ledger_check(lines)
     coupling_hits = coupling_check(lines)
+    meta_hits = meta_narrative_check(lines)
     for i, desc, hit, ctx in warn_hits:
         print(f"[WARN] L{i} {desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in hard_hits:
         print(f"[HARD] L{i} {desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in coupling_hits:
         print(f"[HARD] L{i} 解耦门·联动红旗 {desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in meta_hits:
+        print(f"[HARD] L{i} 正文元叙事 {desc}: '{hit}'  | {ctx}")
+    if not meta_hits:
+        print("[OK] 正文禁元叙事门: 正文(①+②)无代号/方法论/分数/门槛元叙事")
     if ledger_skip:
         print(f"[SKIP] 仓位帐本一致性: {ledger_skip}")
     for desc, ref_lines in ledger_issues:
@@ -217,7 +271,7 @@ def main():
     if not coupling_hits:
         print("[OK] 解耦门: 无联动用户实仓的语言")
     print()
-    if hard_hits or ledger_issues or coupling_hits:
+    if hard_hits or ledger_issues or coupling_hits or meta_hits:
         msgs = []
         if hard_hits:
             msgs.append(f"{len(hard_hits)} 处模糊位/占位/臆造（用核过的确切数字替换）")
@@ -225,6 +279,8 @@ def main():
             msgs.append(f"{len(ledger_issues)} 处仓位帐本矛盾（对照 6/2 金标：第二层只设保本损无减仓）")
         if coupling_hits:
             msgs.append(f"{len(coupling_hits)} 处联动用户实仓（违解耦边界·system-plan-decoupled·改为系统独立判断）")
+        if meta_hits:
+            msgs.append(f"{len(meta_hits)} 处正文元叙事（代号/方法论/分数/门槛→改自然语言·移③后附·见 fundamentals-brief-core-priority）")
         print(f"[FAIL] " + "；".join(msgs) + " —— 修正后重跑")
         sys.exit(1)
     suffix = "" if ledger_skip else "·仓位帐本一致"
