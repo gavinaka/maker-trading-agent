@@ -6,6 +6,7 @@
 > 维护：发现新坑或路径变化时更新本文件 + 对应 memory。
 > 🟥 **宪法级·第一优先级（除用户拍板的系统逻辑外最高优先）：报告必须完全对齐用户 Notion 实际模板字段**（字段名/顺序/含义全对）。出稿前对照用户最近 Notion 条目逐字段核，**严禁臆造/混用字段**（如把"止损"标成"取消价"）。模板对齐错误=宪法级违规、误导执行+二次返工耗 token。详见 §3 渲染规则与 `memory/report-template-alignment.md`。
 > 🟥 **一次锁死铁律（2026-06-01 用户带情绪强调）：锁模板/逻辑时样本不足，就在同一次里随机抽查 2 年内最多 20 个 Notion 样本补足，一次核到 100% 再落地；禁止半验证上线后反复改 skill 浪费用户 token。** 见 `memory/verify-once-sufficient-samples.md`。
+> 🟥 **Claude Code → Codex 平移硬门（2026-07-04）**：旧 `.claude/skills/daily-report/SKILL.md` 是本机兼容镜像，不是 Codex committed 权威；旧入口中的关键 guardrail 必须由本 SOP、`.agents/skills/daily-report/SKILL.md` 与 `runtime/context_pack.py` 承载。每次 Codex 跑日报必须读取并执行：`memory/independent-report-no-user-reference.md`、`memory/precise-numbers-no-fuzzy.md`、`memory/report-chinese-only-narrative.md`、`memory/notion-publish-checklist.md`、`memory/stability-contract.md`。缺任一项或只存在于 `.claude/` 即硬停同步，不得继续出稿。
 
 ---
 
@@ -19,7 +20,7 @@
 > - 🟥🟥 **三报告各自 MAX 深度独立思考·禁复制前序判断（宪法级）**：早/午/晚每节点都从当时完整有效五源重新验真、读图、转录、分析、评分、胜率、风险并形成决策。共享层仅复用原始证据、来源指纹与确定性事实元数据，禁止复用派生特征、评分、胜率、风险或判断。采集后的所有推理节点使用最高可用模型能力与 MAX 思考预算；资源不足硬停，禁止降档、截断、只重算变化节点。分析锁定前禁止读取前序方向、分数、胜率和 Maker 结论，锁定后仅用于撤旧挂新及漂移对照。
 > - 「11:00／15:30／20:00 评分点」是冻结模板节点标签，不是实际采集/发布时间；quote 必须写真实采集时段。发布可执行计划前动态检查源文件年龄：Coinglass／Exocharts／TradingView 四档任一超过 4 小时即硬停并重采、重评分、重出稿；禁止把过期报告晚推后继续当实时计划。
 
-> 系统前置（用户不列、我必跑）：先取得整链租约 + 采集五源 + 门禁/心力硬前置。**分析锁定前禁止读取两库交易Check 实际持仓；持仓只允许锁后操作校准，且不得改变独立报告判断。**
+> 系统前置（用户不列、我必跑）：先取得整链租约 + 采集五源 + 门禁/心力硬前置。**分析锁定前禁止读取两库交易Check 实际持仓；持仓只允许锁后操作校准，且不得改变独立报告判断。** 独立报告边界见 `memory/independent-report-no-user-reference.md`。
 > 🟢 **五源统一采集（2026-07-02 整链加固·报告前先跑）：BlockBeats／Coinglass／Exocharts／FedWatch／TradingView 全部由本仓库 Playwright 采集器顺序处理。** 先 `begin-session`；早报运行 `capture_all.js --slot morning --lease-token <token>` 建立完整基线，午报和晚报运行带同一 token 的 `capture_delta.js`。每次生成 slot/lease/run-id 强绑定、不可覆盖的 manifest；出任何报告前五源都必须重新通过有效性门。
 > 五源喂入对应步骤：BlockBeats→主账户基本面；Exocharts/Coinglass→技术评分；TradingView 15m→Maker 最终把关。
 
@@ -70,7 +71,7 @@
 6. 完整独立分析和 combined.md 通过 lint 后，必须先运行 `session_runner.py lock-analysis` 建立与报告哈希绑定的分析锁，再允许读取前序计划。
 7. 锁后完成撤旧挂新／漂移对照；晚报同时完成三段独立审查。运行 `session_runner.py finalize-post-lock` 后才可 commit；缺分析锁、post-lock 门、五源覆盖或任一完整分析节点时硬停。
 8. 最终 Notion 唯一页、冻结 verifier、Word 视觉 QA 和 `context_log.md` 最终记录全部完成后，必须运行 `session_runner.py deliver` 写入最终交付遥测。
-9. 运行命令以 `.claude/skills/daily-report/SKILL.md §0.5` 为准；业务逻辑、三报告、模板、Notion 四子页及三门不变。
+9. 运行命令以本 SOP 与 `.agents/skills/daily-report/SKILL.md` 为准；`.claude/skills/daily-report/SKILL.md` 仅为本机 Claude Code 兼容镜像，不得覆盖 committed Codex 权威。业务逻辑、三报告、模板、Notion 四子页及三门不变。
 10. 🟥 **报告／数据源独立性与时间锁（2026-06-30 用户拍板）**：每份报告绑定唯一不可变证据快照（交易日＋slot＋真实采集时间＋来源 SHA-256）。早／午／晚的报告与数据源均相互独立；后续时段采集不得覆盖、替换、补鲜、重新解释或替前序报告通过 freshness 门。分析锁建立后样本时间与来源冻结，发布延迟不改变样本时点；Notion、Word、台账和 deliver 必须使用同一报告哈希及同一 slot 快照。用户明确要求继续交付已锁定时点报告时，不吸收后续采集。工程实现与验收见 `memory/report-evidence-time-lock.md`。
 
 ---
@@ -130,6 +131,7 @@
 2. **主账户策略段 = 独立中线计划**：分析锁定前不得读交易Check 最新持仓；先按五源与中线框架独立输出「保持/迭代/暂停/新增计划/观望」等系统计划。实际仓位、防守层级、已成交比例只能在锁后作为操作校准事实，不得改变正文判断。
 3. **基本面必带「价格{已/未/部分}兑现」字段**（原模板漏此字段；主线锚定是否取代计数法仍观察）。
    - 🟥 **正文括号精炼铁律（2026-06-19 用户迭代·在 2026-06-12 精简基础上再收紧·纯文字输出层·思考/推理/系统底层框架零改动）**：「基本面：标签（……）价格兑现」与「盘口·解读：标签（……）」**两个括号内只给精炼的核心结论与本质判断**——标签后一句话定性 ＋ 最关键 1-2 个驱动/矛盾本质；**不做"所有信息逐条叙事铺陈"的全量输出**。分维证据、Tier 逐条、各源细节、完整推导链**全部移到 ③ 后附**（本地 docx·不进 Notion 正文）。**无字数限制——抓到核心本质即可、不卡死字数**（取代 06-12 的"约 150 字内"上限）。⚠️ **只动括号内文字密度，不动 Notion 块结构/金标块数/run 结构/配色**——基本面仍 1 个 heading_3、解读仍在原块内括号、verifier 门①不受影响（6/2 金标本就把全部基本面/盘口推理装在这两个括号内）。🟥 **逻辑推理深度、五源全读、81/16 组合判定、评分/胜率/门槛推导一律按原系统逻辑全量执行**——详尽推理只换地方放（进 ③ 后附）、绝不缩减。🟥 **正文禁元叙事（2026-06-19 用户追加）：日报正文（基本面/解读括号 + 盘面 + 趋势 + 策略 + Maker 全段）禁出现"内部规则/铁律/方法论/评分代号/门槛判定"的元叙事**——禁写 C25/52分/极端候选/价格锚点法/背离合成引擎/投入产出比/参 rebound-short-highest-edge 等规则引用，禁写"双门槛全满足→必挂"/"门槛①②"/"≥65门槛"/"(20xx-xx-xx铁律)"等机制措辞；正文只用自然语言给结论与本质（像给执行者直接看的 plan）。组合代号(CXX)/方法论名/评分分项/门槛判定/规则出处全部只进 ③ 后附（6/2 金标本就是干净写法；6/18 稿把这些写进正文＝漂移，须回归金标）。🟢 **金标字段豁免**：Maker 段首行 `执行概率X%（已执行X%）　胜率X%` 是 Notion 金标固定字段·照写不算元叙事（被禁的是另塞的 总评分/C代号/门槛①✔/双门槛→必挂）；观望日 Maker 段只写「观望·不挂单＋一句自然语言理由」，分数/胜率自估值/哪项未达进 ③ 后附；门禁评分的稿首 `>` 自查摘要属内部工作笔记·不入 Notion 正文·不在本约束内。🪦 06-12 旧口径（基本面"标签＋Tier1 1-2条＋对冲1条＋价格兑现"、解读"组合结论＋四维一句话证据＋保留项"、各约150字内）仍是有效下限参照，06-19 进一步要求"括号内只留结论本质、细节全进③后附、不卡字数、且禁元叙事"。见 `memory/fundamentals-brief-core-priority.md`。
+   - 🟥 **正文一律中文铁律（2026-06-25 用户迭代·纯文字输出层·思考/逻辑/评分/框架零改）**：日报 Notion 正文（①正文 + ②Maker）所有可中译叙事术语必须写中文；保留指标缩写、模板字段/账户名和新闻专有名词。③后附明细和方法论文档可保留英文。机械强制由 `outputs/report_lint.py` 正文英文术语门执行；见 `memory/report-chinese-only-narrative.md`。
 4. **支撑/压力恒为区间** XXXXX-XXXXX（宽约 300-500 点），不输出单点。
 5. **盘面两层各以单字结论收口**：日线层 + 小时层，每层末尾给「中性/利空/利多」。
 6. **Maker 段按用户 Notion 条目完整字段输出**：交易策略(做空/做多·高空/低多/反弹空) ｜ 开仓方式(Maker) ｜ 交易类型(左/右) ｜ 杠杆 ｜ 持仓量 ｜ 盈亏比(≥1:2.5) ｜ **入场区间** ｜ **止盈(TP1 减仓50%／TP2 清剩余·帐 100% 闭合)** ｜ **止损** ｜ **浮盈防守计划(第一层/第二层·只移损/保本损/取消加仓·禁减仓%)** ｜ **注意事项(取消价)** ｜ 核心(开仓理由)。
@@ -137,6 +139,7 @@
    - 🟥 **仓位帐一致性=金标口径锁死（2026-06-11 用户发现双扣矛盾后拍板·禁止飘移）**：仓位扣减**只在止盈档**（TP1 减仓50% → TP2 清剩余50%·全计划帐 100% 闭合）；**浮盈防守层只"移止损/保本损/取消加仓"、禁写任何减仓/平仓百分比**（6/2 冻结金标即此口径；6/3-6/10 曾漂移回 6/1 旧手写措辞"第二层减仓50%+保本损"与 TP1 双扣、TP2 成死条款＝飘移事故）。审查/复盘表述："价格触及 TPx"≠"仓位捕获至 TPx"，仓位已在 TP1 全部离场则禁写"TP2 命中·完整兑现"。门② lint 含此硬检查。见 `memory/defense-layer2-vs-tp1-conflict.md`。
    - 🟥 **第一层防守级别锁死（2026-07-04 事故修复）**：Maker 浮盈防守第一层必须写 **4H级别K线极点**；空单用 4H 极点高点，多单用 4H 极点低点。禁止写 1H、1小时、15m、15分钟或笼统“小时级别”。第一层必须有具体触发价、4H极点、取消所有加仓；第二层只设保本损。
    - ⚠️ **「取消价(注意事项)」≠「止损」（2026-06-01 用户纠错）**：取消价=挂单**成交前**失效价（价格优先触及反方向某位→撤掉未成交挂单，如"优先跌破71,000则取消"）；止损=**成交后**离场价（常写在防守层第一层"触及X设X级别极点为止损"，受宪法"单笔3%以内""浮盈≥+1.5R 才激活防守层"约束）。"站稳XXX上方=结构失效"是止损，别误标成取消价。
+   - 🟥 **精确数字铁律（2026-06-02 用户拍板）**：报告里所有价格/百分比必须是核对过的确切数字；禁止 `71,2xx`、`712XX`、`@~71,7xx`、臆造 `~3%` 或具体价格位写 `73k`。现价取最新最细粒度图的确切收/现价；入场、止盈、止损、防守层触发价由五源和风险参数推导。出稿前自查无模糊数字残留；见 `memory/precise-numbers-no-fuzzy.md`。
    - edge 是资金保全（5 月成交 9 笔=盈2/保本5/亏2，7/9 不亏），不是高胜率；写到可执行单粒度。
 7. **盘口 footprint 表的 Coinglass 四维呈现为「上升/横盘/下降」**（按阶段性高低点斜率读，1H 周期），**资金费率双轨**=趋势「上升/横盘/下降」+ 水平「（为正值/为负值/低于正常值）」一起写（5 样本校验：你实际写法即"资金费率下降（为负值）"）；读数后跟一句文本含义，不要求精确数值。⚠️ 注意：旧稿常把 OI 写「稳/偏升」(24h 口径)，新口径须从最近阶段高/低点判（如 5/28 峰 62K→56K 应读**下降**）。
 8. **框架优先级按账户分流**（权威：`constitution/trading_constitution.md` §一·补）：
@@ -166,7 +169,7 @@
 ---
 
 ## 5. 收尾
-> ⚠️ 本节为权威全文·与 `.claude/skills/daily-report/SKILL.md §6` 逐条同源（灾备重建只读本文件也能复原三门）。改任一处必三处同步（本文件 + SKILL + memory）。
+> ⚠️ 本节为 committed 权威全文；`.claude/skills/daily-report/SKILL.md §6` 仅作本机兼容镜像。灾备重建只读本文件 + `.agents/skills/daily-report/SKILL.md` + memory 也必须能复原三门。改任一处必同步本文件、Codex SKILL 与对应 memory。
 
 ### 5.1 Notion 归档（机制·见 `memory/push-report-to-ai-agent-plan.md`）
 - 唯一路径＝`import outputs/notion_push_lib.py` + `py`；token 走 `$env:NOTION_TOKEN`。
@@ -176,7 +179,7 @@
 - 🟥🟥 **同名页事务式替换（2026-06-27 根因修复）**：统一调用 `replace_page_transactional(...)`，严格按「snapshot 全部旧页 → 唯一 staging 标题建新页 → 上传三图 → `verify_published` → 改最终标题 → frozen verifier → 归档全部旧页 → 同前缀唯一存活检查」执行。**禁止先归档旧页再 create_page**。准备阶段失败只回滚 staging 页并保留旧页；提交阶段清旧失败则保留已验证新页并硬停，宁可短暂重复、不可全失。
 - 🟥 **任何 Notion 写入前硬门**：`assert_source_freshness(...)`（核心评分源≤4h；BlockBeats/FedWatch至少当日）→ `run_report_lint(...)`。任一失败立即退出，不允许静默跳过或以“仅推送”名义发布过期可执行计划。
 
-### 5.2 机械三门＝完成判据（宪法级·全 PASS 才算完成、才回复用户·见 `memory/stability-contract.md`）
+### 5.2 机械三门＝完成判据（宪法级·全 PASS 才算完成、才回复用户·见 `memory/stability-contract.md` 与 `memory/notion-publish-checklist.md`）
 - **门②反幻觉 lint（push 前硬门）**：`py outputs/report_lint.py outputs/{date}_{morning|midday|evening}_combined.md` → `[PASS]`（0 HARD）才能 push；WARN 逐条人工确认。**含 Maker 仓位帐门（2026-06-11 加）**：防守层出现减仓/平仓百分比、或 TP1 部分止盈而无 TP2 清仓档（帐不闭合）＝HARD。
 - **门①结构+配色（push 后硬门）**：`py outputs/notion_verify_against_yesterday.py <今日page_id> morning|midday|evening|review`（午报用 `midday`·复用早间 28 块金标）→ 对照 **2026.6.2 冻结金标**（非昨日·防错误逐日传播；金标 id 在脚本 `GOLD` 字典）逐块比对类型/块数/图数 + 语义配色按情绪词唯一规则逐 run 校验。`[PASS]` 才算完成；`[FAIL]`/`MISMATCH` 必改 push 脚本→归档重建→重跑到 PASS，绝不带 FAIL 交付。
 - **失败码铁律（2026-06-27 根因修复）**：verifier PASS＝输出 `[PASS]` 且进程退出码 0；`[FAIL]`／异常必须退出非零，调用方必须传播并回滚 staging。禁止仅凭日志字符串自行打印“PASS”。
@@ -193,4 +196,4 @@
 - 每份报告采集前必须持有 `begin-session` 整链租约；午报/晚报仅在前一时段 delivery 完整后才能开始。deliver 机械核对 DOCX/QA/publish/context_log 哈希闭环后才释放；中断用带原因的 abandon/recover，禁止自动抢过期锁。
 - 更新 memory（若有新坑/决策）。
 - ❌ 默认不 commit；**仅当用户明确要求才 commit**，且推送脚本里的 Notion token 必须读环境变量、绝不硬编码进库。
-- 清临时文件（`sessions/_*.txt`）。
+- 清临时文件（`sessions/_*.txt`）；不得删除当日动态图、锁定 evidence snapshot、capture/prepare/analysis/render/Word-QA/publish/delivery manifest。动态图过期清理由 `capture_all.js` 开头的 `cleanup.js` 或手动 `npm run cleanup` 执行，只删 cutoff 之前的 inbox 截图和 BlockBeats 卡片。

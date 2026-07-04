@@ -67,7 +67,7 @@
 ## 已实施修复
 
 - `memory/defense-layer2-vs-tp1-conflict.md`：恢复 Maker 防守层金标规则。
-- `risk/floating_defense.md`、`constitution/maker_principles.md`、`.claude/skills/daily-report/SKILL.md`、`sessions/日报SOP.md`：明确第一层必须 4H 极点，持仓只允许锁后校准。
+- `risk/floating_defense.md`、`constitution/maker_principles.md`、`.agents/skills/daily-report/SKILL.md`、`sessions/日报SOP.md`：明确第一层必须 4H 极点，持仓只允许锁后校准。`.claude/skills/daily-report/SKILL.md` 仅保留为本机兼容镜像，不作为 Codex committed 权威。
 - `runtime/dependency_graph.py`：`notion_positions` 不再触达 Maker/主账户决策、分数或胜率。
 - `outputs/report_lint.py`：新增持仓污染门、Maker 防守层门、Exocharts 自洽门、分析深度门、黄金样本质量回归门。
 - `runtime/report_state_extract.py`：去掉 position_summary 锁前强依赖，并对持仓污染锁硬停。
@@ -78,6 +78,16 @@
 - `runtime/context_pack.py`：校验权威文件和 memory 引用完整性；`memory/MEMORY.md` 作为禁止读取项不进入 pre-analysis authority。
 - `.agents/skills/daily-report/SKILL.md`：Codex 入口改为以已提交的 `sessions/日报SOP.md` 为主权威；`.claude/skills/daily-report/SKILL.md` 仅作为本机 Claude Code 兼容镜像，避免 Codex 新入口依赖被 git 忽略的 `.claude/`。
 - 回归测试覆盖上述事故路径。
+
+## 追加迁移审计：Claude Code 清理机制与旧能力平移
+
+用户补充要求核实 Claude Code 时期的清理机制并将旧工作流能力完整平移到 Codex。核实结果：
+
+- 清理机制确实存在：`tools/browser_capture/cleanup.js`，由 `capture_all.js` 开头自动调用；只删过期 `data_sources/inbox/<date>/` 截图与 `outputs/blockbeats/<date>_*.png` 快讯卡，默认保留最近 `CLEANUP_KEEP_DAYS=2` 天，绝不碰当天图。
+- committed SOP 已有自动清理条款，但 Codex 入口原先未显式继承；已补进 `.agents/skills/daily-report/SKILL.md`，并写明不得删除当日动态图、锁定 evidence snapshot 或任何 manifest。
+- 旧 `.claude/skills/daily-report/SKILL.md` 中 4 个关键 memory 引用未显式出现在 committed SOP/Codex 入口：`memory/independent-report-no-user-reference.md`、`memory/precise-numbers-no-fuzzy.md`、`memory/report-chinese-only-narrative.md`、`memory/notion-publish-checklist.md`。底层 `LOGIC_FILES` 已包含这些文件，但触发层引用不完整；已补进 SOP 与 Codex 入口。
+- SOP 中两处旧口径把命令权威指向 `.claude/skills/daily-report/SKILL.md`。由于 `.claude/` 被 gitignore，Codex 不得依赖它作为 committed authority；已改为 `sessions/日报SOP.md` + `.agents/skills/daily-report/SKILL.md` 为准，`.claude` 仅作兼容镜像。
+- 新增 `tests/test_codex_claude_parity.py`，机械检查旧 Claude guardrail refs、cleanup 条款、以及 Codex 不得把执行权威委托给 ignored `.claude` 镜像。
 
 ## 可复现验证
 
