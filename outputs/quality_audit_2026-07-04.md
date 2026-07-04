@@ -89,6 +89,13 @@
 - SOP 中两处旧口径把命令权威指向 `.claude/skills/daily-report/SKILL.md`。由于 `.claude/` 被 gitignore，Codex 不得依赖它作为 committed authority；已改为 `sessions/日报SOP.md` + `.agents/skills/daily-report/SKILL.md` 为准，`.claude` 仅作兼容镜像。
 - 新增 `tests/test_codex_claude_parity.py`，机械检查旧 Claude guardrail refs、cleanup 条款、以及 Codex 不得把执行权威委托给 ignored `.claude` 镜像。
 
+### 收工触发机制同步
+
+- 旧 Claude Code 入口的“收工”实际是完成门触发，不是口头结束：render → Word-QA → publish manifest → frozen verifier/唯一存活页 → `context_log.md` → `session_runner.py deliver` → 临时文件清理；晚报额外触发独立审查。
+- 已在 `.agents/skills/daily-report/SKILL.md` 和 `sessions/日报SOP.md` 增加“收工触发器”：用户说「收工」「如无问题即收工」「完成后收工」，或助手准备回复完成时，必须按任务类型关闭对应 completion gate。
+- 日报交付型收工必须具备真实 manifest、线上 verifier `[PASS]` 且退出码 0、唯一存活页、deliver 成功；工作流维护/审计型收工必须完成权威文件/测试/审计更新、相关回归、按用户授权 commit，并明确列出无关脏文件边界。
+- 已同步 `runtime/usage_logger.py` 阶段记录要求：`render_docx`、`word_export`、`visual_qa`、`publish`、`delivery`；宿主不提供 token 时写 `null`，禁止估造。
+
 ## 可复现验证
 
 已通过：

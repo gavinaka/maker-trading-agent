@@ -55,6 +55,23 @@ class CodexClaudeParityTests(unittest.TestCase):
         self.assertIn("committed executable authority for Codex runs", entry)
         self.assertIn("compatibility mirror", entry)
 
+    def test_claude_code_completion_trigger_is_committed_for_codex(self):
+        sop = _sop_text()
+        entry = _codex_entry_text()
+        for text in (sop, entry):
+            with self.subTest(source=text[:20]):
+                self.assertIn("收工", text)
+                self.assertIn("Word-QA", text)
+                self.assertIn("publish manifest", text)
+                self.assertIn("context_log.md", text)
+                self.assertIn("session_runner.py deliver", text)
+                self.assertIn("sessions/_*.txt", text)
+                self.assertIn("runtime/usage_logger.py", text)
+                self.assertIn("render_docx", text)
+                self.assertIn("word_export", text)
+                self.assertIn("visual_qa", text)
+                self.assertIn("delivery", text)
+
 
 if __name__ == "__main__":
     unittest.main()

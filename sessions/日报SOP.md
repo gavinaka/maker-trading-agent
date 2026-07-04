@@ -194,6 +194,13 @@
 ### 5.4 收尾杂项
 - render manifest、Word QA manifest（`status=passed`）、publish manifest、线上 verifier＋唯一存活页全部形成后才写 `context_log.md`（倒序，新日期块在顶）；必须写最终 page id、发布时间与 PASS。`context_log` 与 delivery 的时间必须晚于真实 DOCX／PDF／PNG／视觉审核证据，禁止在证据出现前声明 PASS。
 - 每份报告采集前必须持有 `begin-session` 整链租约；午报/晚报仅在前一时段 delivery 完整后才能开始。deliver 机械核对 DOCX/QA/publish/context_log 哈希闭环后才释放；中断用带原因的 abandon/recover，禁止自动抢过期锁。
+- 每阶段通过 `runtime/usage_logger.py` 记录耗时、重试、真实全量回退及宿主真实提供的 token；宿主不提供 token 时写 `null`，严禁估造。至少覆盖 `render_docx`、`word_export`、`visual_qa`、`publish`、`delivery`。Token 优化只评价机械层，分析层以质量和 MAX 合规为先。
 - 更新 memory（若有新坑/决策）。
 - ❌ 默认不 commit；**仅当用户明确要求才 commit**，且推送脚本里的 Notion token 必须读环境变量、绝不硬编码进库。
 - 清临时文件（`sessions/_*.txt`）；不得删除当日动态图、锁定 evidence snapshot、capture/prepare/analysis/render/Word-QA/publish/delivery manifest。动态图过期清理由 `capture_all.js` 开头的 `cleanup.js` 或手动 `npm run cleanup` 执行，只删 cutoff 之前的 inbox 截图和 BlockBeats 卡片。
+
+### 5.5 收工触发器（Claude Code 旧机制平移到 Codex）
+- 用户说「收工」「如无问题即收工」「完成后收工」，或助手准备回复“完成/已交付”时，必须触发本节；不得把“我认为差不多了”当完成。
+- **日报交付型收工**：必须同时满足 `report_lint`/时效门、canonical render manifest、Word-QA `status=passed`、publish manifest、线上 verifier `[PASS]` 且退出码 0、同前缀唯一存活页、最终 `context_log.md`、`session_runner.py deliver` 成功、`sessions/_*.txt` 清理完成；晚报还必须完成 §5.3 独立审查 artifact 与 Notion 子页。缺任一项＝未收工，只能报告阻塞点。
+- **工作流维护/审计型收工**（不发布日报时适用）：必须完成本次范围内的权威文件/测试/审计更新，跑相关回归检查，若用户明确要求 commit 则只 stage 本次范围文件并提交；最终回复必须列出验证结果、commit hash（如有）和仍存在的无关脏文件边界。
+- 完成回复只允许基于真实工具输出和 manifest；禁止用布尔自证、口头 PASS、未验证截图或未核 exit code 代替证据。
