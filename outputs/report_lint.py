@@ -25,13 +25,28 @@ COUPLING = [
     (r"应(?:执行)?止损离场",                  "对用户中线仓下『止损离场』指令 = 联动"),
     (r"持仓中[·\s]*[走管防]",                "把用户『持仓中』写成系统管理对象 = 联动"),
 ]
+# 2026-07-04 加固：Notion 实际持仓只能在分析锁后做操作校准，不能出现在独立报告判断中，
+# 更不能改变 Maker 是否挂单/方向/入场/止盈止损/防守计划。以下命中不允许用“解耦声明”豁免。
+POSITION_COUPLING = [
+    (r"持仓校准", "分析锁前/正文出现持仓校准"),
+    (r"(?:主账户|Maker账户|双账户).{0,18}(?:无持仓|空仓|已平仓|未开仓|已成交|持仓)", "账户实际持仓事实混入独立报告"),
+    (r"(?:已有|当前|实际).{0,18}(?:持仓|空单|多单).{0,24}(?:阻断|禁止|不挂|新增|补仓|风控门|观望)", "用实际持仓改变 Maker 决策"),
+    (r"方向相反.{0,12}持仓", "用实际持仓方向否决系统独立计划"),
+    (r"风控门阻断新增", "用持仓风控门阻断新增 Maker 计划"),
+    (r"先补齐风控", "用 Notion 持仓字段缺失改变报告决策"),
+]
 # 含以下任一标记的行 = 显式解耦声明，豁免（如『与用户实际持仓完全解耦·不联动』）。
+# 注意：只豁免旧 COUPLING 项；POSITION_COUPLING 永不豁免。
 DECOUPLE_MARK = r"解耦|不联动|与用户.{0,8}无关|不纳入.{0,6}判断|事后对照|完全独立·与"
 
 def coupling_check(lines):
     """返回 [(行号, 描述, 命中文本, 行摘要)]。命中=系统稿混入联动用户实仓的语言。"""
     hits = []
     for i, ln in enumerate(lines, 1):
+        for pat, desc in POSITION_COUPLING:
+            m = re.search(pat, ln)
+            if m:
+                hits.append((i, desc, m.group(0), ln.strip()[:60]))
         if re.search(DECOUPLE_MARK, ln):
             continue
         for pat, desc in COUPLING:
@@ -85,6 +100,167 @@ def meta_narrative_check(lines):
             continue
         for pat, desc in META_FORBIDDEN:
             m = re.search(pat, ln)
+            if m:
+                hits.append((i, desc, m.group(0), ln.strip()[:60]))
+    return hits
+
+# ---------------- 胜率反下偏门（门②扩展·2026-06-20） ----------------
+# 见 memory/winrate-anchoring-bias.md：胜率自估有系统性「贴 60 门槛下方」下偏（57-59 聚集·偏离
+# 自己 rubric 15+ 点）。机械闸：凡胜率落临界带 [55,59]，③后附必须含「rubric 推导链」（锚=X→次因→
+# 落值），否则视为疑似贴门槛下偏 = HARD FAIL，强制补 rubric 推导或纠回真实值。
+# 设计：①只卡 [55,59]——开单日(≥60)与极低胜率均不触发，不影响 placing 稿/正常观望；
+#      ②有推导链即豁免——真·<60 的观望日(如中部无可达边缘)照常过，只要写清 rubric 锚与下调理由。
+_WINRATE_VAL = re.compile(r"胜率(?:自估)?\s*(?:约)?\s*(\d{2})\s*[%％]")
+# rubric 推导链签名：出现 rubric/方法论引用，或「锚 ~|=|～ 两位数」(如 锚~80 / 锚=75 / 锚点80)。
+_RUBRIC_CHAIN = re.compile(r"rubric|winrate_methodology|胜率方法论|锚[点]?\s*[~～=]\s*\d{2}")
+
+def _scoring_detail_region(lines):
+    """取 ③后附「评分明细」区(本份报告自己的胜率估值+推导所在)，到下一 ### / ## 边界为止。
+    🟥 只看这一区＝排除「三段/双段倒推审查」里引用的【往期】报告胜率(段一/段二/段三 58/57…)，
+    避免把历史引用误当本份估值(否则 placing 稿引用往期 58% 会被误判)。返回文本或 None。"""
+    start = None
+    for i, ln in enumerate(lines):
+        if re.search(r"评分明细", ln) or re.match(r"^###\s*A[\.．、]", ln):
+            start = i
+            break
+    if start is None:                      # 无评分明细标题 → 退化为 '## ③' 到下一个 '### '
+        for i, ln in enumerate(lines):
+            if re.match(r"^##\s*③", ln):
+                start = i
+                break
+    if start is None:
+        return None
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if re.match(r"^###\s", lines[j]) or re.match(r"^##(?!#)", lines[j]):
+            end = j
+            break
+    return "\n".join(lines[start:end])
+
+def winrate_anchor_check(lines):
+    """胜率反下偏。返回 (band_vals, has_chain, scoped)。band_vals=本份估值落[55,59]的列表(去重)。
+    只扫 ③后附「评分明细」区(本份自己的估值)·不扫倒推审查的往期引用。band_vals 非空且无 rubric
+    推导链 → 调用方判 HARD。scoped=False 表示无评分明细区(如纯模板)·不触发。"""
+    region = _scoring_detail_region(lines)
+    if region is None:
+        return [], False, False
+    vals = [int(m.group(1)) for m in _WINRATE_VAL.finditer(region)
+            if 55 <= int(m.group(1)) <= 59]
+    band_vals = sorted(set(vals))
+    has_chain = bool(_RUBRIC_CHAIN.search(region))
+    return band_vals, has_chain, True
+
+# ---------------- 流动性读位门（门②扩展·2026-06-21） ----------------
+# 见 scoring/chart_methodology.md §九（流动性猎杀）+ memory/precise-numbers-no-fuzzy：
+# 报告提「流动性密集区/猎杀位/清算带」并带价位时，必须标明读取周期（日线/4H/1H/15m/3天/48H/24H），
+# 否则=读位无尺度依据（清算热力图肉眼曾误差~200点）。价位本身的模糊位由 HARD 门已覆盖；本门只补「必带周期」。
+# 只卡"带价位的流动性位"行——基本面宏观流动性(如「流动性缺失/未回归」无价位)不触发。
+_LIQ_LEVEL = re.compile(r"流动性|猎杀|清算(?:带|区|位|磁吸|密集|热力)")
+_HAS_PRICE5 = re.compile(r"\d{2}[,，]?\d{3}")  # 5位价位 6X,XXX / 62000 / 64,266
+_PERIOD_TOK = re.compile(r"日线|周线|4\s*[Hh]|1\s*[Hh]|15\s*[Mm]|3\s*天|48\s*[Hh]|24\s*[Hh]|周期|小时级别|日内")
+
+def liquidity_check(lines):
+    """提流动性密集区/猎杀位且带价位的行，必须含周期标注。返回 [(行号, 命中词, 摘要)]。"""
+    hits = []
+    for i, ln in enumerate(lines, 1):
+        m = _LIQ_LEVEL.search(ln)
+        if m and _HAS_PRICE5.search(ln) and not _PERIOD_TOK.search(ln):
+            hits.append((i, m.group(0), ln.strip()[:60]))
+    return hits
+
+# ---------------- 盘面五步·VRVP概率主判 软提醒门（门②扩展·2026-06-21·WARN-only） ----------------
+# 见 chart_methodology §九：流动性猎杀概率「主判」= TV 成交量结构(VRVP/VAL/VAH/HVN/LVN/价值区)·
+# 清算热力图仅「辅助印证」。防漂移＝「拿辅助源(热力图)当主判、§九五步只走③④⑤(热力图+落点)跳过①②
+# (各周期摆动高低 + VRVP概率主判)」(2026-06-21 核验发现 6/21 早报 0 引用、晚报靠热力图articulate足
+# 但 VRVP/POC 主判articulate不足)。WARN-only·不阻 push·只提醒每份盘面走满五步、主判用 VRVP 非热力图。
+# 🟥 主判词刻意排除裸「POC」——②Exocharts 五源每份都有「POC 阶梯」会误判；§九主判用 TV-VRVP 专属词。
+_MAINJUDGE = re.compile(r"VRVP|VAH|VAL|HVN|LVN|价值区|高量节点|成交量结构|量峰")
+_AUXHEAT   = re.compile(r"清算热力|热力图|liqheatmap|清算带")
+_PANEL     = re.compile(r"流动性掠夺|流掠|流动性猎杀|猎杀位|猎杀")
+
+def panel_mainjudge_check(lines):
+    """盘面/流动性猎杀节点应含 VRVP/VAH/VAL 概率「主判」(§九 C·步②)。WARN-only。
+    只在报告确有盘面流动性猎杀内容时触发；两档：
+      (a) 引清算热力图(辅助)却缺 VRVP 主判 = 疑似拿辅助当主判(强提醒·正是 2026-06-21 发现的反转)
+      (b) 有流动性掠夺/猎杀内容但全篇无 VRVP 主判 = §九步①②疑未走(普通提醒)。
+    返回 [(档, 提示)]。"""
+    full = "\n".join(lines)
+    if not _PANEL.search(full):
+        return []
+    if _MAINJUDGE.search(full):
+        return []
+    if _AUXHEAT.search(full):
+        return [("a", "引清算热力图(辅助)却缺 VRVP/VAH/VAL 概率主判——疑似拿辅助源当主判"
+                       "(§九 C=主判=TV成交量结构·D=热力图仅辅助)·补各周期摆动高低+VRVP概率主判走满五步")]
+    return [("b", "盘面流动性掠夺/猎杀缺 VRVP/VAH/VAL 概率主判措辞——§九步①②(各周期摆动高低+VRVP概率主判)"
+                   "疑未走满·补主判读法(热力图为辅助·非主判)")]
+
+# ---------------- 正文英文术语门（门②扩展·2026-06-25·用户迭代） ----------------
+# 见 memory/report-chinese-only-narrative.md：日报【Notion 正文】(① 正文 + ② Maker)叙事术语一律
+# 中译·不留英文；保留指标缩写(CVD/OI/SMA/POC/VAH/VAL/VRVP/Delta/VWAP/R)+模板字段(Maker/TP1/TP2/
+# BTC/ETH/Binance/OKX)+专有名词(交易所/源/监管/公司名·新闻里不可预知→不入禁列)。
+# 设计=禁用清单(只抓已知叙事英文·不误伤新闻专有名词与保留缩写)·仅扫 '## ①'～'## ③' 之间
+# (稿首 > 自查块在 ## ① 之前=豁免·③后附保留英文=豁免)。命中即 HARD。新叙事英文按需扩列。
+EN_JARGON = [
+    (r"squeeze",              "逼空/挤升（squeeze-back→逼空反扑·squeeze-prone→易逼空）"),
+    (r"short[\- ]?cover",     "空头回补"),
+    (r"roll[\- ]?over|rollover", "见顶回落/动能反转"),
+    (r"confluence",           "汇合区/共振区"),
+    (r"retest",               "回踩"),
+    (r"\bgrab\b",             "猎取/扫取"),
+    (r"\brelief\b",           "缓解性反弹"),
+    (r"exhaustion",           "衰竭"),
+    (r"capitulat",            "投降"),
+    (r"whipsaw",              "双向扫损"),
+    (r"overshoot",            "过冲"),
+    (r"continuation",         "续势/续跌"),
+    (r"consolidat",           "整理"),
+    (r"\bmacro\b",            "宏观"),
+    (r"deep[\- ]?value",      "深度价值"),
+    (r"air[\- ]?pocket",      "真空薄量区"),
+    (r"risk[\- ]?on",         "风险偏好"),
+    (r"risk[\- ]?off",        "避险"),
+    (r"\bHTF\b",              "高周期"),
+    (r"\bHVN\b",              "高量节点"),
+    (r"\bLVN\b",              "低量/薄量节点"),
+    (r"\bfib\b",              "斐波那契"),
+    (r"premium",              "优质/溢价"),
+    (r"straddle",             "骑跨"),
+    (r"false[\- ]?break",     "假突破"),
+    (r"mean[\- ]?reversion",  "均值回归"),
+    (r"\bedge\b",             "边缘"),
+    (r"\bsupply\b",           "供给"),
+    (r"\bfloor\b",            "底部支撑"),
+    (r"\bVIEW\b",             "研判/观点"),
+    (r"\blongs\b|\bshorts\b", "多头/空头"),
+    (r"violent",              "剧烈"),
+    (r"breakout",             "突破"),
+    (r"\bwick\b",             "插针/影线"),
+    (r"\brebound\b",          "反弹"),
+    (r"absorption",           "吸收"),
+    (r"imbalance",            "失衡"),
+]
+_EN_JARGON_RE = [(re.compile(p, re.IGNORECASE), d) for p, d in EN_JARGON]
+
+def en_jargon_check(lines):
+    """扫 '## ①'～'## ③' 之间正文(=Notion 正文)，抓未中译的叙事英文。返回 [(行号,描述,命中,摘要)]。
+    禁用清单式：只命中已知叙事英文·不误伤保留缩写(CVD/SMA…)与新闻专有名词(Coinbase/MiCA…)。"""
+    start = end = None
+    for i, ln in enumerate(lines, 1):
+        if re.match(r"^##\s*①", ln):
+            start = i
+        elif re.match(r"^##\s*③", ln):
+            end = i
+            break
+    if start is None:
+        start = 1
+    if end is None:
+        end = len(lines)
+    hits = []
+    for i in range(start, end):
+        ln = lines[i - 1]
+        for rgx, desc in _EN_JARGON_RE:
+            m = rgx.search(ln)
             if m:
                 hits.append((i, desc, m.group(0), ln.strip()[:60]))
     return hits
@@ -234,6 +410,176 @@ def ledger_check(lines):
                 fired.append(a)
     return issues, None
 
+
+_FOUR_H = re.compile(r"4\s*[Hh]|4\s*小时|四小时")
+_BAD_FIRST_LAYER_TF = re.compile(r"15\s*[mM]|15\s*分钟|十五分钟|1\s*[Hh]|1\s*小时|一小时")
+
+
+def maker_defense_check(lines):
+    """Maker 浮盈防守硬门。
+
+    第一层必须是 4H K线极点，禁止 1H/15m/笼统小时级别；第二层只设保本损。
+    返回 [(行号, 描述, 命中文本, 行摘要)]。
+    """
+    sec = _maker_section(lines)
+    if sec is None:
+        return []
+    issues = []
+    first = [(lineno, ln.strip()) for lineno, ln in sec if re.search(r"第一层[：:]", ln)]
+    second = [(lineno, ln.strip()) for lineno, ln in sec if re.search(r"第二层[：:]", ln)]
+    for lineno, ln in first:
+        if not re.search(r"触及\s*" + _PRICE, ln):
+            issues.append((lineno, "Maker第一层缺具体触发价格", "第一层", ln[:70]))
+        if "极点" not in ln:
+            issues.append((lineno, "Maker第一层缺“极点”", "第一层", ln[:70]))
+        if not _FOUR_H.search(ln):
+            issues.append((lineno, "Maker第一层必须使用4H级别K线极点", "第一层", ln[:70]))
+        bad = _BAD_FIRST_LAYER_TF.search(ln)
+        if bad:
+            issues.append((lineno, "Maker第一层禁止使用1H/15m级别", bad.group(0), ln[:70]))
+        if "小时级别" in ln and not re.search(r"4\s*小时级别|四小时级别", ln):
+            issues.append((lineno, "Maker第一层禁止笼统“小时级别”", "小时级别", ln[:70]))
+    for lineno, ln in second:
+        if not re.search(r"触及\s*" + _PRICE, ln):
+            issues.append((lineno, "Maker第二层缺具体触发价格", "第二层", ln[:70]))
+        if "保本损" not in ln:
+            issues.append((lineno, "Maker第二层必须设保本损", "第二层", ln[:70]))
+        if re.search(r"(?:减仓|平仓)\s*\d", ln) and "不减仓" not in ln:
+            issues.append((lineno, "Maker第二层禁止仓位扣减", "减仓/平仓", ln[:70]))
+    return issues
+
+
+def exocharts_ohlc_check(lines):
+    """Exocharts 当前价/OHLC 自洽门。
+
+    报告若声明“当日未完成K线”并同时给出当前图面价格，则当前价必须落在该K线高低区间内。
+    否则通常代表截图十字光标停在旧K线，却被误读为当日K线。
+    """
+    text = "\n".join(lines)
+    issues = []
+    pattern = re.compile(
+        r"当日未完成K线[：:]\s*开\s*" + _PRICE
+        + r"[、,，]\s*高\s*" + _PRICE
+        + r"[、,，]\s*低\s*" + _PRICE
+        + r"[、,，]\s*收\s*" + _PRICE
+        + r".{0,40}?当前(?:图面)?价格\s*" + _PRICE,
+        re.S,
+    )
+    for match in pattern.finditer(text):
+        open_, high, low, close, current = (_num(value) for value in match.groups())
+        if high < low:
+            issues.append((0, "Exocharts OHLC 高低倒置", f"高{high:g}/低{low:g}", ""))
+        if current > high or current < low:
+            issues.append((
+                0,
+                "Exocharts 当前价不在所称当日K线高低区间内",
+                f"当前{current:g} vs 高{high:g}/低{low:g}",
+                "疑似十字光标停在旧K线，禁止当作当日未完成K线",
+            ))
+    return issues
+
+
+def _third_section_text(lines):
+    start = None
+    for i, ln in enumerate(lines):
+        if re.match(r"^##\s*③", ln):
+            start = i
+            break
+    if start is None:
+        return ""
+    return "\n".join(lines[start:])
+
+
+def analysis_depth_check(lines):
+    """MAX 独立分析深度门。
+
+    ③ 后附是本地报告承载完整推理的位置。若这里只剩短摘要，即使正文格式正确，
+    也等于没有完成五源验真、转录、评分、胜率、风险与情景推理。
+    """
+    section = _third_section_text(lines)
+    issues = []
+    if not section:
+        return [(0, "缺少③后附完整分析区", "## ③", "报告无法建立完整分析锁")]
+    if len(section) < 5000:
+        issues.append((
+            0,
+            "③后附分析过短，疑似摘要化/降档推理",
+            f"{len(section)} chars",
+            "最低要求 5000 字符，且必须覆盖完整五源、评分、胜率、风险、情景",
+        ))
+    required_markers = [
+        ("BlockBeats", "基本面源细节"),
+        ("Coinglass", "盘口源细节"),
+        ("Exocharts", "足迹源细节"),
+        ("FedWatch", "宏观源细节"),
+        ("TradingView", "盘面源细节"),
+        ("胜率", "胜率推导"),
+        ("风险", "风险验算"),
+    ]
+    for marker, desc in required_markers:
+        if marker not in section:
+            issues.append((0, f"③后附缺{desc}", marker, ""))
+    if not re.search(r"VRVP|VAH|VAL|POC", section):
+        issues.append((0, "③后附缺 VRVP/VAH/VAL/POC 盘面主判证据", "VRVP/VAH/VAL/POC", ""))
+    if not re.search(r"情景|情形|路径|反证|失效", section):
+        issues.append((0, "③后附缺情景/反证/失效路径推理", "情景/反证/失效", ""))
+    return issues
+
+
+_GOLDEN_PRICE_REF = re.compile(r"\d{2},\d{3}|\d{5}(?:\.\d+)?")
+_GOLDEN_SOURCES = ("BlockBeats", "Exocharts", "Coinglass", "FedWatch", "TradingView")
+
+
+def golden_quality_check(lines):
+    """2026-06-22..2026-06-26 本地高质量样本的回归下限。
+
+    这不是模板/样式检查，而是抓 6/26 后实际出现的质量断崖：
+    推理压缩、后附分析区变薄、数值锚点减少、评分/胜率推导链消失。
+    """
+    text = "\n".join(lines)
+    section = _third_section_text(lines)
+    issues = []
+    if len(text) < 10000:
+        issues.append((
+            0,
+            "golden-quality：combined 报告短于 2026-06-26 前本地下限",
+            f"{len(text)} chars",
+            "floor=10000；2026-06-22..26 本地样本均 >=10170 chars",
+        ))
+    if len(section) < 7000:
+        issues.append((
+            0,
+            "golden-quality：③后附推理区短于 2026-06-26 前本地下限",
+            f"{len(section)} chars",
+            "floor=7000；2026-06-22..26 本地样本③后附均 >=7442 chars",
+        ))
+    missing_sources = [source for source in _GOLDEN_SOURCES if source not in section]
+    if missing_sources:
+        issues.append((
+            0,
+            "golden-quality：③后附未承载完整五源逐项证据",
+            ",".join(missing_sources),
+            "五源证据必须进入本地推理后附区，不能只出现在标题/摘要",
+        ))
+    price_refs = len(_GOLDEN_PRICE_REF.findall(section))
+    if price_refs < 120:
+        issues.append((
+            0,
+            "golden-quality：数值/价位证据锚点低于 2026-06-26 前本地下限",
+            f"{price_refs} refs",
+            "floor=120；2026-06-22..26 本地样本③后附均 >=141 refs",
+        ))
+    rubric_refs = section.lower().count("rubric")
+    if rubric_refs < 2:
+        issues.append((
+            0,
+            "golden-quality：评分/胜率推导链留痕不足",
+            f"rubric={rubric_refs}",
+            "floor=2；2026-06-22..26 本地样本保留显式 rubric 推导链",
+        ))
+    return issues
+
+
 def main():
     # GBK 控制台防崩：正文里的 emoji（如🔴）无法编码时替换为 ?，不让 lint 自身崩溃
     if hasattr(sys.stdout, "reconfigure"):
@@ -252,6 +598,15 @@ def main():
     ledger_issues, ledger_skip = ledger_check(lines)
     coupling_hits = coupling_check(lines)
     meta_hits = meta_narrative_check(lines)
+    wr_band, wr_chain, wr_scoped = winrate_anchor_check(lines)
+    wr_fail = bool(wr_band) and not wr_chain
+    liq_hits = liquidity_check(lines)
+    en_hits = en_jargon_check(lines)
+    panel_hits = panel_mainjudge_check(lines)  # 软提醒·WARN-only·不进 FAIL
+    defense_hits = maker_defense_check(lines)
+    exo_hits = exocharts_ohlc_check(lines)
+    depth_hits = analysis_depth_check(lines)
+    golden_hits = golden_quality_check(lines)
     for i, desc, hit, ctx in warn_hits:
         print(f"[WARN] L{i} {desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in hard_hits:
@@ -268,10 +623,41 @@ def main():
         print(f"[HARD] 仓位帐本矛盾 {desc}")
         for ln_no, txt in ref_lines:
             print(f"       L{ln_no} | {txt[:70]}")
+    for i, desc, hit, ctx in defense_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} Maker防守层门·{desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in exo_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} Exocharts自洽门·{desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in depth_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} 分析深度门·{desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in golden_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} 黄金样本质量回归门·{desc}: '{hit}'  | {ctx}")
     if not coupling_hits:
         print("[OK] 解耦门: 无联动用户实仓的语言")
+    for i, hit, ctx in liq_hits:
+        print(f"[HARD] L{i} 流动性读位门·缺周期标注 '{hit}': {ctx}")
+    if not liq_hits:
+        print("[OK] 流动性读位门: 流动性/猎杀价位均带周期标注(或无带价位的流动性位)")
+    for i, desc, hit, ctx in en_hits:
+        print(f"[HARD] L{i} 正文英文术语门·未中译 '{hit}'(→{desc}): {ctx}")
+    if not en_hits:
+        print("[OK] 正文英文术语门: Notion 正文(①+②)无未中译叙事英文(保留缩写/模板/专有名词除外)")
+    for kind, msg in panel_hits:
+        print(f"[WARN] 盘面五步·VRVP主判门: {msg}")
+    if not panel_hits:
+        print("[OK] 盘面五步·VRVP主判门: 含 VRVP/VAH/VAL 概率主判(或无盘面流动性猎杀节点)")
+    if wr_fail:
+        print(f"[HARD] 胜率反下偏门: 胜率落临界带{wr_band}(贴60门槛下方)·③后附无 rubric 推导链"
+              f"(锚=X→次因→落值)→疑似贴门槛下偏·补 rubric 推导或纠真实值(见 winrate-anchoring-bias)")
+    elif wr_band:
+        print(f"[OK] 胜率反下偏门: 胜率{wr_band}落临界带但③后附含 rubric 推导链(已显式说明锚与下调理由)")
+    else:
+        print("[OK] 胜率反下偏门: 胜率未落临界带[55,59](无贴门槛下偏嫌疑)")
     print()
-    if hard_hits or ledger_issues or coupling_hits or meta_hits:
+    if hard_hits or ledger_issues or coupling_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or golden_hits:
         msgs = []
         if hard_hits:
             msgs.append(f"{len(hard_hits)} 处模糊位/占位/臆造（用核过的确切数字替换）")
@@ -281,6 +667,20 @@ def main():
             msgs.append(f"{len(coupling_hits)} 处联动用户实仓（违解耦边界·system-plan-decoupled·改为系统独立判断）")
         if meta_hits:
             msgs.append(f"{len(meta_hits)} 处正文元叙事（代号/方法论/分数/门槛→改自然语言·移③后附·见 fundamentals-brief-core-priority）")
+        if wr_fail:
+            msgs.append(f"胜率临界带{wr_band}无 rubric 推导链（补「锚=X→次因→落值」或纠真实值·见 winrate-anchoring-bias）")
+        if liq_hits:
+            msgs.append(f"{len(liq_hits)} 处流动性/猎杀价位缺周期标注（必带 日线/4H/1H/15m/3天/48H/24H·见 chart_methodology §九）")
+        if en_hits:
+            msgs.append(f"{len(en_hits)} 处正文未中译叙事英文（→中文·保留缩写/模板/专有名词除外·见 report-chinese-only-narrative）")
+        if defense_hits:
+            msgs.append(f"{len(defense_hits)} 处 Maker 防守层级别/触发价违规（第一层必须 4H 极点，第二层只保本损）")
+        if exo_hits:
+            msgs.append(f"{len(exo_hits)} 处 Exocharts OHLC/当前价不自洽（重读截图或重采）")
+        if depth_hits:
+            msgs.append(f"{len(depth_hits)} 处分析深度不足（③后附必须承载完整五源/评分/胜率/风险/情景）")
+        if golden_hits:
+            msgs.append(f"{len(golden_hits)} 处未达到 2026-06-22..26 本地黄金样本质量下限（推理承载量/数值锚点/rubric 留痕）")
         print(f"[FAIL] " + "；".join(msgs) + " —— 修正后重跑")
         sys.exit(1)
     suffix = "" if ledger_skip else "·仓位帐本一致"

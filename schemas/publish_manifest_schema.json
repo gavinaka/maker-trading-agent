@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Verified Notion publish manifest",
+  "type": "object",
+  "required": ["schema_version", "status", "trading_date", "slot", "verifier_mode", "payload_sha256", "report_sha256"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "status": {"enum": ["success", "failed"]},
+    "trading_date": {"type": "string"},
+    "slot": {"enum": ["morning", "midday", "evening"]},
+    "verifier_mode": {"enum": ["morning", "midday", "evening", "review"]},
+    "payload_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "report_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "page_id": {"type": "string"},
+    "published_at": {"type": "string"},
+    "frozen_verifier_pass": {"type": "boolean"},
+    "unique_page_pass": {"type": "boolean"},
+    "failure_reason": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "success"}}},
+      "then": {
+        "required": ["page_id", "published_at", "frozen_verifier_pass", "unique_page_pass"],
+        "properties": {
+          "frozen_verifier_pass": {"const": true},
+          "unique_page_pass": {"const": true}
+        }
+      },
+      "else": {"required": ["failure_reason"]}
+    }
+  ],
+  "additionalProperties": true
+}

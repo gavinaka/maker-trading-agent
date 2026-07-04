@@ -1,0 +1,27 @@
+---
+name: daily-report
+description: Run the Trading-System daily, morning, midday, or evening trading report. Use whenever the user asks to 写/出/跑/生成日报、早报、早间日报、午报、午间日报、晚报或晚间日报 in this workspace. Never invoke, chain, or output quant-summary; Trading-System has no quantitative-summary report workflow.
+---
+
+# Trading-System Daily Report
+
+1. Read `sessions/日报SOP.md` completely; it is the committed executable authority for Codex runs.
+2. If `.claude/skills/daily-report/SKILL.md` exists on this machine, treat it only as a local Claude Code compatibility mirror. It may be consulted for drift detection, but it is not allowed to override `sessions/日报SOP.md` or any committed authority file because `.claude/` is git-ignored.
+3. Read every authority file selected by the SOP routing rules.
+4. Keep this workflow isolated. Do not invoke or mix `quant-summary` or any sibling workflow.
+5. Optimize only deterministic collection and mechanical execution.
+6. Build `runtime/context_pack.py` once. Before the analysis lock, never directly read the full context ledger, aggregate memory, prior reports, or prior analysis/decision archives.
+7. Before the analysis lock, do not read or use Notion actual-position facts for Maker/main decisions. Positions may be reconciled only after the independent report hash is locked, and may not change score, win rate, direction, entry, stops, targets, or whether Maker places an order.
+8. Before collection, run `session_runner.py begin-session --date <date> --slot <slot>` and retain its lease token. Pass that token to capture and every subsequent runner command. A second slot/date may not begin until delivery closes the lease; interruption requires explicit `abandon-session` or `recover-session` with a reason.
+9. Capture into the immutable manifest path printed by `capture_all.js`/`capture_delta.js`. BlockBeats must be collected with the page's `重要快讯` filter selected; require `blockbeats.json` to contain `"important_only": true`, and hard-stop instead of falling back to unfiltered news. After collection and before source validation, confirm the highest available model and MAX effort, then run `session_runner.py prepare` with `--capture-manifest <exact path> --lease-token <token> --max-reasoning-confirmed`; halt if this cannot be confirmed.
+10. Use MAX reasoning for source validation, visual transcription, analysis, scoring, win rate, risk, scenarios, decisions, writing, and review.
+11. Recompute the complete analysis from the full valid five-source evidence for every morning, midday, and evening report. Never reuse prior features, scores, win rate, risk, or judgment. A logic/methodology hash change invalidates analysis only and never authorizes redundant evidence capture.
+12. Maker floating-defense first layer must use a 4H candle extreme: 4H high for shorts and 4H low for longs. Never use 1H/15m/hourly wording for the first layer.
+13. After lint passes, run `session_runner.py lock-analysis ... --lease-token <token>` with the independent-analysis confirmations. Do not read prior-session directions, scores, win rate, Maker decisions, or Notion actual-position facts until this report-hash-bound lock exists.
+14. Review prior-plan continuity after the lock; for evening, also complete the independent review. Then run `session_runner.py finalize-post-lock ... --lease-token <token>` with the applicable confirmations.
+15. Commit only through `session_runner.py commit ... --lease-token <token>`; it must validate the analysis lock, post-lock completion, report completeness, source coverage, and state allowlist.
+16. Render only with `render_from_combined.py <combined> --date <date> --slot <slot>`. It produces exactly `outputs/<date>_<slot>_render.docx`, reuses a matching hash-bound result, blocks lone `>`/bad titles, and hard-stops before a third attempt.
+17. Run `word_qa.py export`, inspect every generated page at MAX, then run `word_qa.py approve --confirm-visual-pass --reviewer <host>`. Do not create V2/V3/report/Chinese-named DOCX copies or temporary VBS/PS1 render scripts.
+18. Publish through `publish_report.py`. Only after the render, Word-QA and publish manifests exist, append the exact final page id/time/PASS to `context_log.md`; then run `session_runner.py deliver --date <date> --slot <slot> --page-id <id> --lease-token <token>`. Boolean self-attestation is not delivery evidence.
+19. If MAX reasoning resources or required evidence are unavailable, halt instead of degrading quality.
+20. Bind every report to its own immutable slot evidence snapshot (date + slot + actual capture time + source hashes). Morning, midday, and evening captures and reports are independent. A later slot must never overwrite, refresh, reinterpret, or satisfy freshness for an earlier slot. Publication, Word QA, ledger logging, and delivery must all use the same locked report hash and slot-bound evidence snapshot. See `memory/report-evidence-time-lock.md`.

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hash-bound Word visual QA manifest",
+  "type": "object",
+  "required": ["schema_version", "status", "visual_qa_pass", "trading_date", "slot", "attempts", "backend", "docx_path", "docx_sha256"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "status": {"enum": ["prepared", "passed", "failed"]},
+    "visual_qa_pass": {"type": "boolean"},
+    "trading_date": {"type": "string"},
+    "slot": {"enum": ["morning", "midday", "evening"]},
+    "attempts": {"type": "integer", "minimum": 1, "maximum": 2},
+    "backend": {"const": "word_com"},
+    "docx_path": {"type": "string"},
+    "docx_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "pdf_path": {"type": "string"},
+    "pdf_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "pages": {"type": "array"},
+    "reviewed_at": {"type": "string"},
+    "failure_reason": {"type": "string"}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Immutable capture run manifest",
+  "type": "object",
+  "required": ["schema_version", "date", "slot", "mode", "run_id", "workflow_lease_id", "started_at", "completed_at", "success"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "date": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}$"},
+    "slot": {"enum": ["morning", "midday", "evening"]},
+    "mode": {"enum": ["full_base", "conservative_delta", "full_recollection"]},
+    "run_id": {"type": "string", "pattern": "^[0-9a-f-]{16,64}$"},
+    "workflow_lease_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "started_at": {"type": "string"},
+    "completed_at": {"type": "string"},
+    "success": {"type": "boolean"},
+    "fallback_reasons": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

@@ -7,7 +7,14 @@ plumbing（multipart 上传 / 去重 / after 插图 / 旧块迁移 / 分页>100�
 
 ⚠️ 写 Python 字符串内的中文引号一律用全角「」，禁用半角 " （会与字符串定界符冲突→SyntaxError）。
 """
-import os, json, time, requests
+import json
+import os
+import subprocess
+import sys
+import time
+import uuid
+
+import requests
 
 NV = "2022-06-28"
 AI_AGENT_PLAN = "373fda35-a098-80be-ae2f-ddfb06b3b075"  # 唯一可写项目，其它只读
@@ -83,6 +90,15 @@ def find_child_page(parent, title_prefix):
             return b["id"]
     return None
 
+def find_child_pages(parent, title_prefix):
+    """Return every live child page whose title starts with ``title_prefix``."""
+    return [
+        b["id"]
+        for b in get_children(parent)
+        if b["type"] == "child_page"
+        and b["child_page"]["title"].startswith(title_prefix)
+    ]
+
 def find_heading(blocks, text_prefix):
     for b in blocks:
         tp = b["type"]
@@ -104,7 +120,253 @@ def _find_exact_child_page(parent, title):
             return b["id"]
     return None
 
+EXPECT_BOT = "359fda35-a098-81e0-97b8-0027dab06092"  # Slow（Claude）·用户真库 Slow丶（rotate token 不改 bot id）
+EXPECT_WS = "Slow丶"
+_ws_ok = False
+def assert_workspace():
+    """🔴 push 前置硬门（治『推到错误 workspace』）：确认 token 指向用户真库(Slow丶/359)，否则 abort，绝不推送。"""
+    global _ws_ok
+    if _ws_ok:
+        return
+    me = _get("https://api.notion.com/v1/users/me").json()
+    bot = me.get("id", "")
+    ws = (me.get("bot") or {}).get("workspace_name", "")
+    if bot != EXPECT_BOT:
+        raise SystemExit(
+            f"🔴ABORT 推送前置门：token 指向错误集成 bot={bot} ws={ws!r}·"
+            f"应为 {EXPECT_BOT}（Slow（Claude）/{EXPECT_WS}）·拒绝推送（防推到用户看不到的 workspace）。"
+            f"请修正 NOTION_TOKEN 后重试。")
+    _ws_ok = True
+    print(f"[preflight] workspace OK: {ws} bot={bot[:8]}")
+
+def verify_published(page_id, parent_id, expect_images=None):
+    """🔴 push 后置硬门（治『只信 API 返回·不验地面真值』）：确认页真在 parent 下、archived=False、
+    （可选）image 数达标。返回 (ok, msg)；失败＝没真正落库，调用方绝不可报成功。"""
+    p = _get(f"https://api.notion.com/v1/pages/{page_id}").json()
+    if p.get("archived"):
+        return False, f"页 {page_id} archived=True（未存活）"
+    ap = (p.get("parent") or {}).get("page_id", "")
+    if ap != parent_id:
+        return False, f"parent={ap} != 期望 {parent_id}（落错位置）"
+    if not any(b.get("id") == page_id for b in get_children(parent_id)):
+        return False, "页不在 parent 的 children 中（用户看不到）"
+    if expect_images is not None:
+        imgs = sum(1 for b in get_children(page_id) if b.get("type") == "image")
+        if imgs != expect_images:
+            return False, f"image={imgs} != 期望 {expect_images}（快讯卡缺失）"
+    return True, "落库验证通过（在 parent 下·archived=False）"
+
+def _page_title(page):
+    for value in (page.get("properties") or {}).values():
+        if value.get("type") == "title":
+            return "".join(x.get("plain_text", "") for x in value.get("title", []))
+    return ""
+
+def archive_page(page_id):
+    """Archive a page with response-loss recovery; safe to call repeatedly."""
+    for attempt in range(4):
+        try:
+            response = requests.patch(
+                f"https://api.notion.com/v1/pages/{page_id}",
+                headers=_h(),
+                data=json.dumps({"archived": True}),
+                timeout=30,
+            )
+            response.raise_for_status()
+            return
+        except _NET_ERRS:
+            time.sleep(1.5 * (2 ** attempt))
+            if _get(f"https://api.notion.com/v1/pages/{page_id}").json().get("archived"):
+                return
+            if attempt == 3:
+                raise
+
+def set_page_title(page_id, title):
+    """Rename a page with response-loss recovery."""
+    payload = {
+        "properties": {
+            "title": {
+                "title": [{"type": "text", "text": {"content": title}}]
+            }
+        }
+    }
+    for attempt in range(4):
+        try:
+            response = requests.patch(
+                f"https://api.notion.com/v1/pages/{page_id}",
+                headers=_h(),
+                data=json.dumps(payload),
+                timeout=30,
+            )
+            response.raise_for_status()
+            return
+        except _NET_ERRS:
+            time.sleep(1.5 * (2 ** attempt))
+            page = _get(f"https://api.notion.com/v1/pages/{page_id}").json()
+            if _page_title(page) == title:
+                return
+            if attempt == 3:
+                raise
+
+def verify_single_live_child(parent_id, title_prefix, expected_page_id):
+    """Require exactly one live matching child and require it to be the new page."""
+    matches = find_child_pages(parent_id, title_prefix)
+    if matches != [expected_page_id]:
+        return (
+            False,
+            f"live_matches={matches}，期望仅 [{expected_page_id}]",
+        )
+    return True, "同前缀仅一个存活页"
+
+def assert_source_freshness(source_specs, now_ts=None):
+    """Hard-stop stale/missing source files before any Notion write.
+
+    ``source_specs`` maps a source label to either a path or a dict:
+    ``{"path": ..., "max_age_minutes": 240, "same_local_day": False}``.
+    Scoring sources use the four-hour hard limit from
+    ``data_sources/freshness_rules.md``.  News and FedWatch may use their own
+    explicit limits, but callers must not omit the four core scoring files.
+    """
+    now_ts = time.time() if now_ts is None else float(now_ts)
+    failures = []
+    ages = {}
+    for label, raw_spec in source_specs.items():
+        spec = {"path": raw_spec} if isinstance(raw_spec, str) else dict(raw_spec)
+        path = os.path.abspath(spec["path"])
+        max_age = float(spec.get("max_age_minutes", 240))
+        if not os.path.isfile(path):
+            failures.append(f"{label}: 缺文件 {path}")
+            continue
+        modified = os.path.getmtime(path)
+        age_minutes = max(0.0, (now_ts - modified) / 60.0)
+        ages[label] = age_minutes
+        if age_minutes > max_age:
+            failures.append(
+                f"{label}: {age_minutes:.1f} 分钟 > {max_age:.0f} 分钟"
+            )
+        if spec.get("same_local_day"):
+            source_day = time.localtime(modified)[:3]
+            current_day = time.localtime(now_ts)[:3]
+            if source_day != current_day:
+                failures.append(f"{label}: 非当日采集")
+    if failures:
+        raise SystemExit(
+            "SOURCE FRESHNESS FAILED："
+            + "；".join(failures)
+            + "。禁止发布可执行计划；请重采五源、重评分、重出稿。"
+        )
+    print(
+        "SOURCE FRESHNESS PASS: "
+        + ", ".join(f"{k}={v:.1f}m" for k, v in ages.items())
+    )
+    return ages
+
+def run_python_gate(script_path, args, label):
+    """Run a Python quality gate and propagate its exit status."""
+    result = subprocess.run(
+        [sys.executable, os.path.abspath(script_path), *args],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(f"{label} FAILED: exit={result.returncode}")
+    print(f"{label} PASS")
+
+def run_report_lint(report_path):
+    run_python_gate(
+        os.path.join(os.path.dirname(__file__), "report_lint.py"),
+        [os.path.abspath(report_path)],
+        "REPORT LINT",
+    )
+
+def run_frozen_verifier(page_id, mode):
+    run_python_gate(
+        os.path.join(
+            os.path.dirname(__file__),
+            "notion_verify_against_yesterday.py",
+        ),
+        [page_id, mode],
+        "FROZEN GOLD VERIFY",
+    )
+
+def replace_page_transactional(
+    parent_id,
+    title,
+    title_prefix,
+    children,
+    image_after_heading,
+    image_paths,
+    verifier_mode,
+):
+    """Publish a verified replacement without deleting the last good page first.
+
+    Prepare phase:
+      1. Snapshot all matching live pages.
+      2. Create a uniquely titled staging page.
+      3. Upload images, verify landing, rename to the final title, and run the
+         frozen verifier.
+      4. Any prepare failure archives only the staging page; old pages survive.
+
+    Commit phase:
+      5. Archive old pages only after every gate passed.
+      6. Require exactly one live matching page.  A commit failure keeps the
+         verified new page live (duplicates are safer than data loss).
+    """
+    old_pages = find_child_pages(parent_id, title_prefix)
+    staging_title = f"{title} [发布中-{uuid.uuid4().hex[:8]}]"
+    page_id = None
+
+    try:
+        page_id = create_page(parent_id, staging_title, children)
+        if image_paths:
+            insert_images_after_heading(
+                page_id,
+                image_after_heading,
+                image_paths,
+            )
+        ok, message = verify_published(
+            page_id,
+            parent_id,
+            expect_images=len(image_paths),
+        )
+        if not ok:
+            raise RuntimeError("PUBLISH VERIFY FAILED: " + message)
+        print("PUBLISH VERIFY PASS:", message)
+
+        set_page_title(page_id, title)
+        run_frozen_verifier(page_id, verifier_mode)
+    except BaseException:
+        if page_id:
+            try:
+                archive_page(page_id)
+                print("ROLLBACK staged page:", page_id)
+            except Exception as rollback_error:
+                print(
+                    "ROLLBACK FAILED — manual cleanup required:",
+                    page_id,
+                    rollback_error,
+                    file=sys.stderr,
+                )
+        raise
+
+    # Commit begins here.  Do not roll back the verified new page if cleanup of
+    # an old page fails; keeping duplicates is safer than deleting all reports.
+    for old_page in old_pages:
+        if old_page != page_id:
+            archive_page(old_page)
+            print("archived old:", old_page)
+
+    unique, unique_message = verify_single_live_child(
+        parent_id,
+        title_prefix,
+        page_id,
+    )
+    if not unique:
+        raise RuntimeError("LIVE PAGE UNIQUENESS FAILED: " + unique_message)
+    print("LIVE PAGE UNIQUENESS PASS:", unique_message)
+    return page_id, old_pages
+
 def create_page(parent, title, children):
+    assert_workspace()  # 🔴前置门：token 指向错误 workspace 即 abort，杜绝推错地方
     head, rest = children[:100], children[100:]
     payload = {"parent":{"type":"page_id","page_id":parent},
                "properties":{"title":{"title":[{"type":"text","text":{"content":title}}]}},
@@ -144,6 +406,8 @@ def ensure_date_page(date_str):
     return pid if pid else create_page(AI_AGENT_PLAN, date_str, [])
 
 def upload_image(path, name=None):
+    if not os.path.isfile(path):  # 🔴门D：图文件不存在即明确 abort（治 cards 没生成/push 图名不匹配的 FileNotFoundError 半途崩）
+        raise SystemExit(f"🔴ABORT 插图：图文件不存在 {path}·先确认 cards 脚本已生成图、且 push 的 imgs 路径名与 cards 输出名一致（make_card 首参=fname）。")
     name = name or os.path.basename(path)
     # 图片上传是日志里实际报 SSL EOF 的点，可安全重试；
     # 关键：每次重试都重开文件句柄（文件指针已到 EOF 时重发会传空内容）。

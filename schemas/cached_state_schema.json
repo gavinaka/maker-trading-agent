@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading-System resolved runtime state",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "created_at",
+    "trading_date",
+    "slot",
+    "state_version",
+    "logic_version",
+    "sources",
+    "capture_manifest",
+    "invalidated_nodes",
+    "post_lock_nodes",
+    "recomputed_nodes",
+    "full_fallback_used",
+    "collection_mode",
+    "commit_id",
+    "report_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "3.0"},
+    "created_at": {"type": "string"},
+    "trading_date": {"type": "string"},
+    "slot": {"enum": ["morning", "midday", "evening"]},
+    "state_version": {"type": "integer", "minimum": 1},
+    "parent_version": {"type": ["integer", "null"], "minimum": 1},
+    "logic_version": {"type": "object", "additionalProperties": {"type": "string"}},
+    "sources": {"type": "object"},
+    "capture_manifest": {
+      "type": "object",
+      "required": ["path", "sha256", "mode"],
+      "properties": {
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "mode": {"type": ["string", "null"]},
+        "completed_at": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "changed_sources": {"type": "array", "items": {"type": "string"}},
+    "source_affected_nodes": {"type": "array", "items": {"type": "string"}},
+    "invalidated_nodes": {"type": "array", "items": {"type": "string"}},
+    "post_lock_nodes": {"type": "array", "items": {"type": "string"}},
+    "recomputed_nodes": {"type": "array", "items": {"type": "string"}},
+    "analysis_policy": {
+      "type": "object",
+      "required": [
+        "reasoning_effort",
+        "max_reasoning_confirmed",
+        "use_highest_available_model",
+        "full_analysis_recompute",
+        "prior_decision_access",
+        "reuse_prior_analysis"
+      ]
+    },
+    "full_fallback_used": {"type": "boolean"},
+    "collection_mode": {"enum": ["full_base", "incremental", "full_recollection"]},
+    "fallback_reasons": {"type": "array", "items": {"type": "string"}},
+    "notion_state": {"type": "object"},
+    "commit_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "report_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

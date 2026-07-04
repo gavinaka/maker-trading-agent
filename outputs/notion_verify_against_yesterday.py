@@ -20,7 +20,9 @@ def _get(url):
     """GET with retry — Notion 偶发 SSL UNEXPECTED_EOF，重试 3 次（对齐 report_colors）。"""
     for attempt in range(3):
         try:
-            return requests.get(url, headers=H, timeout=30)
+            response = requests.get(url, headers=H, timeout=30)
+            response.raise_for_status()
+            return response
         except requests.exceptions.RequestException:
             if attempt == 2:
                 raise
@@ -105,6 +107,13 @@ def profile(pid):
     return rows
 
 def main():
+    if len(sys.argv) < 2:
+        print(
+            "用法: py notion_verify_against_yesterday.py "
+            "<today_page_id> [morning|midday|evening|review|reference_page_id]"
+        )
+        return 2
+
     today = sys.argv[1]
     ref = sys.argv[2] if len(sys.argv) > 2 else "morning"
     gold = GOLD.get(ref, ref)  # 关键词->6/2金标id；否则当作显式page_id
@@ -178,6 +187,7 @@ def main():
 
     if title_ok and struct_ok and color_ok and meta_ok:
         print("\n[PASS] ALL CHECKS PASS — 标题 + 块类型/块数/图片 对齐金标 + 语义配色符合唯一规则 + 正文无元叙事")
+        return 0
     else:
         msg = []
         if not title_ok: msg.append("标题格式不对齐金标")
@@ -185,6 +195,7 @@ def main():
         if not color_ok: msg.append("语义配色错配")
         if not meta_ok: msg.append("正文含元叙事（代号/方法论/分数/门槛→改自然语言·移③后附）")
         print(f"\n[FAIL] " + " / ".join(msg) + " —— 必须修复后重跑")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

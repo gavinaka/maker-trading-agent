@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Active daily-report workflow lease",
+  "type": "object",
+  "required": ["schema_version", "status", "trading_date", "slot", "token", "lease_id", "started_at"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "status": {"const": "active"},
+    "trading_date": {"type": "string", "pattern": "^20[0-9]{2}-[0-9]{2}-[0-9]{2}$"},
+    "slot": {"enum": ["morning", "midday", "evening"]},
+    "token": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "lease_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "started_at": {"type": "string"},
+    "owner_pid": {"type": "integer", "minimum": 1}
+  },
+  "additionalProperties": false
+}

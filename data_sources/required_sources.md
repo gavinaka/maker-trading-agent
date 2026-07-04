@@ -64,7 +64,7 @@ https://exocharts.com/web/
 https://www.theblockbeats.info/newsflash
 
 > Collector SOP: `data_sources/collectors/blockbeats.md`
-> ⚠️ 硬要求：必须截图，禁止文字替代
+> ⚠️ 硬要求：由 `capture_all.js`／`capture_delta.js` 统一自动采集，必须勾选页面「重要快讯」，同时存在当日 `blockbeats.png` + `blockbeats.json`，且 JSON 中 `"important_only": true`；禁止文字替代或退回未筛选快讯
 
 ### 用途
 - 行业重大新闻
@@ -77,6 +77,7 @@ https://www.theblockbeats.info/newsflash
 - AI总结替代截图
 - 伪造新闻
 - 使用历史新闻替代
+- 使用未勾选「重要快讯」的全量资讯
 
 ---
 
@@ -99,6 +100,7 @@ https://www.cmegroup.com/cn-s/markets/interest-rates/cme-fedwatch-tool.html
   - 中性
   - 中性偏多
   - 中性偏空
+- 浏览器截图失败时可使用**当日权威网络数据**替代：优先 CME Group 官方，其次 Federal Reserve 官方，再次为明确引用 CME 且标注时点的主流金融数据源。关键数字至少双源核验，并写入 `fedwatch.json` 留存来源、时间与失败原因；这属于 FedWatch 渲染层例外，不属于用历史数据兜底。
 
 ---
 
@@ -125,4 +127,4 @@ https://www.cmegroup.com/cn-s/markets/interest-rates/cme-fedwatch-tool.html
 
 # 数据缺失规则
 任意核心数据缺失，必须标注“待补充”，不得强行生成交易计划。
-🟥 **五源缺一不可**（BlockBeats / Exocharts / Coinglass / FedWatch / TradingView，TV 须四档齐）：任一缺失立即硬停，不得用昨日/上份兜底、不得推演占位、不得跳过缺源。
+🟥 **五源缺一不可**（BlockBeats / Exocharts / Coinglass / FedWatch / TradingView，TV 须四档齐）：任一缺失立即硬停，不得用昨日/上份兜底、不得推演占位、不得跳过缺源。唯一例外：FedWatch 截图渲染失败但已按权威网络回退规则取得、双源核验并留存当日真实数据时，视为该源有效。

@@ -1,0 +1,218 @@
+// Conservative midday/evening delta capture.
+//
+// Business logic stays unchanged:
+//   - dynamic decision sources are refreshed;
+//   - FedWatch may be reused only when a valid same-day artifact exists;
+//   - any core failure triggers one bounded full capture fallback;
+//   - all scripts remain sequential because browser profiles are exclusive.
+
+import { spawn } from 'child_process';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import {
+  acquireCaptureLock,
+  immutableManifestPath,
+  releaseCaptureLock,
+  requireWorkflowLease,
+  snapshotEvidence,
+  writeImmutableJson,
+} from './capture_lock.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..', '..');
+const SLOT = process.argv.includes('--evening') ? 'evening' : 'midday';
+const PLAN_ONLY = process.argv.includes('--plan-only');
+const leaseArg = process.argv.indexOf('--lease-token');
+const LEASE_TOKEN = leaseArg >= 0 ? process.argv[leaseArg + 1] : '';
+const RUN_ID = crypto.randomUUID();
+
+function localDate() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function isValidSameDayFile(filePath, date) {
+  if (!fs.existsSync(filePath)) return false;
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile() || stat.size === 0) return false;
+  const fileDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(stat.mtime);
+  return fileDate === date;
+}
+
+function fileSha256(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function hasCommittedReusableFedWatch(date, inbox) {
+  const currentPath = path.join(ROOT, 'runtime_state', date, 'current.json');
+  if (!fs.existsSync(currentPath)) return false;
+  try {
+    const current = JSON.parse(fs.readFileSync(currentPath, 'utf8'));
+    const source = current?.sources?.fedwatch;
+    if (!source?.valid || !Array.isArray(source.files)) return false;
+    return source.files.some((entry) => {
+      const filePath = path.join(inbox, entry.path);
+      return (
+        isValidSameDayFile(filePath, date)
+        && typeof entry.sha256 === 'string'
+        && fileSha256(filePath) === entry.sha256
+      );
+    });
+  } catch {
+    return false;
+  }
+}
+
+function run(script, args = [], extraEnv = {}) {
+  return new Promise((resolve) => {
+    console.log(`\n===== delta ▶ ${script} =====`);
+    const child = spawn(process.execPath, [path.join(__dirname, script), ...args], {
+      stdio: 'inherit',
+      env: { ...process.env, ...extraEnv },
+    });
+    child.on('exit', (code) => resolve(code ?? -1));
+    child.on('error', () => resolve(-1));
+  });
+}
+
+const date = localDate();
+const inbox = path.join(ROOT, 'data_sources', 'inbox', date);
+const fedwatchPng = path.join(inbox, 'fedwatch.png');
+const fedwatchJson = path.join(inbox, 'fedwatch.json');
+const reuseFedWatch =
+  hasCommittedReusableFedWatch(date, inbox)
+  && (isValidSameDayFile(fedwatchJson, date) || isValidSameDayFile(fedwatchPng, date));
+
+const corePlan = [
+  { script: 'capture_blockbeats.js', reason: 'news cursor may advance' },
+  { script: 'capture_coinglass.js', reason: '1H orderflow is decision-dynamic' },
+  { script: 'capture_exo.js', reason: 'orderflow confirmation is decision-dynamic' },
+  ...(reuseFedWatch
+    ? []
+    : [{ script: 'capture_fedwatch.js', reason: 'no valid same-day macro artifact' }]),
+  {
+    script: 'capture_tv.js',
+    reason: 'visual source has no trustworthy remote change token; refresh conservatively',
+  },
+];
+
+const plan = {
+  schema_version: '1.0',
+  date,
+  slot: SLOT,
+  generated_at: new Date().toISOString(),
+  mode: 'conservative_delta',
+  reused_sources: reuseFedWatch ? ['fedwatch'] : [],
+  captures: corePlan,
+  auxiliary: ['capture_liqheatmap.js'],
+  fallback: (
+    'capture_all.js once only for failed, missing, stale, or invalid core evidence'
+  ),
+};
+
+console.log(JSON.stringify(plan, null, 2));
+if (PLAN_ONLY) process.exit(0);
+
+async function main() {
+  const lease = requireWorkflowLease(ROOT, date, SLOT, LEASE_TOKEN);
+  const lock = acquireCaptureLock(ROOT);
+  const started = Date.now();
+  const startedAt = new Date().toISOString();
+  try {
+    await run('cleanup.js');
+    const results = {};
+    for (const item of corePlan) {
+      results[item.script] = await run(item.script);
+    }
+    const auxiliaryCode = await run('capture_liqheatmap.js');
+    const failed = Object.entries(results)
+      .filter(([, code]) => code !== 0)
+      .map(([script]) => script);
+
+    let fullFallbackUsed = false;
+    let fallbackCode = null;
+    let fallbackManifest = null;
+    if (failed.length) {
+      console.error(`delta capture failed: ${failed.join(', ')}`);
+      console.error('running one bounded full capture fallback');
+      fullFallbackUsed = true;
+      const fallbackRunId = crypto.randomUUID();
+      const fallbackPath = immutableManifestPath(
+        ROOT,
+        date,
+        SLOT,
+        'full_recollection',
+        fallbackRunId,
+      );
+      fallbackCode = await run(
+        'capture_all.js',
+        [
+          '--slot', SLOT,
+          '--lease-token', LEASE_TOKEN,
+          '--run-id', fallbackRunId,
+        ],
+        { TRADING_CAPTURE_LOCK_TOKEN: lock.token },
+      );
+      if (fallbackCode === 0) {
+        if (!fs.existsSync(fallbackPath)) {
+          throw new Error('full fallback succeeded without an immutable manifest');
+        }
+        fallbackManifest = {
+          path: path.relative(path.join(ROOT, 'runtime_state', date), fallbackPath)
+            .replaceAll('\\', '/'),
+          sha256: fileSha256(fallbackPath),
+        };
+      }
+    }
+
+    const evidenceSnapshot = snapshotEvidence(ROOT, date, SLOT, RUN_ID);
+    const manifest = {
+      ...plan,
+      run_id: RUN_ID,
+      workflow_lease_id: lease.lease_id,
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+      duration_ms: Date.now() - started,
+      results,
+      auxiliary_code: auxiliaryCode,
+      full_fallback_used: fullFallbackUsed,
+      fallback_code: fallbackCode,
+      fallback_manifest: fallbackManifest,
+      fallback_reasons: failed.length
+        ? [`core capture failed or invalid: ${failed.join(', ')}`]
+        : [],
+      evidence_snapshot: evidenceSnapshot,
+      success: failed.length === 0 || fallbackCode === 0,
+    };
+    const manifestPath = immutableManifestPath(
+      ROOT,
+      date,
+      SLOT,
+      'conservative_delta',
+      RUN_ID,
+    );
+    writeImmutableJson(manifestPath, manifest);
+    console.log(`DELTA_MANIFEST=${manifestPath}`);
+    return manifest.success ? 0 : 2;
+  } finally {
+    releaseCaptureLock(lock);
+  }
+}
+
+try {
+  process.exitCode = await main();
+} catch (error) {
+  console.error(error.message);
+  process.exitCode = 3;
+}

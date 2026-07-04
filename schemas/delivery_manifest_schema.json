@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Final hash-closed report delivery manifest",
+  "type": "object",
+  "required": ["schema_version", "trading_date", "slot", "commit_id", "workflow_lease_id", "page_id", "published_at", "frozen_verifier_pass", "word_visual_qa_pass", "unique_page_pass", "context_log_recorded", "evidence"],
+  "properties": {
+    "schema_version": {"const": "2.0"},
+    "trading_date": {"type": "string"},
+    "slot": {"enum": ["morning", "midday", "evening"]},
+    "commit_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "workflow_lease_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "page_id": {"type": "string"},
+    "published_at": {"type": "string"},
+    "frozen_verifier_pass": {"const": true},
+    "word_visual_qa_pass": {"const": true},
+    "unique_page_pass": {"const": true},
+    "context_log_recorded": {"const": true},
+    "evidence": {"type": "object"}
+  },
+  "additionalProperties": true
+}

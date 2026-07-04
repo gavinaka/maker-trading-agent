@@ -1,0 +1,22 @@
+{
+  "cards": [
+    {
+      "filename": "YYYY-MM-DD_SLOT_1.png",
+      "time": "M/D HH:MM / 主题",
+      "title": "标题",
+      "body": "正文"
+    },
+    {
+      "filename": "YYYY-MM-DD_SLOT_2.png",
+      "time": "M/D HH:MM / 主题",
+      "title": "标题",
+      "body": "正文"
+    },
+    {
+      "filename": "YYYY-MM-DD_SLOT_3.png",
+      "time": "M/D HH:MM / 主题",
+      "title": "标题",
+      "body": "正文"
+    }
+  ]
+}

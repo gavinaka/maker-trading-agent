@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Canonical DOCX render manifest",
+  "type": "object",
+  "required": ["schema_version", "status", "trading_date", "slot", "attempts", "source_sha256", "renderer_sha256", "docx_path"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "status": {"enum": ["success", "failed"]},
+    "trading_date": {"type": "string"},
+    "slot": {"enum": ["morning", "midday", "evening"]},
+    "attempts": {"type": "integer", "minimum": 1, "maximum": 2},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "renderer_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "docx_path": {"type": "string"},
+    "docx_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "failure_reason": {"type": "string"}
+  },
+  "additionalProperties": true
+}

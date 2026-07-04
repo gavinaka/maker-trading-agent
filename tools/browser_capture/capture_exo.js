@@ -37,6 +37,20 @@ await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
 await page.waitForTimeout(12000);
 
+// Exocharts may retain a stale server-side LIVE connection after the previous
+// browser closes. Explicitly take over that connection before configuring the
+// chart; otherwise the top bar looks valid while the chart body is an error.
+const liveConnectionBlocked = await page.getByText(
+  /plan does not allow more LIVE connections/i
+).count().catch(() => 0);
+if (liveConnectionBlocked) {
+  console.log('[exo] 检测到 LIVE 连接占用，尝试刷新并接管当前连接');
+  // The takeover text is rendered in a non-visible duplicate node, so text
+  // locators stall. Its visible link has a stable position in this viewport.
+  await page.mouse.click(180, 280);
+  await page.waitForTimeout(12000);
+}
+
 // ---- 设置参数对齐基准:Bybit BTCUSD / D / Tick×120 / Bid-Ask Profile ----
 
 // 1) 交易对 -> Bybit BTCUSD(弹窗按交易所分列,Bybit 列在 x≈152,其下 BTCUSD 即 Bybit 反向永续)
@@ -102,6 +116,33 @@ await page.waitForTimeout(2500); // 等数据加载完(OHLC)
 const probe = await page.evaluate(() => ({ title: document.title })).catch(() => ({}));
 console.log('[exo] title:', probe.title);
 
+// 2026-07-04 quality gate: LIVE takeover uses a fixed click near the left side.
+// If the cursor stays there, Exocharts can keep the top OHLC panel pinned to an
+// old daily candle while the price label shows the current candle. Before the
+// screenshot, move the crosshair to the right side of the main chart so the
+// selected candle is the latest/current bar.
+try {
+  const hoverPoint = await page.evaluate(() => {
+    const canvases = [...document.querySelectorAll('canvas')]
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.left, y: r.top, w: r.width, h: r.height };
+      })
+      .filter((r) => r.w > 800 && r.h > 400)
+      .sort((a, b) => (b.w * b.h) - (a.w * a.h));
+    const chart = canvases[0] || { x: 80, y: 120, w: 2300, h: 1000 };
+    return {
+      x: Math.round(chart.x + chart.w * 0.92),
+      y: Math.round(chart.y + chart.h * 0.45),
+    };
+  });
+  await page.mouse.move(hoverPoint.x, hoverPoint.y);
+  await page.waitForTimeout(900);
+  console.log('[exo] 十字光标已移动到最新K线区域', JSON.stringify(hoverPoint));
+} catch (e) {
+  console.log('[exo] 最新K线 hover 失败:', e.message);
+}
+
 const file = path.join(OUT_DIR, 'exocharts.png');
 await page.screenshot({ path: file, fullPage: false });
 console.log(`[exo] 已保存 ${file}`);
@@ -110,11 +151,18 @@ console.log(`[exo] 已保存 ${file}`);
 const chk = await page.evaluate(() => {
   const top = document.querySelector('#exo-center')?.textContent || '';
   const body = document.body.innerText || '';
-  return { top, delayed: /delayed by 24 hours/i.test(body) };
+  return {
+    top,
+    delayed: /delayed by 24 hours/i.test(body),
+    liveConnectionBlocked: /plan does not allow more LIVE connections/i.test(body),
+  };
 }).catch(() => ({ top: '', delayed: true }));
-const valid = /BTCUSD/.test(chk.top) && /Bid-Ask Profile/.test(chk.top) && !chk.delayed;
+const valid = /BTCUSD/.test(chk.top)
+  && /Bid-Ask Profile/.test(chk.top)
+  && !chk.delayed
+  && !chk.liveConnectionBlocked;
 if (!valid) {
-  console.log(`[exo] VALIDITY: FAIL - 顶栏="${chk.top.slice(0,60)}" delayed=${chk.delayed}(需 Bybit BTCUSD/Bid-Ask 且非24h延迟·可能掉登录)`);
+  console.log(`[exo] VALIDITY: FAIL - 顶栏="${chk.top.slice(0,60)}" delayed=${chk.delayed} liveConnectionBlocked=${chk.liveConnectionBlocked}(需 Bybit BTCUSD/Bid-Ask、非24h延迟且图表连接有效)`);
   await ctx.close(); process.exit(2);
 }
 console.log('[exo] VALIDITY: OK');

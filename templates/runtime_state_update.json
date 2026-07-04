@@ -1,0 +1,43 @@
+{
+  "notion_state": {
+    "positions_fingerprint": "",
+    "gate_fingerprint": "",
+    "positions_changed": false,
+    "gate_changed": false
+  },
+  "analysis_archive": {
+    "reuse_policy": "post_analysis_audit_only",
+    "features": {
+      "fundamentals": {},
+      "orderflow": {},
+      "orderflow_confirmation": {},
+      "chart_1d": {},
+      "chart_4h": {},
+      "chart_1h": {},
+      "chart_15m": {},
+      "trend_regime": {},
+      "liquidity": {},
+      "entry_location": {},
+      "risk_state": {}
+    },
+    "scores": {
+      "orderflow": null,
+      "chart": {
+        "proximity": null,
+        "liquidity": null,
+        "sma20": null,
+        "volume_price": null,
+        "fib_trendline": null,
+        "total": null
+      },
+      "total": null,
+      "winrate": null
+    },
+    "risk_state": {}
+  },
+  "decision": {
+    "main_account": {},
+    "maker": {},
+    "cannot_do": ""
+  }
+}

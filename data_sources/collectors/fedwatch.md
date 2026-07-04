@@ -54,7 +54,13 @@ https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html
 ## 失败处理
 
 * 页面图表未渲染完成（probabilities 全为 0）→ 等 15s 重试 1 次
-* CME 改版导致选择器失效 → 标 `valid:false, error:"页面结构变化"`，触发用户介入
+* 重试仍为浏览器错误页、空白页或 iframe 未渲染 → 启用固定权威网络回退：
+  1. 优先检索 CME Group 官方 FedWatch 页面/API/官方发布；
+  2. 其次检索 Federal Reserve 官方资料；
+  3. 再次使用明确引用 CME FedWatch 且标注数据时点的主流金融数据源；
+  4. 关键概率至少双源交叉核验；
+  5. 写入 `fedwatch.json`，包含来源 URL、采集时间、下次 FOMC 日期、概率分布、1日/1周/1月变化、`capture_mode:"authoritative_web_fallback"`、`screenshot_valid:false` 和失败原因。
+* CME 改版导致选择器失效但权威回退数据完整 → 源有效；权威数据也不可得 → 标 `valid:false` 并硬停。
 
 ---
 
@@ -63,3 +69,4 @@ https://www.cmegroup.com/markets/interest-rates/cme-fedwatch-tool.html
 * 变化频率低：当日采集 1 次即可
 * FOMC 公布日 / SEP 发布日：必须当日重采
 * 不允许用前日数据替代
+* 不允许把搜索摘要、无日期转载或模型估算当作权威回退数据

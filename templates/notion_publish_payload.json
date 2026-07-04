@@ -1,0 +1,50 @@
+{
+  "date": "YYYY.M.D",
+  "title": "🌅 YYYY.M.D 早间日报（11:00 评分点）",
+  "title_prefix": "🌅",
+  "verifier_mode": "morning",
+  "report_path": "outputs/YYYY-MM-DD_morning_combined.md",
+  "source_specs": {
+    "blockbeats": {
+      "path": "data_sources/inbox/YYYY-MM-DD/blockbeats.json",
+      "max_age_minutes": 1440,
+      "same_local_day": true
+    },
+    "coinglass": {
+      "path": "data_sources/inbox/YYYY-MM-DD/coinglass.png",
+      "max_age_minutes": 240
+    },
+    "exocharts": {
+      "path": "data_sources/inbox/YYYY-MM-DD/exocharts.png",
+      "max_age_minutes": 240
+    },
+    "fedwatch": {
+      "path": "data_sources/inbox/YYYY-MM-DD/fedwatch.png",
+      "max_age_minutes": 1440,
+      "same_local_day": true
+    },
+    "tradingview_1d": {
+      "path": "data_sources/inbox/YYYY-MM-DD/tradingview_btc_1d.png",
+      "max_age_minutes": 240
+    },
+    "tradingview_4h": {
+      "path": "data_sources/inbox/YYYY-MM-DD/tradingview_btc_4h.png",
+      "max_age_minutes": 240
+    },
+    "tradingview_1h": {
+      "path": "data_sources/inbox/YYYY-MM-DD/tradingview_btc_1h.png",
+      "max_age_minutes": 240
+    },
+    "tradingview_15m": {
+      "path": "data_sources/inbox/YYYY-MM-DD/tradingview_btc_15m.png",
+      "max_age_minutes": 240
+    }
+  },
+  "children": [],
+  "image_after_heading": "基本面",
+  "image_paths": [
+    "outputs/blockbeats/YYYY-MM-DD_SLOT_1.png",
+    "outputs/blockbeats/YYYY-MM-DD_SLOT_2.png",
+    "outputs/blockbeats/YYYY-MM-DD_SLOT_3.png"
+  ]
+}
