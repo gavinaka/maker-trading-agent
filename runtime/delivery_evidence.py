@@ -21,6 +21,10 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def load_object(path: Path) -> dict:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -46,19 +50,29 @@ def _verify_file(path: Path, expected_hash: str, label: str) -> None:
         raise ValueError(f"{label} hash mismatch: expected={expected_hash}, actual={actual}")
 
 
-def _context_block(text: str, trading_date: str) -> str:
+def _relative(path: Path, root: Path) -> str:
+    return str(path.resolve().relative_to(root.resolve())).replace("\\", "/")
+
+
+def _context_block(text: str, trading_date: str, slot: str, page_id: str) -> str:
     pattern = re.compile(
         rf"^## {re.escape(trading_date)}[^\n]*\n(?P<body>.*?)(?=^## 20\d{{2}}-\d{{2}}-\d{{2}}|\Z)",
         re.MULTILINE | re.DOTALL,
     )
-    match = pattern.search(text)
-    if not match:
+    blocks = [match.group(0) for match in pattern.finditer(text)]
+    if not blocks:
         raise ValueError(
             f"context_log.md has no {trading_date} block; append the final page id, "
             "published time, frozen verifier PASS and Word visual QA PASS after "
             "render/Word-QA/publish evidence exists, then rerun deliver"
         )
-    return match.group(0)
+    for block in blocks:
+        if page_id in block and SLOT_CN[slot] in block:
+            return block
+    raise ValueError(
+        "context_log.md has no page-and-slot-specific final evidence block for "
+        f"{trading_date} {slot}"
+    )
 
 
 def _parse_time(value: str, label: str) -> datetime:
@@ -66,6 +80,37 @@ def _parse_time(value: str, label: str) -> datetime:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (AttributeError, ValueError) as exc:
         raise ValueError(f"invalid {label}: {value!r}") from exc
+
+
+def _publish_source_binding(
+    publish: dict,
+    trading_date: str,
+    slot: str,
+    root: Path,
+) -> dict:
+    binding = publish.get("source_binding")
+    if isinstance(binding, dict):
+        return binding
+
+    payload_path_value = publish.get("payload_path")
+    payload_hash = publish.get("payload_sha256")
+    if not payload_path_value or not payload_hash:
+        raise ValueError("publish manifest is missing source binding and payload evidence")
+    payload_path = _resolve_under_root(str(payload_path_value), root)
+    _verify_file(payload_path, str(payload_hash), "publish payload")
+    payload = load_object(payload_path)
+    source_specs = payload.get("source_specs")
+    if not isinstance(source_specs, dict):
+        raise ValueError("publish payload has no source_specs for source binding reconstruction")
+
+    from outputs.publish_report import validate_publish_source_binding
+
+    return validate_publish_source_binding(
+        trading_date,
+        slot,
+        source_specs,
+        root=root,
+    )
 
 
 def validate_delivery_evidence(
@@ -139,11 +184,53 @@ def validate_delivery_evidence(
     if failed:
         raise ValueError("invalid publish evidence: " + ", ".join(failed))
 
+    source_binding = _publish_source_binding(publish, trading_date, slot, root)
+    current_capture = current.get("capture_manifest")
+    source_binding_checks = {
+        "present": isinstance(source_binding, dict),
+        "current_capture": isinstance(current_capture, dict),
+        "capture_manifest_path": (
+            isinstance(source_binding, dict)
+            and isinstance(current_capture, dict)
+            and source_binding.get("capture_manifest_path")
+            == f"runtime_state/{trading_date}/{current_capture.get('path')}"
+        ),
+        "capture_manifest_sha256": (
+            isinstance(source_binding, dict)
+            and isinstance(current_capture, dict)
+            and source_binding.get("capture_manifest_sha256")
+            == current_capture.get("sha256")
+        ),
+        "evidence_snapshot_root": (
+            isinstance(source_binding, dict)
+            and isinstance(current_capture, dict)
+            and isinstance(current_capture.get("evidence_snapshot"), dict)
+            and source_binding.get("evidence_snapshot_root")
+            == (
+                f"runtime_state/{trading_date}/"
+                f"{current_capture['evidence_snapshot'].get('root')}"
+            )
+        ),
+    }
+    failed = sorted(
+        name for name, passed in source_binding_checks.items() if not passed
+    )
+    if failed:
+        raise ValueError("invalid publish source binding: " + ", ".join(failed))
+
     context_text = context_path.read_text(encoding="utf-8")
-    block = _context_block(context_text, trading_date)
+    block = _context_block(context_text, trading_date, slot, page_id)
+    render_manifest_rel = _relative(render_path, root)
+    qa_manifest_rel = _relative(qa_path, root)
+    publish_manifest_rel = _relative(publish_path, root)
     context_checks = {
         "page_id": page_id in block,
         "slot": SLOT_CN[slot] in block,
+        "report_sha256": current["report_sha256"] in block,
+        "docx_sha256": render["docx_sha256"] in block,
+        "render_manifest": render_manifest_rel in block,
+        "word_qa_manifest": qa_manifest_rel in block,
+        "publish_manifest": publish_manifest_rel in block,
         "word": "Word" in block,
         "visual_qa_pass": "视觉 QA PASS" in block,
         "frozen_verifier_pass": "冻结" in block and "PASS" in block,
@@ -175,5 +262,7 @@ def validate_delivery_evidence(
         "publish_manifest": str(publish_path),
         "publish_manifest_sha256": sha256_file(publish_path),
         "context_log_sha256": sha256_file(context_path),
+        "context_log_block_sha256": sha256_text(block),
+        "source_binding": source_binding,
         "published_at": publish["published_at"],
     }

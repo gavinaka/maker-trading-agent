@@ -19,6 +19,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+OUTPUTS_DIR = Path(__file__).resolve().parent
+if str(OUTPUTS_DIR) not in sys.path:
+    sys.path.insert(0, str(OUTPUTS_DIR))
 
 from notion_push_lib import (
     assert_source_freshness,
@@ -50,6 +53,16 @@ REQUIRED_SOURCE_LABELS = {
     "tradingview_4h",
     "tradingview_1h",
     "tradingview_15m",
+}
+SOURCE_LABEL_FILES = {
+    "blockbeats": {"blockbeats.png", "blockbeats.json"},
+    "coinglass": {"coinglass.png"},
+    "exocharts": {"exocharts.png"},
+    "fedwatch": {"fedwatch.png", "fedwatch.json"},
+    "tradingview_1d": {"tradingview_btc_1d.png"},
+    "tradingview_4h": {"tradingview_btc_4h.png"},
+    "tradingview_1h": {"tradingview_btc_1h.png"},
+    "tradingview_15m": {"tradingview_btc_15m.png"},
 }
 
 
@@ -97,6 +110,122 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _load_object(path: Path) -> dict:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return payload
+
+
+def _relative(path: Path, root: Path) -> str:
+    return str(path.resolve().relative_to(root.resolve())).replace("\\", "/")
+
+
+def validate_publish_source_binding(
+    trading_date: str,
+    slot: str,
+    source_specs: dict,
+    *,
+    root: Path = ROOT,
+) -> dict:
+    """Require publish freshness inputs to come from the locked evidence snapshot."""
+    root = Path(root).resolve()
+    state_dir = root / "runtime_state" / trading_date
+    transition_path = state_dir / f"transition_{slot}.json"
+    transition = _load_object(transition_path)
+    if transition.get("trading_date") != trading_date or transition.get("slot") != slot:
+        raise ValueError("publish source binding transition mismatch")
+
+    capture = transition.get("capture_manifest")
+    if not isinstance(capture, dict):
+        raise ValueError("transition is missing capture_manifest")
+    capture_rel = capture.get("path")
+    if not isinstance(capture_rel, str) or not capture_rel:
+        raise ValueError("transition capture manifest path is missing")
+    capture_path = (state_dir / capture_rel).resolve()
+    if capture.get("sha256") != sha256_file(capture_path):
+        raise ValueError("capture manifest hash mismatch before publish")
+
+    snapshot = capture.get("evidence_snapshot")
+    if not isinstance(snapshot, dict):
+        raise ValueError("transition capture manifest is missing evidence_snapshot")
+    snapshot_root_value = snapshot.get("root")
+    if not isinstance(snapshot_root_value, str) or not snapshot_root_value:
+        raise ValueError("evidence snapshot root is missing")
+    snapshot_root = (state_dir / snapshot_root_value).resolve()
+    allowed_root = (state_dir / "evidence" / slot).resolve()
+    try:
+        snapshot_root.relative_to(allowed_root)
+    except ValueError as exc:
+        raise ValueError("publish evidence snapshot escapes slot evidence directory") from exc
+    if not snapshot_root.is_dir():
+        raise ValueError(f"publish evidence snapshot directory is missing: {snapshot_root}")
+
+    entries = snapshot.get("files")
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("evidence snapshot has no files")
+    files_by_path: dict[Path, dict] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("evidence snapshot file entry must be an object")
+        relative = entry.get("path")
+        expected_hash = entry.get("sha256")
+        if (
+            not isinstance(relative, str)
+            or Path(relative).is_absolute()
+            or ".." in Path(relative).parts
+        ):
+            raise ValueError(f"invalid evidence snapshot path: {relative!r}")
+        file_path = (snapshot_root / relative).resolve()
+        try:
+            file_path.relative_to(snapshot_root)
+        except ValueError as exc:
+            raise ValueError(f"evidence file escapes snapshot: {relative}") from exc
+        if not file_path.is_file():
+            raise ValueError(f"evidence file is missing before publish: {relative}")
+        if expected_hash != sha256_file(file_path):
+            raise ValueError(f"evidence file hash mismatch before publish: {relative}")
+        files_by_path[file_path] = entry
+
+    bindings = {}
+    for label in sorted(REQUIRED_SOURCE_LABELS):
+        raw_spec = source_specs[label]
+        spec = {"path": raw_spec} if isinstance(raw_spec, str) else dict(raw_spec)
+        source_path = Path(spec["path"])
+        source_path = (
+            source_path.resolve()
+            if source_path.is_absolute()
+            else (root / source_path).resolve()
+        )
+        if source_path.name not in SOURCE_LABEL_FILES[label]:
+            raise ValueError(
+                f"{label} publish source points to wrong artifact: {source_path.name}"
+            )
+        try:
+            source_path.relative_to(snapshot_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"{label} publish source is not from locked evidence snapshot"
+            ) from exc
+        entry = files_by_path.get(source_path)
+        if not entry:
+            raise ValueError(f"{label} publish source is absent from evidence snapshot")
+        bindings[label] = {
+            "path": _relative(source_path, root),
+            "sha256": entry["sha256"],
+            "snapshot_file": entry["path"],
+        }
+
+    return {
+        "transition_path": _relative(transition_path, root),
+        "transition_sha256": sha256_file(transition_path),
+        "capture_manifest_path": _relative(capture_path, root),
+        "capture_manifest_sha256": capture["sha256"],
+        "evidence_snapshot_root": _relative(snapshot_root, root),
+        "sources": bindings,
+    }
 
 
 def publish(
@@ -151,6 +280,12 @@ def publish(
     telemetry_slot = report_slot
     payload_hash = sha256_file(payload_path)
     report_hash = sha256_file(report)
+    source_binding = validate_publish_source_binding(
+        trading_date,
+        report_slot,
+        source_specs,
+        root=ROOT,
+    )
     manifest_path = (
         ROOT / "runtime_state" / trading_date / f"publish_{mode}.json"
     )
@@ -166,6 +301,7 @@ def publish(
         and existing.get("status") == "success"
         and existing.get("payload_sha256") == payload_hash
         and existing.get("report_sha256") == report_hash
+        and existing.get("source_binding") == source_binding
     ):
         append_usage(
             trading_date=trading_date,
@@ -195,6 +331,7 @@ def publish(
         "image_paths": image_paths,
         "block_count": len(payload["children"]),
         "dry_run": dry_run,
+        "source_binding": source_binding,
     }
 
     try:
@@ -226,6 +363,7 @@ def publish(
             "payload_sha256": payload_hash,
             "report_path": report_path,
             "report_sha256": report_hash,
+            "source_binding": source_binding,
             "page_id": page_id,
             "frozen_verifier_pass": True,
             "unique_page_pass": True,
@@ -272,6 +410,7 @@ def publish(
             "payload_sha256": payload_hash,
             "report_path": report_path,
             "report_sha256": report_hash,
+            "source_binding": source_binding,
             "failure_class": type(exc).__name__,
             "failure_reason": str(exc),
         }

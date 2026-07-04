@@ -7,6 +7,31 @@
 
 ---
 
+## 2026-07-04（会话 #70 · 晚间日报链 B · 用户授权提前 · 反弹空 62,700-62,760）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 晚报工作流，未触发、串联或输出 `quant-summary`。用户明确授权提前写晚报；报告使用真实采集时间 19:16-19:20，不伪造 20:00 采集。
+- 晚间五源已重新读取并通过有效性门：BlockBeats 12 小时重要快讯候选 39 条、入选 3 条；Coinglass、Exocharts、FedWatch/CME、TradingView 四周期与清算热力图均重新核验。采集 manifest=`runtime_state/2026-07-04/captures/evening/conservative_delta_71d93d2f-d634-4e31-a153-afaa329e4917.json`。
+- 产出 `outputs/2026-07-04_evening_combined.md`、canonical Word `outputs/2026-07-04_evening_render.docx`、`outputs/2026-07-04_独立审查报告.html`、三张 BlockBeats 卡片与参数化发布 payload。报告 SHA-256=`3b4b9cc0f3c6efb3584546ec1e9f137a357d056b0895f66007506089dc292a91`，Word SHA-256=`287331bcbc698ab79fd97865c93ab63c2190f741bd44a294f1f9cf51b8b1685c`。
+- `report_lint` 0 HARD、3 WARN（旧金标表面代理，非阻断）；正文元叙事、中文术语、解耦、流动性周期、VRVP 主判、胜率反下偏全部 PASS。分析锁 `runtime_state/2026-07-04/analysis_lock_evening.json` 已建立，post-lock 前序计划连续性与晚间独立审查均 finalize 完成，`commit` 已写入 `runtime_state/2026-07-04/resolved_evening.json`。
+- Word 经隐藏 Word COM 导出 PDF、Poppler 渲染 8 页并逐页检查；无乱码、空白页、重叠、截断或越界，Word 视觉 QA PASS。render manifest=`runtime_state/2026-07-04/render_evening.json`，Word QA manifest=`runtime_state/2026-07-04/word_qa_evening.json`。
+- Notion 晚间日报最终唯一存活页 `393fda35-a098-813a-bcf3-d83f033002a6`，北京时间 2026-07-04 20:22:53 发布；29 个顶层块（含 3 图），落库验证、语义配色、正文元叙事、冻结 verifier PASS、同前缀唯一页 PASS。publish manifest=`runtime_state/2026-07-04/publish_evening.json`。
+- Notion 晚间独立审查最终唯一存活页 `393fda35-a098-81ca-a07f-e3b2a777a838`，北京时间 2026-07-04 20:23:17 发布；15 个顶层块，冻结 verifier PASS、同前缀唯一页 PASS。审查因 7/3 晚报与 7/4 早报本地缺稿，按规则降级为 7/4 午报→晚间单段倒推，不补造缺失节点。
+
+### B. 独立判断
+- 基本面中性偏空、价格部分兑现：ETF 抛压缓解给反弹支撑，但活跃 BTC 投资者仍处 20% 附近浮亏，64,000-68,000 为短期持有者成本压力，FedWatch 2026-07-29 会议 No Change 78.1%、Hike 21.9%、Ease 0.0%。
+- 盘口：价格横盘、CVD 上升修复、资金费率上升且为正值、持仓横盘，结论中性偏空。Coinglass 当前价 62,511.20、CVD -1.209K、资金费率 0.0082、OI 57.532K；Exocharts 日线 Volume 19.2M、Delta 3.9M、POC 62,490，反弹有承接但缺强趋势确认。
+- 盘面：日线略高于 SMA20 62,175.43，但仍低于 64,000-68,000 压力带；1H 贴近 SMA20 62,504.19，4H 高于 SMA20 61,221.92，62,680-62,800 同时靠近下降趋势线、成交密集区和短线前高。盘口 50/70，盘面 21/30，总分 71，胜率 64%。
+- 主账户：不在 62,500 附近追涨，也不在密集区中部追空；中线等待 64,000-68,000 压力带二次承压证据，或等待价格跌回 61,850 下方后重新评估趋势延续。
+- Maker：反弹空 62,700-62,760，持仓 800 刀，5 倍 OKX 左侧，止损 63,040，TP1 61,850 减仓 50%，TP2 60,920 清剩余；若未成交前价格先跌破 62,120，则取消。不能做：追多。
+
+### C. 锁后连续性与独立审查
+- 午报计划为反弹空 62,780-62,950、止损 63,120、TP1 62,200、TP2 61,900、成交前取消价 62,000。晚间路径显示日内高 62,946 覆盖午报入场区，午报止损 63,120 未触及，TP1 62,200 未触及。
+- 锁后操作校准：若午报挂单已实际成交或仍在场，晚间不得叠加新单，先按午报防守处理；若无旧单在场，本晚只保留 62,700-62,760 新挂单。
+- 独立审查综合结论：午报位置过滤有效，承压方向中等兑现；主要风险不是方向，而是旧计划可能已成交时的同向叠挂风险。该审查只用于 post-lock 连续性，不改变已锁定晚报分析。
+
+---
+
 ## 2026-07-04（会话 #69 · 午间日报链 A · 早报显式跳过 · 反弹空 62,780-62,950）
 ### A. 最终产出与发布
 - 本轮只执行本仓库 `daily-report` 午报工作流，未触发、串联或输出 `quant-summary`。2026-07-04 早报因用户个人原因未写，用户明确要求直接执行午报；系统已记录 `runtime_state/2026-07-04/prior_delivery_skip_midday.json`，不伪造早报 delivery。

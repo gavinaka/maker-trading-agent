@@ -345,6 +345,16 @@ def _parse_actions(sec):
                     actions.append(dict(kind=tp, price=_num(m.group(1)),
                                         cut=_parse_cut(seg),
                                         lineno=lineno, text=seg.strip()))
+        # 兼容当前 combined 格式：TP1：61,850，减仓50%。/ TP2：60,920，清理剩余仓位。
+        if re.match(r"^[*＊\s]*TP[12]\s*[：:]", stripped):
+            for tp in ("TP1", "TP2"):
+                if not re.match(r"^[*＊\s]*" + tp + r"\s*[：:]", stripped):
+                    continue
+                m = re.search(tp + r"\s*[：:]\s*" + _PRICE, stripped)
+                if m:
+                    actions.append(dict(kind=tp, price=_num(m.group(1)),
+                                        cut=_parse_cut(stripped),
+                                        lineno=lineno, text=stripped))
         # 浮盈防守层行（剔除【已触发…】注释避免双计）
         m = re.match(r"^[*＊\s]*第([一二三四五])层[：:]", stripped)
         if m:
@@ -354,6 +364,26 @@ def _parse_actions(sec):
             if mp and cut is not None:
                 actions.append(dict(kind="防守第%s层" % m.group(1), price=_num(mp.group(1)),
                                     cut=cut, lineno=lineno, text=main_part.strip()))
+        # 兼容段落式浮盈防守："...触发第一层防守...减仓50%。...触发第二层防守..."
+        # 只在单个层级片段内解析扣减，避免把 TP1 的减仓误算到防守层。
+        layer_matches = list(re.finditer(r"(?:触发)?第([一二三四五])层(?:防守)?", stripped))
+        for index, layer in enumerate(layer_matches):
+            start = layer.start()
+            end = layer_matches[index + 1].start() if index + 1 < len(layer_matches) else len(stripped)
+            segment = stripped[start:end]
+            cut = _parse_cut(segment)
+            if cut is None:
+                continue
+            prefix = stripped[max(0, start - 40):start]
+            mp = (
+                re.search(r"(?:价格)?(?:首次)?触及\s*" + _PRICE, segment)
+                or re.search(r"(?:价格)?(?:上行|下行)?至\s*" + _PRICE, segment)
+                or re.search(r"(?:价格)?(?:首次)?触及\s*" + _PRICE, prefix)
+                or re.search(r"(?:价格)?(?:上行|下行)?至\s*" + _PRICE, prefix)
+            )
+            if mp:
+                actions.append(dict(kind="防守第%s层" % layer.group(1), price=_num(mp.group(1)),
+                                    cut=cut, lineno=lineno, text=segment.strip()))
     return actions
 
 _SAME_ACTION = r"同一动作|同一笔|即\s*TP|[=＝]\s*TP"
@@ -425,10 +455,18 @@ def maker_defense_check(lines):
     if sec is None:
         return []
     issues = []
-    first = [(lineno, ln.strip()) for lineno, ln in sec if re.search(r"第一层[：:]", ln)]
-    second = [(lineno, ln.strip()) for lineno, ln in sec if re.search(r"第二层[：:]", ln)]
+    first = [
+        (lineno, ln.strip())
+        for lineno, ln in sec
+        if re.search(r"(?:第一层[：:]|第一层防守|触发第一层)", ln)
+    ]
+    second = [
+        (lineno, ln.strip())
+        for lineno, ln in sec
+        if re.search(r"(?:第二层[：:]|第二层防守|触发第二层)", ln)
+    ]
     for lineno, ln in first:
-        if not re.search(r"触及\s*" + _PRICE, ln):
+        if not re.search(r"(?:触及|(?:上行|下行)?至)\s*" + _PRICE, ln):
             issues.append((lineno, "Maker第一层缺具体触发价格", "第一层", ln[:70]))
         if "极点" not in ln:
             issues.append((lineno, "Maker第一层缺“极点”", "第一层", ln[:70]))
@@ -440,7 +478,7 @@ def maker_defense_check(lines):
         if "小时级别" in ln and not re.search(r"4\s*小时级别|四小时级别", ln):
             issues.append((lineno, "Maker第一层禁止笼统“小时级别”", "小时级别", ln[:70]))
     for lineno, ln in second:
-        if not re.search(r"触及\s*" + _PRICE, ln):
+        if not re.search(r"(?:触及|(?:上行|下行)?至)\s*" + _PRICE, ln):
             issues.append((lineno, "Maker第二层缺具体触发价格", "第二层", ln[:70]))
         if "保本损" not in ln:
             issues.append((lineno, "Maker第二层必须设保本损", "第二层", ln[:70]))

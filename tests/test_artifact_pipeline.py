@@ -256,6 +256,24 @@ class DeliveryEvidenceTests(unittest.TestCase):
         page.write_bytes(b"png")
         report_hash = sha256_file(report)
         docx_hash = sha256_file(docx)
+        capture_manifest = {
+            "path": "captures/morning/full_base_run1234567890abcdef.json",
+            "sha256": "c" * 64,
+            "evidence_snapshot": {
+                "root": "evidence/morning/run1234567890abcdef",
+            },
+        }
+        source_binding = {
+            "capture_manifest_path": (
+                "runtime_state/2026-06-30/"
+                "captures/morning/full_base_run1234567890abcdef.json"
+            ),
+            "capture_manifest_sha256": "c" * 64,
+            "evidence_snapshot_root": (
+                "runtime_state/2026-06-30/evidence/morning/run1234567890abcdef"
+            ),
+            "sources": {},
+        }
         now = datetime.now(timezone.utc) - timedelta(seconds=2)
         (state / f"render_{slot}.json").write_text(
             json.dumps(
@@ -298,6 +316,7 @@ class DeliveryEvidenceTests(unittest.TestCase):
                     "frozen_verifier_pass": True,
                     "unique_page_pass": True,
                     "report_sha256": report_hash,
+                    "source_binding": source_binding,
                     "published_at": now.isoformat(),
                 }
             ),
@@ -305,11 +324,19 @@ class DeliveryEvidenceTests(unittest.TestCase):
         )
         (sessions / "context_log.md").write_text(
             f"## {date}（早间日报）\n"
+            f"- 报告 SHA-256=`{report_hash}`，Word SHA-256=`{docx_hash}`。\n"
             f"- Word 逐页视觉 QA PASS。\n"
+            f"- render manifest=`runtime_state/{date}/render_{slot}.json`，"
+            f"Word QA manifest=`runtime_state/{date}/word_qa_{slot}.json`，"
+            f"publish manifest=`runtime_state/{date}/publish_{slot}.json`。\n"
             f"- Notion 最终页=`{page_id}`，冻结 verifier PASS。\n",
             encoding="utf-8",
         )
-        return {"slot": slot, "report_sha256": report_hash}, page_id
+        return {
+            "slot": slot,
+            "report_sha256": report_hash,
+            "capture_manifest": capture_manifest,
+        }, page_id
 
     def test_delivery_requires_real_hash_closed_evidence(self):
         with tempfile.TemporaryDirectory() as td:
@@ -342,25 +369,114 @@ class DeliveryEvidenceTests(unittest.TestCase):
                     root=root,
                 )
 
+    def test_delivery_rejects_context_log_without_hash_binding(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current, page_id = self._seed(root)
+            context = root / "sessions" / "context_log.md"
+            context.write_text(
+                "## 2026-06-30（早间日报）\n"
+                f"- Word 逐页视觉 QA PASS。\n"
+                f"- Notion 最终页=`{page_id}`，冻结 verifier PASS。\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "report_sha256"):
+                validate_delivery_evidence(
+                    "2026-06-30",
+                    "morning",
+                    page_id,
+                    current=current,
+                    root=root,
+                )
+
+    def test_delivery_rejects_publish_without_source_binding(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current, page_id = self._seed(root)
+            publish = root / "runtime_state" / "2026-06-30" / "publish_morning.json"
+            payload = json.loads(publish.read_text(encoding="utf-8"))
+            payload.pop("source_binding")
+            publish.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source binding"):
+                validate_delivery_evidence(
+                    "2026-06-30",
+                    "morning",
+                    page_id,
+                    current=current,
+                    root=root,
+                )
+
 
 class PublishEvidenceTests(unittest.TestCase):
+    def _seed_publish_binding(self, root: Path, date: str = "2026-06-30", slot: str = "morning") -> dict:
+        state = root / "runtime_state" / date
+        snapshot_root = state / "evidence" / slot / "run1234567890abcdef"
+        capture_dir = state / "captures" / slot
+        snapshot_root.mkdir(parents=True)
+        capture_dir.mkdir(parents=True)
+        files = {
+            "blockbeats": "blockbeats.png",
+            "coinglass": "coinglass.png",
+            "exocharts": "exocharts.png",
+            "fedwatch": "fedwatch.png",
+            "tradingview_1d": "tradingview_btc_1d.png",
+            "tradingview_4h": "tradingview_btc_4h.png",
+            "tradingview_1h": "tradingview_btc_1h.png",
+            "tradingview_15m": "tradingview_btc_15m.png",
+        }
+        entries = []
+        source_specs = {}
+        for label, name in files.items():
+            path = snapshot_root / name
+            path.write_bytes(f"{label}:{name}".encode("ascii"))
+            entries.append(
+                {
+                    "path": name,
+                    "sha256": sha256_file(path),
+                    "size": path.stat().st_size,
+                }
+            )
+            source_specs[label] = {"path": str(path)}
+        capture = capture_dir / "full_base_run1234567890abcdef.json"
+        capture_payload = {
+            "schema_version": "1.0",
+            "date": date,
+            "slot": slot,
+            "mode": "full_base",
+            "run_id": "run1234567890abcdef",
+            "success": True,
+            "evidence_snapshot": {
+                "root": f"evidence/{slot}/run1234567890abcdef",
+                "files": entries,
+            },
+        }
+        capture.write_text(json.dumps(capture_payload), encoding="utf-8")
+        transition = {
+            "schema_version": "3.0",
+            "trading_date": date,
+            "slot": slot,
+            "capture_manifest": {
+                "path": f"captures/{slot}/{capture.name}",
+                "sha256": sha256_file(capture),
+                "evidence_snapshot": capture_payload["evidence_snapshot"],
+            },
+        }
+        (state / f"transition_{slot}.json").write_text(
+            json.dumps(transition),
+            encoding="utf-8",
+        )
+        return source_specs
+
     def test_publish_manifest_makes_identical_retry_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             outputs = root / "outputs"
-            sources = root / "data_sources" / "inbox" / "2026-06-30"
             outputs.mkdir(parents=True)
-            sources.mkdir(parents=True)
             report = outputs / "2026-06-30_morning_combined.md"
             report.write_text("# 2026-06-30 早间日报\n", encoding="utf-8")
             image = outputs / "card.png"
             image.write_bytes(b"png")
-            labels = publish_report.REQUIRED_SOURCE_LABELS
-            source_specs = {}
-            for label in labels:
-                path = sources / f"{label}.dat"
-                path.write_bytes(label.encode("ascii"))
-                source_specs[label] = {"path": str(path)}
+            source_specs = self._seed_publish_binding(root)
             payload = outputs / "payload.json"
             payload.write_text(
                 json.dumps(
@@ -402,6 +518,18 @@ class PublishEvidenceTests(unittest.TestCase):
             )
             self.assertTrue(manifest["frozen_verifier_pass"])
             self.assertTrue(manifest["unique_page_pass"])
+            self.assertIn("source_binding", manifest)
+            self.assertEqual(
+                manifest["source_binding"]["capture_manifest_sha256"],
+                sha256_file(
+                    root
+                    / "runtime_state"
+                    / "2026-06-30"
+                    / "captures"
+                    / "morning"
+                    / "full_base_run1234567890abcdef.json"
+                ),
+            )
             attempts = list(
                 (
                     root
@@ -420,18 +548,12 @@ class PublishEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             outputs = root / "outputs"
-            sources = root / "data_sources" / "inbox" / "2026-06-30"
             outputs.mkdir(parents=True)
-            sources.mkdir(parents=True)
             report = outputs / "2026-06-30_morning_combined.md"
             report.write_text("# 2026-06-30 早间日报\n", encoding="utf-8")
             image = outputs / "card.png"
             image.write_bytes(b"png")
-            source_specs = {}
-            for label in publish_report.REQUIRED_SOURCE_LABELS:
-                path = sources / f"{label}.dat"
-                path.write_bytes(label.encode("ascii"))
-                source_specs[label] = {"path": str(path)}
+            source_specs = self._seed_publish_binding(root)
             payload = outputs / "payload.json"
             payload.write_text(
                 json.dumps(
@@ -482,6 +604,41 @@ class PublishEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(len(attempts), 1)
             self.assertEqual(manifest["attempt_manifest_path"], str(attempts[0]))
+
+    def test_publish_rejects_sources_outside_locked_snapshot(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / "2026-06-30_morning_combined.md"
+            report.write_text("# 2026-06-30 早间日报\n", encoding="utf-8")
+            image = outputs / "card.png"
+            image.write_bytes(b"png")
+            source_specs = self._seed_publish_binding(root)
+            outside = root / "data_sources" / "inbox" / "2026-06-30" / "coinglass.png"
+            outside.parent.mkdir(parents=True)
+            outside.write_bytes(b"later mutable inbox file")
+            source_specs["coinglass"] = {"path": str(outside)}
+            payload = outputs / "payload.json"
+            payload.write_text(
+                json.dumps(
+                    {
+                        "date": "2026.6.30",
+                        "title": "🌅 2026.6.30 早间日报",
+                        "title_prefix": "🌅",
+                        "verifier_mode": "morning",
+                        "report_path": str(report),
+                        "source_specs": source_specs,
+                        "children": [],
+                        "image_after_heading": "基本面",
+                        "image_paths": [str(image)],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(publish_report, "ROOT", root):
+                with self.assertRaisesRegex(ValueError, "locked evidence snapshot"):
+                    publish_report.publish(payload)
 
 
 if __name__ == "__main__":
