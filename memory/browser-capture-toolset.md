@@ -7,7 +7,7 @@ metadata:
   originSessionId: 6eb115b3-6948-4361-bafc-243c52400826
 ---
 
-2026-06-20 建成的**四源自动截图工具集**:`tools/browser_capture/`(Node+Playwright,走系统真实 Chrome/Edge channel)。目的=替代用户手动给②③④⑤源截图(①BlockBeats 仍走 blockbeats-fetch skill 的 Claude-in-Chrome)。
+2026-06-20 建成、2026-06-28 扩为**五源自动截图工具集**:`tools/browser_capture/`(Node+Playwright,走系统真实 Chrome/Edge channel)。目的=替代用户手动给五源截图；①BlockBeats 已改由 `capture_blockbeats.js` 统一采集，禁止再走 blockbeats-fetch/Claude-in-Chrome。
 
 **一条命令**:`node tools/browser_capture/capture_all.js`(=`npm run all`)→ 顺序跑 Coinglass→Exo→CME→TV四档,全部落 `data_sources/inbox/<当天YYYY-MM-DD>/`;单源:`npm run coinglass/exo/fedwatch/tv`。约267s。
 
@@ -26,4 +26,4 @@ metadata:
 
 **辅助源·清算热力图(2026-06-21 用户加)**:`capture_liqheatmap.js`(已挂进 capture_all 末尾)→ `liqheatmap_{3d|48h|24h}.png`。Coinglass 清算热力图(URL `.../pro/futures/LiquidationHeatMap?coin=BTC`)·Binance BTC/USDT 永续·阈值固定0.85·黄=最强磁吸(上方带=空头流动性/下方带=多头流动性)。**周期规则:周末(六/日)抓3天·周一至五抓48H+24H**(脚本按 `getDay()` 自动切)。🟥**定位=辅助印证流动性猎杀概率·非新增第六源·失败只 WARN 不硬停五源**(与4核心源不同)。用 `~/.tv_chrome_profile`(与TV/Exo同一登录目录·Coinglass Prime 已于 2026-06-21 登录)。✅**已实跑验证(2026-06-21)**:登录通过·周期自动选对(周日→3天)·截图门修复(canvas 仅绘图区→须扩边纳入右侧价格轴/时间轴/左强度色阶·否则读不到磁吸带精确价位)。读法权威=`scoring/chart_methodology.md §九`D·见 [[liquidity-hunt-logic]]。
 
-🟩**状态(2026-06-20 用户拍板·已并入日报工作流)**:出**任何报告前先跑** `node tools/browser_capture/capture_all.js` 抓齐②③④⑤,①BlockBeats 仍走 `/blockbeats-fetch`。已写进 `sessions/日报SOP.md §0.0+§1` 与 `.claude/skills/daily-report/SKILL.md §1`(三处同步)。🟥**采集后必过验证门**:Read 每张确认真实登录态正确图(非登录墙/空图/陈旧/默认symbol),任一源失败=该源缺失=按 [[five-sources-complete-or-halt]] **硬停**(重登或回退手动截图),绝不拿登录墙/空图当数据读。判读口径全不变(只换"图从哪来")。见 [[daily-workflow-order]]。
+🟩**状态(2026-06-28 用户拍板·已并入日报工作流)**:出**任何报告前先跑** `node tools/browser_capture/capture_all.js` 抓齐五源；①BlockBeats 由 `capture_blockbeats.js` 勾选「重要快讯」，并按 2026-07-04 规则覆盖抓取前 12 小时候选池后筛 top3。已写进 `sessions/日报SOP.md §0.0+§1` 与 `.agents/skills/daily-report/SKILL.md`。🟥**采集后必过验证门**:Read 每张确认真实登录态正确图(非登录墙/空图/陈旧/默认symbol),任一源失败=该源缺失=按 [[five-sources-complete-or-halt]] **硬停**(重登或回退手动截图),绝不拿登录墙/空图当数据读。判读口径全不变(只换"图从哪来")。见 [[daily-workflow-order]]。

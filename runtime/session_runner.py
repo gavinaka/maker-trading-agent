@@ -18,6 +18,10 @@ if str(ROOT) not in sys.path:
 
 from runtime.context_pack import ensure_context_pack
 from runtime.delivery_evidence import validate_delivery_evidence
+from runtime.golden_reasoning import (
+    build_golden_reasoning_manifest,
+    validate_golden_reasoning_manifest,
+)
 from runtime.report_state_extract import extract_report_state, validate_report_state
 from runtime.state_store import (
     atomic_json_write,
@@ -113,6 +117,7 @@ def main() -> int:
     begin = sub.add_parser("begin-session")
     begin.add_argument("--date", required=True)
     begin.add_argument("--slot", required=True, choices=("morning", "midday", "evening"))
+    begin.add_argument("--skip-prior-delivery-reason")
 
     abandon = sub.add_parser("abandon-session")
     abandon.add_argument("--date", required=True)
@@ -124,6 +129,7 @@ def main() -> int:
     recover.add_argument("--date", required=True)
     recover.add_argument("--slot", required=True, choices=("morning", "midday", "evening"))
     recover.add_argument("--reason", required=True)
+    recover.add_argument("--skip-prior-delivery-reason")
 
     prepare = sub.add_parser("prepare")
     prepare.add_argument("--date", required=True)
@@ -220,11 +226,20 @@ def main() -> int:
     started = time.perf_counter()
 
     if args.command == "begin-session":
-        lease = begin_lease(args.date, args.slot)
+        lease = begin_lease(
+            args.date,
+            args.slot,
+            skip_prior_delivery_reason=args.skip_prior_delivery_reason,
+        )
         print(json.dumps(lease, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     if args.command == "recover-session":
-        lease = recover_lease(args.date, args.slot, reason=args.reason)
+        lease = recover_lease(
+            args.date,
+            args.slot,
+            reason=args.reason,
+            skip_prior_delivery_reason=args.skip_prior_delivery_reason,
+        )
         print(json.dumps(lease, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     if args.command == "abandon-session":
@@ -261,6 +276,17 @@ def main() -> int:
             replace_prepared_transition=args.replace_prepared_transition,
             capture_manifest_path=args.capture_manifest,
             workflow_lease_id=lease["lease_id"],
+            prior_state_skip_reason=(
+                lease.get("prior_delivery_skip", {}).get("reason")
+                if isinstance(lease.get("prior_delivery_skip"), dict)
+                else None
+            ),
+        )
+        _, golden_target = build_golden_reasoning_manifest(
+            args.date,
+            args.slot,
+            capture_manifest_path=args.capture_manifest,
+            transition_path=target,
         )
         event_id = (
             f"{args.date}:{args.slot}:prepare:{transition['state_version']}:"
@@ -283,6 +309,7 @@ def main() -> int:
                 "invalidated_nodes": transition["invalidated_nodes"],
                 "analysis_policy": transition["analysis_policy"],
                 "collection_mode": transition["collection_mode"],
+                "golden_reasoning_manifest": str(golden_target),
             },
             **usage_values(args),
         )
@@ -294,6 +321,11 @@ def main() -> int:
 
     if args.command == "lock-analysis":
         report = args.report.resolve()
+        _, golden_target = validate_golden_reasoning_manifest(
+            args.date,
+            args.slot,
+            report,
+        )
         run_report_lint(report)
         text = report.read_text(encoding="utf-8")
         updates = extract_report_state(text)
@@ -330,6 +362,11 @@ def main() -> int:
                 "report_state_omissions": [],
                 "source_coverage_validated": True,
                 "position_coupling_absent": True,
+                "golden_reasoning_alignment_prepared": True,
+                "golden_reasoning_manifest": str(golden_target),
+                "golden_reasoning_policy": (
+                    "pre_write_reasoning_alignment_not_posthoc_output_padding"
+                ),
             },
             "operator_confirmations": {
                 "five_source_validation": args.confirm_five_source_validation,
@@ -359,6 +396,7 @@ def main() -> int:
                 "analysis_lock": str(target),
                 "report_sha256": report_sha256,
                 "completed_node_count": len(payload["completed_nodes"]),
+                "golden_reasoning_manifest": str(golden_target),
             },
             **usage_values(args),
         )

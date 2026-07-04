@@ -52,7 +52,7 @@
 ---
 
 ## 0. 开场（每次会话固定）
-1. 运行 `context_pack.py`，只读取生成包中的交付连续性和权威文件清单。分析锁定前禁止直接读取 `sessions/context_log.md`、`memory/MEMORY.md`、前序报告、`analysis_*.json` 或 `decision_*.json`；具体规则按权威清单逐文件读取。
+1. 运行 `context_pack.py`，先核对生成包中的 `authority_sha256`、`authority_manifest` 与 `authority_read_plan`。只固定读取 `read_policy.mandatory_guardrails_always_read` 列出的硬门文件；其余权威文件按当前阶段（采集验真／分析评分／风控执行／渲染发布）展开读取，禁止每次盲读全量权威文件。若权威摘要意外变化、阶段边界不清或相关文件缺失，则读取受影响权威文件并硬停确认。分析锁定前禁止直接读取 `sessions/context_log.md`、`memory/MEMORY.md`、前序报告、`analysis_*.json` 或 `decision_*.json`。
 2. 确认今天出早报(🌅链A)、午报(🌇新增·同早报全骨架)还是晚报(🌙链B)。
 3. 不再拉取 Chrome 扩展 schema；五源统一走本仓库 Playwright 采集器，Notion REST 走 PowerShell。
 4. **分析锁定前不读两库交易Check 实际持仓**。禁止沿用上次 state，也禁止用 Notion 已开/已平、已成交比例、缺均价、缺止损等改变 Maker/主账户独立判断。持仓校准只能在 `lock-analysis` 成功后作为单独操作校准执行。
@@ -63,7 +63,9 @@
    - 🟥 **心力状态按自然日隔离，禁止跨日继承**：仅日期等于报告日期的心力行可干预当日报告；当日查询结果为 0 行时，只记录“今日无心力记录”，不得把前一日或更早的收缩机制、复盘机制、双重异常外推至今日。历史心力只能作为后附事实，不得改变今日主账户/Maker 方向、技术评分、胜率、是否挂单或风控结论。
 
 ### 0.1 原始证据共享与全量分析协议（2026-06-30）
-1. `context_pack.py` 只提取交付连续性，不复制台账中的方向、评分、胜率或计划。
+> 🟥 **2026-06-26 前本地 Word 金标的正确用法（2026-07-04 修正）**：金标只代表已经学习并固化的思考方式、推理逻辑和维度，不是每次报告重新读取旧 Word/旧 combined 的运行输入，也不是 MD 生成后为了“像金标”补字数、补价位、补 rubric。五源采集与 `prepare` 完成后、动笔前，必须以 `scoring/golden_report_reasoning_alignment.md` 的压缩契约组织推理；`session_runner.py prepare` 只生成 `runtime_state/<date>/golden_reasoning_<slot>.json` 作为阶段与契约哈希证明，`lock-analysis` 校验该 manifest 早于报告文件。旧样本不得进入每次报告上下文，节省 token；表面长度/锚点检查只能 WARN，不能作为质量证明。推理方式、深度和维度硬对齐；旧 Word/冻结金标的格式只要求接近 100%，但字段含义、交易参数、Word QA 与 Notion 发布校验仍是硬门。
+
+1. `context_pack.py` 只提取交付连续性、权威文件哈希与分阶段读取计划，不复制台账中的方向、评分、胜率或计划；context 包只有在 `context_log` 哈希和权威 manifest 哈希同时未变时才允许复用。
 2. 早报建立来源基线；午/晚只在采集层做 delta。`current.json` 仅保存来源清单、指纹和运行事实元数据。
 3. 数据源 SHA-256 与依赖图只解释“哪里发生变化”，绝不授权复用分析。三节点每次固定重算完整分析图。
 4. 分析结论与决策分别归档为 `analysis_<slot>.json`／`decision_<slot>.json`，均为 post-lock only，禁止进入下一节点分析前上下文。
@@ -81,7 +83,7 @@
 ### ①②③④⑤ BlockBeats / Exocharts / Coinglass / FedWatch / TradingView — **统一自动采集**
 🟢 **2026-06-28 起五源全部自动抓取**（机制/坑全见 `memory/browser-capture-toolset.md`）：
 - **命令**：先 `begin-session`，再运行 `node tools/browser_capture/capture_all.js --slot morning --lease-token <token>`（工具在 `tools/browser_capture/`）。用 PowerShell/Bash 跑、**必须前台 + 关沙箱（dangerouslyDisableSandbox）**。禁止旧 `npm run all` 无租约快捷入口。顺序＝BlockBeats → Coinglass → Exocharts → FedWatch → TradingView → 清算热力图辅助源。
-- **BlockBeats 产物**：`blockbeats.png` + `blockbeats.json`。🟥 所有早报／午报／晚报均须先勾选页面「重要快讯」再采集；截图必须显示已勾选，JSON 必须包含 `"important_only": true`。未勾选、勾选状态丢失或字段不为 true 均按核心源无效硬停，禁止退回未筛选的全量快讯。通过筛选后仍须包含当天日期、至少 3 条当日重要快讯和有效最新时间；除该筛选要求外，其余采集、分析、模板与发布逻辑不变。完整契约见 `memory/blockbeats-important-only.md`。
+- **BlockBeats 产物**：`blockbeats.png` + `blockbeats.json`。🟥 任何早报／午报／晚报及单源重采，只要发生 BlockBeats 抓取行为，均须先勾选页面「重要快讯」，并覆盖抓取前 12 小时内所有可加载重要快讯；截图必须显示已勾选，JSON 必须包含 `"important_only": true`、`"capture_window_hours": 12`、`"window_covered": true`、不少于 3 条 `candidate_rows`、正好 3 条 `selected_rows`，且 `rows` 必须等于按基本面影响优先级筛出的 selected top3。未勾选、勾选状态丢失、12 小时窗口不足、top3 缺失、`rows` 与 `selected_rows` 不一致或字段不合规均按核心源无效硬停，禁止退回未筛选快讯、只看最新几条或缩短窗口。完整契约见 `memory/blockbeats-important-only.md`。
 - **前置**：TV/Exo 登录态长期存在 `~/.tv_chrome_profile`；跑前确认这几个独立 profile 的 Chrome 窗口已关（独占锁；与你日常 Chrome 默认配置互不影响）。
 - 🧹 **自动清理（capture_all 开头先跑 `cleanup.js`）**：动态图(inbox 7 张 + blockbeats 快讯卡)读完/推完即无价值，capture_all 每次开头**只删"日期<cutoff"的过期图、保留最近 `CLEANUP_KEEP_DAYS` 天(默认 2=今天+昨天)**，绝不碰当天在用的图；也可 `npm run cleanup` 手动。两处目录均已 gitignore、不进库。
 - 🟥 **采集后验证门（接五源硬停·防把登录墙/空图/陈旧当数据读）**：Read 每张确认是**真实登录态正确图**——Exo 须 Bybit BTCUSD·Bid-Ask·有 VWAP/Footprint 统计·非"delayed 24h"·非默认 BitMEX；TV 四档须有手绘线/正确周期·非"需要登录"墙；Coinglass 须干净 4 面板·1H；CME 须工具概率表已渲染。**除 FedWatch 浏览器渲染故障外，任一核心源失败 = 该源缺失 = 按五源硬停规则**（`memory/five-sources-complete-or-halt.md`）→ 重登或回退该源用户手动截图；**绝不拿登录墙/空图/陈旧图当数据读**。
@@ -175,7 +177,7 @@
 - 唯一路径＝`import outputs/notion_push_lib.py` + `py`；token 走 `$env:NOTION_TOKEN`。
 - 2026-06-29 起新报告使用参数化入口：三张卡片=`outputs/generate_cards.py`+JSON 内容；Notion=`outputs/publish_report.py`+JSON blocks。禁止继续复制生成日期专用 `_make_blockbeats_cards_*.py` / `_notion_push_*.py`；历史脚本不删除，仅作回滚证据。底层事务替换、三门和四子页结构不变。
 - 🟢 早报直接建 `🌅` 子页写入（不平铺到日期页）→ 午报新增 `🌇` 子页 → 晚报只新增 `🌙`+`🔍`，四子页同级共存、永不迁移（2026-06-20 三节点）。午报用 `push_subpage(date_str, "🌇 2026.M.D 午间", ...)`，去重前缀 `🌇`。
-- 🟥 正文格式＝宪法级·逐块 100% 对齐冻结金标（见 `memory/basemian-needs-news-cards.md`）：早报/午报对早间金标、晚报对晚间金标；「基本面」后 3 张快讯卡；块型与逐 run 配色沿用既定唯一规则。
+- 🟥 正文发布结构＝字段含义/块序/快讯卡/配色机械门通过；旧 Word/冻结金标版式只要求接近 100%（见 `memory/basemian-needs-news-cards.md`）：早报/午报对早间骨架、晚报对晚间骨架；「基本面」后 3 张快讯卡；块型与逐 run 配色沿用既定唯一规则。
 - 🟥🟥 **同名页事务式替换（2026-06-27 根因修复）**：统一调用 `replace_page_transactional(...)`，严格按「snapshot 全部旧页 → 唯一 staging 标题建新页 → 上传三图 → `verify_published` → 改最终标题 → frozen verifier → 归档全部旧页 → 同前缀唯一存活检查」执行。**禁止先归档旧页再 create_page**。准备阶段失败只回滚 staging 页并保留旧页；提交阶段清旧失败则保留已验证新页并硬停，宁可短暂重复、不可全失。
 - 🟥 **任何 Notion 写入前硬门**：`assert_source_freshness(...)`（核心评分源≤4h；BlockBeats/FedWatch至少当日）→ `run_report_lint(...)`。任一失败立即退出，不允许静默跳过或以“仅推送”名义发布过期可执行计划。
 

@@ -53,7 +53,11 @@ def _context_block(text: str, trading_date: str) -> str:
     )
     match = pattern.search(text)
     if not match:
-        raise ValueError(f"context_log.md has no {trading_date} block")
+        raise ValueError(
+            f"context_log.md has no {trading_date} block; append the final page id, "
+            "published time, frozen verifier PASS and Word visual QA PASS after "
+            "render/Word-QA/publish evidence exists, then rerun deliver"
+        )
     return match.group(0)
 
 

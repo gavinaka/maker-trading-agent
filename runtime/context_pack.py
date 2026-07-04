@@ -21,6 +21,66 @@ PAGE_ID = re.compile(
 )
 MEMORY_REF = re.compile(r"`?(memory/[A-Za-z0-9_.\-/]+\.md)`?")
 PROHIBITED_PRE_ANALYSIS_REFS = {"memory/MEMORY.md"}
+MANDATORY_GUARDRAIL_NAMES = (
+    "daily_skill",
+    "daily_sop",
+    "token_policy",
+    "memory_independent_report_no_user_reference",
+    "memory_precise_numbers_no_fuzzy",
+    "memory_report_chinese_only_narrative",
+    "memory_notion_publish_checklist",
+    "memory_stability_contract",
+    "memory_report_evidence_time_lock",
+    "golden_reasoning",
+)
+AUTHORITY_READ_PLAN = {
+    "always_read": MANDATORY_GUARDRAIL_NAMES,
+    "source_validation": (
+        "blockbeats_rules",
+        "blockbeats_collector",
+        "memory_blockbeats_important_only",
+        "memory_browser_capture_toolset",
+        "memory_five_sources_complete_or_halt",
+    ),
+    "analysis_scoring": (
+        "reasoning_depth",
+        "scoring_system",
+        "orderflow",
+        "orderflow_scoring",
+        "chart",
+        "chart_scoring",
+        "winrate",
+        "thresholds",
+        "trading_constitution",
+        "maker_principles",
+        "cannot_do",
+        "news_agent",
+        "scoring_agent",
+        "footprint_agent",
+    ),
+    "risk_and_execution": (
+        "risk",
+        "entry_exit",
+        "floating_defense",
+        "maker_defense_memory",
+        "leverage",
+        "position_management",
+        "state_gate",
+        "risk_agent",
+        "emotional_agent",
+    ),
+    "render_publish_post_lock": (
+        "memory_basemian_news_cards",
+        "memory_push_report_to_ai_agent_plan",
+        "memory_report_template_alignment",
+        "memory_evening_review_visual_to_notion",
+        "output_agent",
+        "review_agent",
+        "penalty_agent",
+        "review_principles",
+        "execution_philosophy",
+    ),
+}
 
 
 def authoritative_runtime_files(root: Path = ROOT) -> list[str]:
@@ -31,7 +91,7 @@ def authoritative_runtime_files(root: Path = ROOT) -> list[str]:
             "missing authoritative runtime files: " + ", ".join(sorted(missing))
         )
     reference_sources = [
-        ".claude/skills/daily-report/SKILL.md",
+        ".agents/skills/daily-report/SKILL.md",
         "sessions/日报SOP.md",
         "AGENTS.md",
         "CLAUDE.md",
@@ -59,6 +119,49 @@ def authoritative_runtime_files(root: Path = ROOT) -> list[str]:
 
 def sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def authority_manifest(root: Path = ROOT) -> list[dict]:
+    """Return content hashes for all runtime authority files.
+
+    The context packet may be reused only while both the ledger hash and this
+    manifest are unchanged. This prevents stale packets from carrying an old
+    authority list after SOP/skill/memory edits.
+    """
+    authoritative_runtime_files(root)
+    records = []
+    for name, relative in LOGIC_FILES.items():
+        path = root / relative
+        records.append(
+            {
+                "name": name,
+                "path": relative.replace("\\", "/"),
+                "sha256": sha256_file(path),
+                "bytes": path.stat().st_size,
+            }
+        )
+    return records
+
+
+def authority_sha256(manifest: list[dict]) -> str:
+    return sha256_text(
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    )
+
+
+def authority_read_plan() -> dict[str, list[str]]:
+    plan = {}
+    for phase, names in AUTHORITY_READ_PLAN.items():
+        plan[phase] = [LOGIC_FILES[name].replace("\\", "/") for name in names]
+    return plan
 
 
 def latest_context_block(text: str) -> str:
@@ -111,8 +214,10 @@ def build_context_pack(
     context_path = root / "sessions" / "context_log.md"
     text = context_path.read_text(encoding="utf-8")
     latest = latest_context_block(text)
+    manifest = authority_manifest(root)
+    manifest_hash = authority_sha256(manifest)
     payload = {
-        "schema_version": "2.0",
+        "schema_version": "2.1",
         "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
         "trading_date": trading_date,
         "slot": slot,
@@ -120,7 +225,10 @@ def build_context_pack(
         "source_sha256": sha256_text(text),
         "latest_block_sha256": sha256_text(latest),
         "operational_status": operational_status(latest),
-        "authoritative_runtime_files": authoritative_runtime_files(root),
+        "authoritative_runtime_files": [item["path"] for item in manifest],
+        "authority_manifest": manifest,
+        "authority_sha256": manifest_hash,
+        "authority_read_plan": authority_read_plan(),
         "analysis_policy": {
             "reasoning_effort": "max",
             "max_reasoning_confirmation_required": True,
@@ -131,10 +239,15 @@ def build_context_pack(
             "insufficient_reasoning_resources": "halt",
         },
         "read_policy": {
+            "load_authority_digest_first": True,
             "load_full_context_log": False,
             "load_prior_decision_text": False,
-            "load_all_authoritative_methodology": True,
+            "load_all_authoritative_methodology": False,
+            "expand_authority_by_phase": True,
             "load_complete_resolved_five_source_evidence": True,
+            "mandatory_guardrails_always_read": (
+                authority_read_plan()["always_read"]
+            ),
         },
     }
 
@@ -161,6 +274,8 @@ def ensure_context_pack(
     if target.is_file() and context_path.is_file():
         try:
             payload = json.loads(target.read_text(encoding="utf-8"))
+            current_manifest = authority_manifest(root)
+            current_authority_sha = authority_sha256(current_manifest)
         except (json.JSONDecodeError, OSError):
             payload = None
         if (
@@ -169,6 +284,8 @@ def ensure_context_pack(
             and payload.get("slot") == slot
             and payload.get("source_sha256")
             == sha256_text(context_path.read_text(encoding="utf-8"))
+            and payload.get("authority_sha256") == current_authority_sha
+            and payload.get("authority_manifest") == current_manifest
         ):
             return payload, target, True
     payload, target = build_context_pack(trading_date, slot, root=root)
@@ -180,13 +297,15 @@ def main() -> int:
     parser.add_argument("--date", required=True)
     parser.add_argument("--slot", required=True, choices=("morning", "midday", "evening"))
     args = parser.parse_args()
-    payload, target = build_context_pack(args.date, args.slot)
+    payload, target, reused = ensure_context_pack(args.date, args.slot)
     print(
         json.dumps(
             {
                 "path": str(target),
+                "context_pack_reused": reused,
                 "operational_status": payload["operational_status"],
                 "source_sha256": payload["source_sha256"],
+                "authority_sha256": payload["authority_sha256"],
             },
             ensure_ascii=False,
         )

@@ -25,9 +25,12 @@ from runtime.dependency_graph import (
 
 ROOT = Path(__file__).resolve().parents[1]
 LOGIC_FILES = {
-    "daily_skill": ".claude/skills/daily-report/SKILL.md",
+    "daily_skill": ".agents/skills/daily-report/SKILL.md",
     "daily_sop": "sessions/日报SOP.md",
     "token_policy": "governance/token_policy.md",
+    "golden_reasoning": "scoring/golden_report_reasoning_alignment.md",
+    "blockbeats_rules": "data_sources/blockbeats_rules.md",
+    "blockbeats_collector": "data_sources/collectors/blockbeats.md",
     "reasoning_depth": "scoring/reasoning_depth_checklist.md",
     "scoring_system": "scoring/scoring_system.md",
     "orderflow": "scoring/orderflow_methodology.md",
@@ -94,6 +97,7 @@ RESOLVED_STATE_KEYS = {
     "full_fallback_used",
     "fallback_reasons",
     "analysis_invalidation_reasons",
+    "prior_state_skip",
     "notion_state",
     "commit_id",
     "report_sha256",
@@ -235,6 +239,7 @@ def prepare_transition(
     replace_prepared_transition: bool = False,
     capture_manifest_path: Path | None = None,
     workflow_lease_id: str | None = None,
+    prior_state_skip_reason: str | None = None,
 ) -> tuple[dict, Path]:
     if slot not in SLOT_ORDER:
         raise ValueError(f"unsupported slot: {slot}")
@@ -374,7 +379,13 @@ def prepare_transition(
             raise ValueError(
                 "invalid full fallback manifest: " + ", ".join(failed_fallback)
             )
-    if slot != "morning" and parent is None:
+    prior_state_skip = None
+    if slot != "morning" and parent is None and prior_state_skip_reason:
+        prior_state_skip = {
+            "skipped_prior_slot": "morning" if slot == "midday" else "midday",
+            "reason": prior_state_skip_reason.strip(),
+        }
+    if slot != "morning" and parent is None and not prior_state_skip:
         raise ValueError("no committed morning/base state")
     if parent and SLOT_ORDER[slot] <= SLOT_ORDER.get(parent.get("slot", ""), 0):
         raise ValueError("slot order is not strictly increasing")
@@ -427,6 +438,7 @@ def prepare_transition(
         "full_fallback_used": bool(full_recollection_performed and slot != "morning"),
         "fallback_reasons": fallback_reasons,
         "analysis_invalidation_reasons": analysis_invalidation_reasons,
+        "prior_state_skip": prior_state_skip,
     }
     target = directory / f"transition_{slot}.json"
     existing = load_json(target)
@@ -575,6 +587,7 @@ def commit_transition(
             "analysis_invalidation_reasons": transition.get(
                 "analysis_invalidation_reasons", []
             ),
+            "prior_state_skip": transition.get("prior_state_skip"),
             "commit_id": commit_id,
             "report_sha256": analysis_lock["report_sha256"],
         }

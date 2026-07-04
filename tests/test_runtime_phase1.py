@@ -7,6 +7,7 @@ from pathlib import Path
 
 from runtime.context_pack import (
     authoritative_runtime_files,
+    authority_manifest,
     build_context_pack,
     ensure_context_pack,
     latest_context_block,
@@ -60,6 +61,11 @@ OLD
             self.assertTrue(
                 payload["analysis_policy"]["max_reasoning_confirmation_required"]
             )
+            self.assertRegex(payload["authority_sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(
+                payload["authority_manifest"],
+                authority_manifest(root),
+            )
             self.assertIn(
                 "scoring/reasoning_depth_checklist.md",
                 payload["authoritative_runtime_files"],
@@ -81,7 +87,9 @@ OLD
                 payload["authoritative_runtime_files"],
             )
             self.assertFalse(payload["read_policy"]["load_full_context_log"])
-            self.assertTrue(
+            self.assertTrue(payload["read_policy"]["load_authority_digest_first"])
+            self.assertTrue(payload["read_policy"]["expand_authority_by_phase"])
+            self.assertFalse(
                 payload["read_policy"]["load_all_authoritative_methodology"]
             )
             self.assertEqual(
@@ -95,6 +103,15 @@ OLD
             self.assertTrue(reused)
             self.assertEqual(first_target, target)
             self.assertEqual(first["source_sha256"], payload["source_sha256"])
+
+            authority_file = root / LOGIC_FILES["scoring_system"]
+            authority_file.write_text("changed authority\n", encoding="utf-8")
+            second, second_target, reused = ensure_context_pack(
+                "2026-06-29", "morning", root=root
+            )
+            self.assertFalse(reused)
+            self.assertEqual(second_target, target)
+            self.assertNotEqual(second["authority_sha256"], payload["authority_sha256"])
 
     def test_missing_referenced_memory_hard_stops_context_pack(self):
         with tempfile.TemporaryDirectory() as td:

@@ -10,9 +10,11 @@
 
 > 本仓库分两层：
 > - **参考设计层**：`agents/` + `state/` + `session_orchestrator`（链 A/B/C/D 自动机）—— **设计稿，当前未作为自动机运行**。
-> - **实际运行层（每天真跑）**：`/daily-report` skill + `sessions/日报SOP.md` + 项目 `memory/` 用户拍板决策 + Notion REST + `outputs/*.py`（出 .docx + 推 Notion 🌅🌙🔍 子页 + verifier/lint 三门）。
+> - **实际运行层（每天真跑）**：`/daily-report` skill + `sessions/日报SOP.md` + `runtime/` 三时段原始证据增量／分析全量重算层 + 项目 `memory/` 用户拍板决策 + Notion REST + `outputs/*.py`（出 .docx + 推 Notion 🌅🌇🌙🔍 子页 + verifier/lint 三门）。
 >
 > **真相源 = Notion 对应库**：持仓→（主/Maker）交易Check；门禁→开仓前状态门禁库；心力/心智→对应库；洁净进度→系统50笔库。**`state/` 6 个 JSON 为历史快照、不保证实时**。下文具体持仓/进度数字均以 Notion 为准。
+>
+> **机械整链硬门（2026-07-02）**：每份报告由持久 workflow lease 串起 begin→capture→prepare→analysis lock→commit→canonical DOCX→Word QA→publish→delivery，禁止跨时段重叠。逻辑版本变化只使分析失效；证据失败/缺失/过期/无效才允许完整重采。delivery 必须校验 render/QA/publish/context_log 的 SHA-256 与证据时序。
 
 ---
 
@@ -113,6 +115,15 @@ Trading-System/
 │   ├── token_policy.md                ← Token 预算
 │   ├── violations/                    ← 违规记录（动态）
 │   └── violation_costs/               ← 违规成本（动态）
+│
+├── runtime/                           ← 原始证据增量、前序判断隔离与全量分析运行层
+│   ├── session_runner.py              ← prepare/commit 统一入口
+│   ├── state_store.py                 ← 不可变状态链与原子提交
+│   ├── delta_engine.py                ← 来源指纹与变化检测
+│   ├── dependency_graph.py            ← 来源影响诊断 + 每时段完整分析清单
+│   ├── context_pack.py                ← 无前序判断泄漏的 pre-analysis 包
+│   ├── intent_router.py               ← 本工作区日报隔离意图分类
+│   └── usage_logger.py                ← Token/耗时/重试/回退遥测
 │
 ├── schemas/                           ← 数据 schema
 │   ├── inbox_manifest_schema.json     ← _manifest.json 校验

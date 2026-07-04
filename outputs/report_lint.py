@@ -526,15 +526,29 @@ def analysis_depth_check(lines):
     return issues
 
 
+def numeric_anchor_dump_check(lines):
+    """Reject posthoc numeric dumps used as a fake proxy for reasoning depth."""
+    text = "\n".join(lines)
+    matches = re.findall(r"锚点组\s*\d+\s*[:：]", text)
+    if len(matches) >= 3:
+        return [(
+            0,
+            "后附出现数值锚点组堆砌，疑似以数字列表替代承重推理",
+            f"{len(matches)} groups",
+            "数字必须嵌入五源、评分、胜率、风险、情景链条；不得用锚点组凑金标深度",
+        )]
+    return []
+
+
 _GOLDEN_PRICE_REF = re.compile(r"\d{2},\d{3}|\d{5}(?:\.\d+)?")
 _GOLDEN_SOURCES = ("BlockBeats", "Exocharts", "Coinglass", "FedWatch", "TradingView")
 
 
-def golden_quality_check(lines):
-    """2026-06-22..2026-06-26 本地高质量样本的回归下限。
+def golden_surface_proxy_check(lines):
+    """Legacy surface proxy for thin reports.
 
-    这不是模板/样式检查，而是抓 6/26 后实际出现的质量断崖：
-    推理压缩、后附分析区变薄、数值锚点减少、评分/胜率推导链消失。
+    These checks are WARN-only. Golden alignment is a pre-write reasoning
+    contract, not a posthoc length/price/rubric-count target.
     """
     text = "\n".join(lines)
     section = _third_section_text(lines)
@@ -542,42 +556,55 @@ def golden_quality_check(lines):
     if len(text) < 10000:
         issues.append((
             0,
-            "golden-quality：combined 报告短于 2026-06-26 前本地下限",
+            "golden-surface-proxy：combined 报告短于旧样本表面下限",
             f"{len(text)} chars",
-            "floor=10000；2026-06-22..26 本地样本均 >=10170 chars",
+            "WARN only；不得为了过门补字数，真实金标以 pre-write reasoning manifest 为准",
         ))
     if len(section) < 7000:
         issues.append((
             0,
-            "golden-quality：③后附推理区短于 2026-06-26 前本地下限",
+            "golden-surface-proxy：③后附推理区短于旧样本表面下限",
             f"{len(section)} chars",
-            "floor=7000；2026-06-22..26 本地样本③后附均 >=7442 chars",
+            "WARN only；不得为了过门补长度，真实金标以 pre-write reasoning manifest 为准",
         ))
     missing_sources = [source for source in _GOLDEN_SOURCES if source not in section]
     if missing_sources:
         issues.append((
             0,
-            "golden-quality：③后附未承载完整五源逐项证据",
+            "golden-surface-proxy：③后附未承载完整五源逐项证据",
             ",".join(missing_sources),
-            "五源证据必须进入本地推理后附区，不能只出现在标题/摘要",
+            "WARN only；五源缺失仍会由分析深度门/源覆盖门硬拦",
         ))
     price_refs = len(_GOLDEN_PRICE_REF.findall(section))
     if price_refs < 120:
         issues.append((
             0,
-            "golden-quality：数值/价位证据锚点低于 2026-06-26 前本地下限",
+            "golden-surface-proxy：数值/价位证据锚点低于旧样本表面下限",
             f"{price_refs} refs",
-            "floor=120；2026-06-22..26 本地样本③后附均 >=141 refs",
+            "WARN only；禁止补价位凑数，必须来自当次五源证据",
         ))
     rubric_refs = section.lower().count("rubric")
     if rubric_refs < 2:
         issues.append((
             0,
-            "golden-quality：评分/胜率推导链留痕不足",
+            "golden-surface-proxy：评分/胜率推导链留痕不足",
             f"rubric={rubric_refs}",
-            "floor=2；2026-06-22..26 本地样本保留显式 rubric 推导链",
+            "WARN only；真实胜率推导按 winrate rubric 绝对估算",
         ))
     return issues
+
+
+def golden_quality_check(lines):
+    """Backward-compatible wrapper for old guardrail tests/callers.
+
+    Golden alignment is now enforced by the pre-write reasoning manifest and
+    hard depth checks. The old public helper name is kept so stale tests fail
+    on real quality regressions instead of failing with AttributeError.
+    """
+    hits = []
+    for line, desc, hit, ctx in golden_surface_proxy_check(lines):
+        hits.append((line, desc.replace("golden-surface-proxy", "golden-quality"), hit, ctx))
+    return hits
 
 
 def main():
@@ -606,7 +633,8 @@ def main():
     defense_hits = maker_defense_check(lines)
     exo_hits = exocharts_ohlc_check(lines)
     depth_hits = analysis_depth_check(lines)
-    golden_hits = golden_quality_check(lines)
+    anchor_dump_hits = numeric_anchor_dump_check(lines)
+    golden_hits = golden_surface_proxy_check(lines)
     for i, desc, hit, ctx in warn_hits:
         print(f"[WARN] L{i} {desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in hard_hits:
@@ -632,9 +660,14 @@ def main():
     for i, desc, hit, ctx in depth_hits:
         loc = f"L{i}" if i else "全文"
         print(f"[HARD] {loc} 分析深度门·{desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in anchor_dump_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} 金标推理门·{desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in golden_hits:
         loc = f"L{i}" if i else "全文"
-        print(f"[HARD] {loc} 黄金样本质量回归门·{desc}: '{hit}'  | {ctx}")
+        print(f"[WARN] {loc} 旧金标表面代理·{desc}: '{hit}'  | {ctx}")
+    if not golden_hits:
+        print("[OK] 旧金标表面代理: 未发现明显变薄警示；真实金标以 pre-write reasoning manifest 为准")
     if not coupling_hits:
         print("[OK] 解耦门: 无联动用户实仓的语言")
     for i, hit, ctx in liq_hits:
@@ -657,7 +690,7 @@ def main():
     else:
         print("[OK] 胜率反下偏门: 胜率未落临界带[55,59](无贴门槛下偏嫌疑)")
     print()
-    if hard_hits or ledger_issues or coupling_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or golden_hits:
+    if hard_hits or ledger_issues or coupling_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or anchor_dump_hits:
         msgs = []
         if hard_hits:
             msgs.append(f"{len(hard_hits)} 处模糊位/占位/臆造（用核过的确切数字替换）")
@@ -679,12 +712,13 @@ def main():
             msgs.append(f"{len(exo_hits)} 处 Exocharts OHLC/当前价不自洽（重读截图或重采）")
         if depth_hits:
             msgs.append(f"{len(depth_hits)} 处分析深度不足（③后附必须承载完整五源/评分/胜率/风险/情景）")
-        if golden_hits:
-            msgs.append(f"{len(golden_hits)} 处未达到 2026-06-22..26 本地黄金样本质量下限（推理承载量/数值锚点/rubric 留痕）")
+        if anchor_dump_hits:
+            msgs.append(f"{len(anchor_dump_hits)} 处数值锚点组堆砌（数字必须嵌入推理链而非列表凑数）")
         print(f"[FAIL] " + "；".join(msgs) + " —— 修正后重跑")
         sys.exit(1)
     suffix = "" if ledger_skip else "·仓位帐本一致"
-    print(f"[PASS] 无模糊位/占位/臆造{suffix}·无联动（{len(warn_hits)} 处 WARN 需人工确认是否核过）")
+    warn_count = len(warn_hits) + len(golden_hits) + len(panel_hits)
+    print(f"[PASS] 无模糊位/占位/臆造{suffix}·无联动（{warn_count} 处 WARN 需人工确认是否核过）")
 
 if __name__ == "__main__":
     main()

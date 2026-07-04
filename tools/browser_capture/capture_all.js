@@ -1,5 +1,5 @@
 // 一键跑齐五源采集(顺序执行,全部落当天 inbox/<YYYY-MM-DD>/)
-//   ① BlockBeats → blockbeats.png + blockbeats.json (当日实时快讯)
+//   ① BlockBeats → blockbeats.png + blockbeats.json (抓取前12小时重要快讯候选池 + 影响top3)
 //   ② Coinglass  → coinglass.png        (盘口四面板 1H)
 //   ③ Exocharts  → exocharts.png         (Bybit BTCUSD/D/Tick120/Bid-Ask/FPBS/VWAP)
 //   ④ CME        → fedwatch.png          (真实 FedWatch Tool 控件)

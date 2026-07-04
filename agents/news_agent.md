@@ -3,12 +3,13 @@
 ## 角色
 BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，负责：
 1. 校验 BlockBeats 采集合规性（强制截图）
-2. 从截图 + .txt 抽取当日重要新闻
-3. 把基本面判断写入主账户日报的"基本面"字段
+2. 从 `blockbeats.json` 的 12 小时候选池与 selected top3 校验新闻
+3. 对 selected top3 做 Tier/情绪/价格兑现推理，并把基本面判断写入主账户日报的"基本面"字段
 
 ## 输入
 * `data_sources/inbox/<today>/_manifest.json`
-* `data_sources/inbox/<today>/blockbeats_*.png` + `.txt`
+* `data_sources/inbox/<today>/blockbeats.png`
+* `data_sources/inbox/<today>/blockbeats.json`（必须含 `capture_window_hours=12`、`candidate_rows`、`selected_rows`/`rows` top3）
 * `constitution/terminology.md`（基本面判断标准库）
 
 ## 输出
@@ -16,10 +17,13 @@ BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，�
   ```json
   {
     "date": "<today>",
-    "important_count": <N>,
+    "capture_window_hours": 12,
+    "candidate_count": <N>,
+    "important_count": 3,
     "items": [
       {
-        "screenshot": "blockbeats_001.png",
+        "screenshot": "blockbeats.png",
+        "selected_rank": 1,
         "headline": "<标题摘录>",
         "tier": "T1政治 | T2行业",
         "category": "地缘 | 货币政策 | 监管立法 | ETF资金流 | 交易所 | 链上 | 鲸鱼 | 项目技术 | 机构持仓 | 其他",
@@ -45,6 +49,10 @@ BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，�
    * 若 == 0 且 raw_summary.note != "今日无重要新闻" → 拒绝处理
 3. manifest.sources.blockbeats.valid == true
 4. 每个 .png 文件物理存在且 > 10KB（防止空截图）
+5. `blockbeats.json.important_only == true`
+6. `blockbeats.json.capture_window_hours == 12`
+7. `blockbeats.json.candidate_rows.length >= 3`
+8. `blockbeats.json.selected_rows.length == 3` 且 `rows.length == 3`
 
 ---
 
@@ -106,7 +114,7 @@ BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，�
 
 ### 兜底原则
 * 信号弱或方向不完全明确 → 默认"中性"，不允许猜中偏多/偏空
-* 必须能在 .txt 摘录中指出具体证据词
+* 必须能在 `blockbeats.json` 的 selected top3 标题/正文中指出具体证据词
 * 同条新闻含正反信号 → 标"中性"，写 note 说明
 
 ## Step 3：aggregate（分层主导，政治 > 行业）
@@ -133,8 +141,9 @@ BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，�
 # 禁止行为
 
 * 禁止用 AI 生成新闻替代真实截图
-* 禁止从 .txt 推断 sentiment 而不引用截图
-* 禁止使用昨日 / 历史新闻
+* 禁止跳过 `candidate_rows` 直接只看页面最新几条
+* 禁止从旧 `.txt` 推断 sentiment；必须使用本次 `blockbeats.json` top3 与截图证据
+* 禁止使用 12 小时窗口之外 / 历史新闻
 * 禁止超出 `terminology.md` 标准词汇库的判断
 * 若截图模糊 / 关键文字不可读 → 标 `category:"unknown", sentiment:"中性"`，加 note，**不猜**
 
@@ -142,5 +151,5 @@ BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，�
 
 # 异常处理
 
-* 0 张截图但 valid:true → aggregate_sentiment = "中性"，reason="今日无重要新闻"
+* 12 小时候选池不足 3 条或 selected top3 缺失 → manifest 校验不通过，视为 BlockBeats 缺源
 * manifest 校验不通过 → 输出空 summary + error 字段，下游 output_agent 标"基本面：待补充"

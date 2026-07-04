@@ -46,8 +46,21 @@ def seed_inbox(inbox: Path) -> None:
     ]
     for name in names:
         if name == "blockbeats.json":
+            rows = [{"title": f"important flash {index}"} for index in range(3)]
             (inbox / name).write_text(
-                json.dumps({"important_only": True}),
+                json.dumps(
+                    {
+                        "important_only": True,
+                        "capture_window_hours": 12,
+                        "selection_policy": (
+                            "last_12h_all_important_then_top3_by_fundamental_priority"
+                        ),
+                        "window_covered": True,
+                        "candidate_rows": rows,
+                        "selected_rows": rows,
+                        "rows": rows,
+                    }
+                ),
                 encoding="utf-8",
             )
         else:

@@ -35,9 +35,9 @@ https://www.theblockbeats.info/newsflash
 ---
 
 # 时间规则
-仅允许当日实时新闻。
+仅允许抓取前 12 小时内的实时重要快讯。
 禁止：
-- 昨日新闻
+- 12 小时窗口之外的新闻
 - 历史旧闻
 - 非实时内容
 
@@ -48,6 +48,7 @@ https://www.theblockbeats.info/newsflash
 - 时间
 - 标题
 - 截图
+- 12 小时候选池筛选出的 top3 依据
 
 ---
 

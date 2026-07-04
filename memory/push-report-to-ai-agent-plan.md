@@ -36,7 +36,7 @@ metadata:
 - 技术坑(补)：Notion rich_text 每段可多 run 分别染色，`annotations={bold,color}`；重建页用"先 DELETE 旧子块再 PATCH children"保 URL 不变。
 
 **基本面=图片格式(3张BlockBeats快讯卡，2026-06-02 用户要求)**：
-- 来源固定：每天跑日报/晚报时自己用 Chrome 打开 `https://www.theblockbeats.info/newsflash`，**必须读完当天(00:00→现在)全部快讯**(滚动+点「查看更多」跨调用异步加载，直到出现前一天日期为止；用户两次强调「取3条不是少读、要读全再按优先级筛」)，再**按市场影响优先级严格筛 3 条**(不多不少)。核心>山寨/单巨鲸/产品上线/地缘流水。2026-06-02 选：恐慌指数极度恐慌+全网爆仓主爆多单+加密概念股普跌。
+- 来源固定：每天跑日报/晚报时由 `tools/browser_capture/capture_blockbeats.js` 打开 `https://www.theblockbeats.info/newsflash`，**必须读完抓取前 12 小时内全部「重要快讯」**(滚动+点「查看更多」跨调用异步加载，直到覆盖 12 小时窗口；用户强调「取3条不是少读、要读全再按优先级筛」)，再**按市场影响优先级严格筛 3 条**(不多不少)。政治/宏观/监管 Tier1 > ETF/资金流/机构持仓 > 交易所/链上安全/鲸鱼 > 项目技术/Meme/其他。最终只制卡和分析这 3 条，但 `blockbeats.json` 必须保留 12 小时候选池。
 - 出图：Chrome MCP 的 `computer screenshot/zoom(save_to_disk)` **拿不到落盘字节**(本地搜不到、MCP 不回显路径)——放弃截原图。改为**本地渲染暗色卡片**：PowerShell `System.Drawing` + 微软雅黑，每条卡含「BLOCKBEATS 快讯」蓝标+标题(粗)+`BlockBeats · 日期时间`+正文(自动换行)，存 `outputs\blockbeats\`。正文逐条从 `/flash/{id}` 单页 `get_page_text` 取全(列表项 `a.news-flash-title` 的 href=/flash/{id})。
 - 入库：Notion 文件上传 3 步 = `POST /v1/file_uploads`→`POST {upload_url}/send`(PS5.1 手搓 multipart：field name `file`、Content-Type image/png、boundary)→拿 file_upload id；再 `PATCH /blocks/{page}/children` 用 `{children:[image块], after:基本面heading_id}` **插到基本面标题之后**(image 块 = `{type:image,image:{type:file_upload,file_upload:{id}}}`；`after` 参数 2022-06-28 版可用、已验证生效)。
 

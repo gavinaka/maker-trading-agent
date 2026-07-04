@@ -53,6 +53,44 @@ REQUIRED_SOURCE_LABELS = {
 }
 
 
+def _attempt_manifest_path(
+    trading_date: str,
+    mode: str,
+    status: str,
+    payload_hash: str,
+) -> Path:
+    stamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S%f%z")
+    return (
+        ROOT
+        / "runtime_state"
+        / trading_date
+        / "publish_attempts"
+        / mode
+        / f"{stamp}_{status}_{payload_hash[:12]}.json"
+    )
+
+
+def _validate_publish_inputs(
+    report: Path,
+    image_paths: list[str],
+    image_after_heading: object,
+) -> None:
+    if not report.is_file():
+        raise ValueError(f"report_path is missing: {report}")
+    if not isinstance(image_paths, list):
+        raise ValueError("image_paths must be an array")
+    if image_paths and not (
+        isinstance(image_after_heading, str) and image_after_heading.strip()
+    ):
+        raise ValueError("image_after_heading is required when image_paths is not empty")
+    missing_images = [path for path in image_paths if not Path(path).is_file()]
+    if missing_images:
+        raise ValueError(
+            "publish image files are missing: "
+            + ", ".join(str(path) for path in missing_images)
+        )
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -76,6 +114,10 @@ def publish(
         raise ValueError("unsupported verifier_mode")
     if not isinstance(payload["children"], list):
         raise ValueError("children must be an array of Notion blocks")
+    if not isinstance(payload["source_specs"], dict):
+        raise ValueError("source_specs must be an object")
+    if not isinstance(payload["image_paths"], list):
+        raise ValueError("image_paths must be an array")
     missing_sources = sorted(REQUIRED_SOURCE_LABELS - set(payload["source_specs"]))
     if missing_sources:
         raise ValueError(
@@ -95,6 +137,7 @@ def publish(
     report_path = resolve(payload["report_path"])
     image_paths = [resolve(path) for path in payload["image_paths"]]
     report = Path(report_path)
+    _validate_publish_inputs(report, image_paths, payload["image_after_heading"])
     report_match = re.match(
         r"^(20\d{2}-\d{2}-\d{2})_(morning|midday|evening)_",
         report.name,
@@ -143,9 +186,6 @@ def publish(
         result = dict(existing)
         result["cache_hit"] = True
         return result
-    assert_source_freshness(source_specs)
-    run_report_lint(report_path)
-
     summary = {
         "date": payload["date"],
         "title": payload["title"],
@@ -156,10 +196,13 @@ def publish(
         "block_count": len(payload["children"]),
         "dry_run": dry_run,
     }
-    if dry_run:
-        return summary
 
     try:
+        assert_source_freshness(source_specs)
+        run_report_lint(report_path)
+        if dry_run:
+            return summary
+
         parent_id = ensure_date_page(payload["date"])
         page_id, archived_pages = replace_page_transactional(
             parent_id=parent_id,
@@ -188,7 +231,12 @@ def publish(
             "unique_page_pass": True,
             "archived_pages": archived_pages,
         }
+        attempt_path = _attempt_manifest_path(
+            trading_date, mode, "success", payload_hash
+        )
+        evidence["attempt_manifest_path"] = str(attempt_path)
         atomic_json_write(manifest_path, evidence)
+        atomic_json_write(attempt_path, evidence)
         append_usage(
             trading_date=trading_date,
             slot=telemetry_slot,
@@ -211,6 +259,8 @@ def publish(
         summary.update(evidence)
         return summary
     except BaseException as exc:
+        if dry_run:
+            raise
         failure = {
             "schema_version": "1.0",
             "status": "failed",
@@ -222,9 +272,15 @@ def publish(
             "payload_sha256": payload_hash,
             "report_path": report_path,
             "report_sha256": report_hash,
+            "failure_class": type(exc).__name__,
             "failure_reason": str(exc),
         }
+        attempt_path = _attempt_manifest_path(
+            trading_date, mode, "failed", payload_hash
+        )
+        failure["attempt_manifest_path"] = str(attempt_path)
         atomic_json_write(manifest_path, failure)
+        atomic_json_write(attempt_path, failure)
         append_usage(
             trading_date=trading_date,
             slot=telemetry_slot,

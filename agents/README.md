@@ -13,8 +13,8 @@
 |---|---|---|---|---|
 | 0 | **session_orchestrator** | 总调度，按时段/链触发其他 agent | session_state + 当前时刻 | 编排链 A/B/C/D 执行 |
 | 1 | **emotional_agent** | 情绪 + 状态门禁（5 项）采集 | 用户自报 + risk_state | risk_state.state_gate.* + emotional_log |
-| 2 | **data_collection_agent** | 4 数据源采集，A→B→C 通道降级 | session_state + collectors SOP | inbox/_manifest.json + 截图/JSON |
-| 3 | **news_agent** | BlockBeats 强制截图校验 + sentiment | inbox/blockbeats_*.png/.txt | outputs/news_summary.json |
+| 2 | **data_collection_agent** | 5 数据源采集，A→B→C 通道降级 | session_state + collectors SOP | inbox/_manifest.json + 截图/JSON |
+| 3 | **news_agent** | BlockBeats 12 小时候选池 + top3 校验 + sentiment | inbox/blockbeats.png + blockbeats.json | outputs/news_summary.json |
 | 4 | **footprint_agent** | 盘口 16 组合表 + 4 维状态判定 | inbox/exocharts_*.json + coinglass_*.json | outputs/footprint_<HHMM>.json |
 | 5 | **scoring_agent** | 盘口 70 + 盘面 30 = 总评分 | footprint 输出 + chart 数据 | state/score_state.json |
 | 6 | **risk_agent** | 7 Gate 守门（含 5 项门禁 + 7 项检核） | request + state/* | outputs/risk_decisions/*.json |

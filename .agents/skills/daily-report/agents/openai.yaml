@@ -1,0 +1,7 @@
+interface:
+  display_name: "Trading-System 日报"
+  short_description: "运行 Trading-System 早报、午报、晚报工作流"
+  default_prompt: "Use $daily-report to run the requested Trading-System morning, midday, or evening report."
+
+policy:
+  allow_implicit_invocation: true

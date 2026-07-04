@@ -29,3 +29,6 @@ outputs/blockbeats/
 # 运行态采集产物(不入库·2026-06-20 补)
 data_sources/inbox/
 sessions/_*.png
+
+# 三时段共享状态与执行遥测（运行态，不入库）
+runtime_state/

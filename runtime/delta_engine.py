@@ -91,6 +91,47 @@ def scan_source_snapshot(inbox: Path) -> dict[str, dict]:
                     invalid_reasons.append(
                         "blockbeats.json must record important_only=true"
                     )
+                if payload.get("capture_window_hours") != 12:
+                    valid = False
+                    invalid_reasons.append(
+                        "blockbeats.json must record capture_window_hours=12"
+                    )
+                if (
+                    payload.get("selection_policy")
+                    != "last_12h_all_important_then_top3_by_fundamental_priority"
+                ):
+                    valid = False
+                    invalid_reasons.append(
+                        "blockbeats.json must record 12h top3 selection_policy"
+                    )
+                if payload.get("window_covered") is not True:
+                    valid = False
+                    invalid_reasons.append(
+                        "blockbeats.json must prove the 12h window was fully covered"
+                    )
+                candidate_rows = payload.get("candidate_rows")
+                selected_rows = payload.get("selected_rows")
+                rows = payload.get("rows")
+                if not isinstance(candidate_rows, list) or len(candidate_rows) < 3:
+                    valid = False
+                    invalid_reasons.append(
+                        "blockbeats.json must include at least 3 candidate_rows from the 12h window"
+                    )
+                if not isinstance(selected_rows, list) or len(selected_rows) != 3:
+                    valid = False
+                    invalid_reasons.append(
+                        "blockbeats.json must include exactly 3 selected_rows"
+                    )
+                if not isinstance(rows, list) or len(rows) != 3:
+                    valid = False
+                    invalid_reasons.append(
+                        "blockbeats.json rows must expose exactly the selected top3"
+                    )
+                elif isinstance(selected_rows, list) and rows != selected_rows:
+                    valid = False
+                    invalid_reasons.append(
+                        "blockbeats.json rows must equal selected_rows exactly"
+                    )
             except (OSError, UnicodeError, json.JSONDecodeError):
                 valid = False
                 invalid_reasons.append("blockbeats.json is not valid UTF-8 JSON")

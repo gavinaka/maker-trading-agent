@@ -266,9 +266,24 @@ def run_python_gate(script_path, args, label):
     result = subprocess.run(
         [sys.executable, os.path.abspath(script_path), *args],
         check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
     if result.returncode != 0:
-        raise SystemExit(f"{label} FAILED: exit={result.returncode}")
+        detail = f"{label} FAILED: exit={result.returncode}"
+        stdout_tail = result.stdout.strip()[-600:]
+        stderr_tail = result.stderr.strip()[-600:]
+        if stdout_tail:
+            detail += f"; stdout_tail={stdout_tail}"
+        if stderr_tail:
+            detail += f"; stderr_tail={stderr_tail}"
+        raise SystemExit(detail)
     print(f"{label} PASS")
 
 def run_report_lint(report_path):

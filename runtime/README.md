@@ -18,50 +18,60 @@
 # 1. 无前序判断泄漏的 pre-analysis 上下文
 py runtime/context_pack.py --date 2026-06-29 --slot midday
 
-# 2. 数据采集
-cd tools/browser_capture
-npm run delta              # 午报
-npm run delta:evening      # 晚报
-cd ../..
+# 2. 取得整链租约
+$lease = py runtime/session_runner.py begin-session --date 2026-06-29 --slot midday | ConvertFrom-Json
+$token = $lease.token
 
-# 3. 生成来源变化诊断 + 完整分析任务清单
-py runtime/session_runner.py prepare --date 2026-06-29 --slot midday --max-reasoning-confirmed
+# 3. 数据采集，保存输出中的 DELTA_MANIFEST/FULL_CAPTURE_MANIFEST 精确路径
+node tools/browser_capture/capture_delta.js --lease-token $token
+# 晚报用：
+# node tools/browser_capture/capture_delta.js --evening --lease-token $token
+# 早报用：
+# node tools/browser_capture/capture_all.js --slot morning --lease-token $token
 
-# 4. 完成 MAX 独立分析、combined.md 与 lint 后锁定
+# 4. 生成来源变化诊断 + 完整分析任务清单
+py runtime/session_runner.py prepare `
+  --date 2026-06-29 `
+  --slot midday `
+  --capture-manifest <DELTA_MANIFEST精确路径> `
+  --lease-token $token `
+  --max-reasoning-confirmed
+
+# 5. 完成 MAX 独立分析、combined.md 与 lint 后锁定
 py runtime/session_runner.py lock-analysis `
   --date 2026-06-29 `
   --slot midday `
   --report outputs/2026-06-29_midday_combined.md `
+  --lease-token $token `
   --confirm-five-source-validation `
   --confirm-full-analysis `
   --confirm-no-prior-judgment `
   --confirm-max-through-analysis
 
-# 5. 锁后读取前序计划，完成撤旧挂新／漂移对照
+# 6. 锁后读取前序计划，完成撤旧挂新／漂移对照
 py runtime/session_runner.py finalize-post-lock `
   --date 2026-06-29 `
   --slot midday `
+  --lease-token $token `
   --confirm-prior-plan-continuity-reviewed `
   --confirm-max-through-post-lock
 
-# 6. 归档锁定结果
+# 7. 归档锁定结果
 py runtime/session_runner.py commit `
   --date 2026-06-29 `
   --slot midday `
-  --report outputs/2026-06-29_midday_combined.md
+  --report outputs/2026-06-29_midday_combined.md `
+  --lease-token $token
 
-# 7. Notion 唯一页、冻结 verifier、Word 视觉 QA 与 context_log 全部 PASS 后
+# 8. Notion 唯一页、冻结 verifier、Word 视觉 QA 与 context_log 全部 PASS 后
 py runtime/session_runner.py deliver `
   --date 2026-06-29 `
   --slot midday `
   --page-id <page_id> `
-  --published-at <ISO时间> `
-  --frozen-verifier-pass `
-  --word-visual-qa-pass `
-  --unique-page-pass
+  --lease-token $token
 ```
 
-早报第 2 步使用 `npm run all`，其余相同。
+禁止使用不能携带整链租约的旧 `npm run all` / `npm run delta` 快捷入口。
 
 ## 文件职责
 

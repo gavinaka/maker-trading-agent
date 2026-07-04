@@ -402,6 +402,86 @@ class PublishEvidenceTests(unittest.TestCase):
             )
             self.assertTrue(manifest["frozen_verifier_pass"])
             self.assertTrue(manifest["unique_page_pass"])
+            attempts = list(
+                (
+                    root
+                    / "runtime_state"
+                    / "2026-06-30"
+                    / "publish_attempts"
+                    / "morning"
+                ).glob("*_success_*.json")
+            )
+            self.assertEqual(len(attempts), 1)
+            self.assertEqual(manifest["attempt_manifest_path"], str(attempts[0]))
+            attempt = json.loads(attempts[0].read_text(encoding="utf-8"))
+            self.assertEqual(attempt["page_id"], "page-id")
+
+    def test_publish_failure_writes_attempt_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outputs = root / "outputs"
+            sources = root / "data_sources" / "inbox" / "2026-06-30"
+            outputs.mkdir(parents=True)
+            sources.mkdir(parents=True)
+            report = outputs / "2026-06-30_morning_combined.md"
+            report.write_text("# 2026-06-30 早间日报\n", encoding="utf-8")
+            image = outputs / "card.png"
+            image.write_bytes(b"png")
+            source_specs = {}
+            for label in publish_report.REQUIRED_SOURCE_LABELS:
+                path = sources / f"{label}.dat"
+                path.write_bytes(label.encode("ascii"))
+                source_specs[label] = {"path": str(path)}
+            payload = outputs / "payload.json"
+            payload.write_text(
+                json.dumps(
+                    {
+                        "date": "2026.6.30",
+                        "title": "🌅 2026.6.30 早间日报",
+                        "title_prefix": "🌅",
+                        "verifier_mode": "morning",
+                        "report_path": str(report),
+                        "source_specs": source_specs,
+                        "children": [],
+                        "image_after_heading": "基本面",
+                        "image_paths": [str(image)],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(publish_report, "ROOT", root), patch.object(
+                publish_report, "assert_source_freshness"
+            ), patch.object(publish_report, "run_report_lint"), patch.object(
+                publish_report, "ensure_date_page", return_value="parent"
+            ), patch.object(
+                publish_report,
+                "replace_page_transactional",
+                side_effect=RuntimeError("frozen verify failed"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "frozen verify failed"):
+                    publish_report.publish(payload)
+            manifest = json.loads(
+                (
+                    root
+                    / "runtime_state"
+                    / "2026-06-30"
+                    / "publish_morning.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual(manifest["failure_class"], "RuntimeError")
+            self.assertIn("frozen verify failed", manifest["failure_reason"])
+            attempts = list(
+                (
+                    root
+                    / "runtime_state"
+                    / "2026-06-30"
+                    / "publish_attempts"
+                    / "morning"
+                ).glob("*_failed_*.json")
+            )
+            self.assertEqual(len(attempts), 1)
+            self.assertEqual(manifest["attempt_manifest_path"], str(attempts[0]))
 
 
 if __name__ == "__main__":

@@ -95,10 +95,10 @@ def _archive(root: Path, payload: dict) -> Path:
     return target
 
 
-def _assert_prior_delivery(trading_date: str, slot: str, root: Path) -> None:
+def _prior_delivery_complete(trading_date: str, slot: str, root: Path) -> bool:
     prior = PRIOR_SLOT.get(slot)
     if prior is None:
-        return
+        return True
     target = (
         root
         / "runtime_state"
@@ -112,15 +112,78 @@ def _assert_prior_delivery(trading_date: str, slot: str, root: Path) -> None:
         "word_visual_qa_pass",
         "context_log_recorded",
     )
-    if (
-        not delivery
-        or delivery.get("trading_date") != trading_date
-        or delivery.get("slot") != prior
-        or not all(delivery.get(flag) is True for flag in required)
-    ):
-        raise RuntimeError(
-            f"{slot} cannot begin before {prior} has a complete delivery manifest"
-        )
+    return bool(
+        delivery
+        and delivery.get("trading_date") == trading_date
+        and delivery.get("slot") == prior
+        and all(delivery.get(flag) is True for flag in required)
+    )
+
+
+def _record_prior_delivery_skip(
+    trading_date: str,
+    slot: str,
+    reason: str,
+    root: Path,
+) -> dict:
+    prior = PRIOR_SLOT.get(slot)
+    if prior is None:
+        raise ValueError(f"{slot} has no prior slot to skip")
+    if len(reason.strip()) < 8:
+        raise ValueError("prior delivery skip reason must be explicit")
+    payload = {
+        "schema_version": "1.0",
+        "created_at": now_iso(),
+        "trading_date": trading_date,
+        "slot": slot,
+        "skipped_prior_slot": prior,
+        "reason": reason.strip(),
+    }
+    target = (
+        root
+        / "runtime_state"
+        / trading_date
+        / f"prior_delivery_skip_{slot}.json"
+    )
+    existing = load_json(target)
+    if existing:
+        if (
+            existing.get("trading_date") != trading_date
+            or existing.get("slot") != slot
+            or existing.get("skipped_prior_slot") != prior
+        ):
+            raise RuntimeError(f"prior delivery skip collision: {target}")
+        return existing
+    _atomic_create(target, payload)
+    _append_audit(
+        root,
+        {
+            "event": "prior_delivery_skipped",
+            "at": payload["created_at"],
+            "trading_date": trading_date,
+            "slot": slot,
+            "skipped_prior_slot": prior,
+            "reason": payload["reason"],
+        },
+    )
+    return payload
+
+
+def _assert_prior_delivery(
+    trading_date: str,
+    slot: str,
+    root: Path,
+    *,
+    skip_reason: str | None = None,
+) -> dict | None:
+    if _prior_delivery_complete(trading_date, slot, root):
+        return None
+    if skip_reason:
+        return _record_prior_delivery_skip(trading_date, slot, skip_reason, root)
+    prior = PRIOR_SLOT.get(slot)
+    raise RuntimeError(
+        f"{slot} cannot begin before {prior} has a complete delivery manifest"
+    )
 
 
 def _assert_not_already_delivered(trading_date: str, slot: str, root: Path) -> None:
@@ -148,10 +211,21 @@ def _assert_not_already_delivered(trading_date: str, slot: str, root: Path) -> N
         )
 
 
-def begin_lease(trading_date: str, slot: str, *, root: Path = ROOT) -> dict:
+def begin_lease(
+    trading_date: str,
+    slot: str,
+    *,
+    root: Path = ROOT,
+    skip_prior_delivery_reason: str | None = None,
+) -> dict:
     _validate_identity(trading_date, slot)
     _assert_not_already_delivered(trading_date, slot, root)
-    _assert_prior_delivery(trading_date, slot, root)
+    prior_delivery_skip = _assert_prior_delivery(
+        trading_date,
+        slot,
+        root,
+        skip_reason=skip_prior_delivery_reason,
+    )
     target = active_path(root)
     existing = load_json(target)
     if existing:
@@ -171,6 +245,11 @@ def begin_lease(trading_date: str, slot: str, *, root: Path = ROOT) -> dict:
         "started_at": now_iso(),
         "owner_pid": os.getpid(),
     }
+    if prior_delivery_skip:
+        payload["prior_delivery_skip"] = {
+            "skipped_prior_slot": prior_delivery_skip["skipped_prior_slot"],
+            "reason": prior_delivery_skip["reason"],
+        }
     _atomic_create(target, payload)
     _append_audit(
         root,
@@ -262,6 +341,7 @@ def recover_lease(
     slot: str,
     *,
     reason: str,
+    skip_prior_delivery_reason: str | None = None,
     root: Path = ROOT,
 ) -> dict:
     if len(reason.strip()) < 8:
@@ -275,4 +355,9 @@ def recover_lease(
         reason=reason.strip(),
         root=root,
     )
-    return begin_lease(trading_date, slot, root=root)
+    return begin_lease(
+        trading_date,
+        slot,
+        root=root,
+        skip_prior_delivery_reason=skip_prior_delivery_reason,
+    )
