@@ -27,10 +27,18 @@ class CaptureDeltaPlanTests(unittest.TestCase):
         )
         plan = json.loads(completed.stdout)
         scripts = [item["script"] for item in plan["captures"]]
-        self.assertIn("capture_coinglass.js", scripts)
-        self.assertIn("capture_exo.js", scripts)
-        self.assertIn("capture_farside_btc_etf.js", scripts)
-        self.assertIn("capture_tv.js", scripts)
+        self.assertEqual(
+            scripts,
+            [
+                "capture_blockbeats.js",
+                "capture_coinglass.js",
+                "capture_exo.js",
+                "capture_fedwatch.js",
+                "capture_farside_btc_etf.js",
+                "capture_tv.js",
+            ],
+        )
+        self.assertNotIn("reused_sources", plan)
         self.assertEqual(
             plan["fallback"],
             "capture_all.js once only for failed, missing, stale, or invalid core evidence",
@@ -101,6 +109,8 @@ class CaptureDeltaPlanTests(unittest.TestCase):
             self.assertIn("immutableManifestPath", text)
             self.assertIn("writeImmutableJson", text)
         self.assertNotIn("logic version", delta.lower())
+        self.assertNotIn("reused_sources", delta)
+        self.assertNotIn("hasCommittedReusableFedWatch", delta)
 
 
 if __name__ == "__main__":

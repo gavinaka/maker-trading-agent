@@ -9,7 +9,7 @@ metadata:
 
 2026-06-20 建成、2026-06-28 扩为**五源自动截图工具集**，2026-07-05 扩为**六源证据采集工具集**:`tools/browser_capture/`(Node+Playwright,走系统真实 Chrome/Edge channel)。目的=替代用户手动给核心源截图/结构化证据；①BlockBeats 已改由 `capture_blockbeats.js` 统一采集，禁止再走 blockbeats-fetch/Claude-in-Chrome。
 
-**一条命令**:`node tools/browser_capture/capture_all.js`(=`npm run all`)→ 顺序跑 BlockBeats→Coinglass→Exo→CME→Farside BTC ETF Flow→TV四档,全部落 `data_sources/inbox/<当天YYYY-MM-DD>/`;单源:`npm run blockbeats/coinglass/exo/fedwatch/farside/tv`。
+**一条命令**：先 `py runtime/session_runner.py begin-session --date <date> --slot <slot>` 取得 lease token；早报跑 `node tools/browser_capture/capture_all.js --slot morning --lease-token <token>`，午/晚跑 `node tools/browser_capture/capture_delta.js --slot midday|evening --lease-token <token>`。顺序跑 BlockBeats→Coinglass→Exo→FedWatch→Farside BTC ETF Flow→TV四档，全部落 `data_sources/inbox/<当天YYYY-MM-DD>/`；旧 `npm run all/delta` 无租约快捷入口只作历史别名，不用于正式日报。
 
 **各源产物+对齐口径(对齐用户手工基准·已逐张验收)**:
 - Coinglass `coinglass.png` 2560×1440:Bybit_BTCUSDT 主图、**1H**、删掉默认6面板里的3个(成交量Volume/聚合现货CVD/聚合合约订单**薄**深度差值——注意CG错别字"薄"非"簿",删除靠 blob iframe 内 `legend-source-item`+派发mouse事件)、裁掉右侧自选表→全宽4面板(价/CVD/资金费率/持仓OI)。公开免登录。

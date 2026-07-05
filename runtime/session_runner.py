@@ -156,6 +156,14 @@ def main() -> int:
     )
     prepare.add_argument("--full-recollection-performed", action="store_true")
     prepare.add_argument("--replace-prepared-transition", action="store_true")
+    prepare.add_argument(
+        "--allow-same-slot-reissue",
+        action="store_true",
+        help=(
+            "explicitly replace an already committed but undelivered slot after "
+            "fresh evidence invalidates the publish path"
+        ),
+    )
     prepare.add_argument("--capture-manifest", required=True, type=Path)
     add_lease_argument(prepare)
     add_usage_arguments(prepare)
@@ -184,6 +192,7 @@ def main() -> int:
     lock_analysis.add_argument(
         "--confirm-max-through-analysis", action="store_true", required=True
     )
+    lock_analysis.add_argument("--allow-same-slot-reissue", action="store_true")
     add_lease_argument(lock_analysis)
     add_usage_arguments(lock_analysis)
 
@@ -218,6 +227,7 @@ def main() -> int:
     commit_input.add_argument("--report", type=Path)
     commit_input.add_argument("--updates", type=Path)
     commit.add_argument("--analysis-lock", type=Path)
+    commit.add_argument("--allow-same-slot-reissue", action="store_true")
     add_lease_argument(commit)
     add_usage_arguments(commit)
 
@@ -286,6 +296,7 @@ def main() -> int:
             max_reasoning_confirmed=args.max_reasoning_confirmed,
             full_recollection_performed=full_recollection_performed,
             replace_prepared_transition=args.replace_prepared_transition,
+            allow_same_slot_reissue=args.allow_same_slot_reissue,
             capture_manifest_path=args.capture_manifest,
             workflow_lease_id=lease["lease_id"],
             prior_state_skip_reason=(
@@ -394,8 +405,23 @@ def main() -> int:
         existing = load_json(target)
         if existing:
             if existing.get("commit_id") != commit_id:
-                raise ValueError("a different analysis is already locked for this slot")
-            payload = existing
+                if not (
+                    args.allow_same_slot_reissue
+                    and isinstance(transition.get("reissue"), dict)
+                ):
+                    raise ValueError(
+                        "a different analysis is already locked for this slot"
+                    )
+                archive = directory / (
+                    f"analysis_lock_{args.slot}_"
+                    f"{str(existing.get('commit_id', 'unknown'))[:12]}_"
+                    "superseded.json"
+                )
+                if not archive.exists():
+                    atomic_json_write(archive, existing)
+                atomic_json_write(target, payload)
+            else:
+                payload = existing
         else:
             atomic_json_write(target, payload)
         append_usage(
@@ -498,6 +524,7 @@ def main() -> int:
             updates,
             analysis_lock,
             analysis_lock["commit_id"],
+            allow_same_slot_reissue=args.allow_same_slot_reissue,
         )
         append_usage(
             trading_date=args.date,

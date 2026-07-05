@@ -26,6 +26,7 @@ metadata:
 - **每个价格/百分比都必须是核过的确切数**：现价取最细图(15m/1H)确值、均价用防守层 R 反推、浮亏算到一位小数。禁 `71,2xx`/`XXXX`/独立 `~3%`/`xx刀`/占位（见 [[precise-numbers-no-fuzzy]]）。
 - **新闻只用实时抓的 BlockBeats**，禁 AI 生成快讯；其余源截图/结构化读数不臆测。
 - **发布前时效门（2026-07-05）**：任何 Notion 写入前动态算源文件年龄；Coinglass/Exocharts/TradingView 四档任一 >4h，报告不得作为可执行计划发布，必须重采六源、重评分、重出稿。BlockBeats/FedWatch/Farside 至少当日；Farside 表格最新行允许停留在最近一个美股交易日，但文件必须当日采集。禁止把历史快照晚推后继续当实时计划。
+- **发布正文单源门（2026-07-05 根因修复）**：Daily Notion payload 必须由 `outputs/daily_payload_builder.py` 从 locked `combined.md` 与 source binding 机械派生；publish/deliver 证据必须包含 `notion_payload_source.status=passed` 且 `kind=combined_md_to_notion_payload`。任何手写 `children`、空块、补造 combined 不存在的 Maker/取消价/独立边界字段，或缺少 payload_source 的旧 payload，均不得发布或交付。
 - 不确定就**显式标注"条目未记/未知"**，绝不用占位或编造填。
 - **门 ②（防幻觉）**：push 前必跑
   `py outputs/report_lint.py outputs/{date}_morning_combined.md`

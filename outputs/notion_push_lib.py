@@ -325,6 +325,50 @@ def run_frozen_verifier(page_id, mode):
         "FROZEN GOLD VERIFY",
     )
 
+DAILY_REPORT_TITLE_PREFIXES = {"🌅", "🌇", "🌙"}
+
+
+def _daily_report_prefix_from_title(title):
+    text = str(title)
+    if "日报" not in text:
+        return None
+    for prefix in DAILY_REPORT_TITLE_PREFIXES:
+        if text.startswith(prefix):
+            return prefix
+    return None
+
+
+def _assert_daily_publish_entrypoint(title_prefix, daily_payload_source):
+    if title_prefix not in DAILY_REPORT_TITLE_PREFIXES:
+        return
+    if not isinstance(daily_payload_source, dict):
+        raise RuntimeError(
+            "daily report Notion writes must go through publish_report.py with "
+            "daily_payload_builder payload_source evidence"
+        )
+    if (
+        daily_payload_source.get("status") == "passed"
+        and daily_payload_source.get("kind") == "combined_md_to_notion_payload"
+    ):
+        return
+    if (
+        daily_payload_source.get("status") == "skipped"
+        and "historical" in str(daily_payload_source.get("reason", ""))
+    ):
+        return
+    raise RuntimeError(
+        "daily report Notion writes require payload_source.kind="
+        "combined_md_to_notion_payload before transaction"
+    )
+
+
+def _assert_daily_create_entrypoint(title, daily_payload_source):
+    title_prefix = _daily_report_prefix_from_title(title)
+    if title_prefix is None:
+        return
+    _assert_daily_publish_entrypoint(title_prefix, daily_payload_source)
+
+
 def replace_page_transactional(
     parent_id,
     title,
@@ -333,6 +377,8 @@ def replace_page_transactional(
     image_after_heading,
     image_paths,
     verifier_mode,
+    *,
+    daily_payload_source=None,
 ):
     """Publish a verified replacement without deleting the last good page first.
 
@@ -348,12 +394,18 @@ def replace_page_transactional(
       6. Require exactly one live matching page.  A commit failure keeps the
          verified new page live (duplicates are safer than data loss).
     """
+    _assert_daily_publish_entrypoint(title_prefix, daily_payload_source)
     old_pages = find_child_pages(parent_id, title_prefix)
     staging_title = f"{title} [发布中-{uuid.uuid4().hex[:8]}]"
     page_id = None
 
     try:
-        page_id = create_page(parent_id, staging_title, children)
+        page_id = create_page(
+            parent_id,
+            staging_title,
+            children,
+            daily_payload_source=daily_payload_source,
+        )
         if image_paths:
             insert_images_after_heading(
                 page_id,
@@ -402,7 +454,8 @@ def replace_page_transactional(
     print("LIVE PAGE UNIQUENESS PASS:", unique_message)
     return page_id, old_pages, verifier_evidence
 
-def create_page(parent, title, children):
+def create_page(parent, title, children, *, daily_payload_source=None):
+    _assert_daily_create_entrypoint(title, daily_payload_source)
     assert_workspace()  # 🔴前置门：token 指向错误 workspace 即 abort，杜绝推错地方
     head, rest = children[:100], children[100:]
     payload = {"parent":{"type":"page_id","page_id":parent},
@@ -514,12 +567,26 @@ def copy_block(b):
     if t == "callout" and src.get("icon"): payload["icon"] = src["icon"]
     return {"type": t, t: payload}
 
-def push_subpage(date_str, title, children, img_after_heading=None, img_paths=None, dedup_prefix=None):
+def push_subpage(
+    date_str,
+    title,
+    children,
+    img_after_heading=None,
+    img_paths=None,
+    dedup_prefix=None,
+    *,
+    daily_payload_source=None,
+):
     """一站式：定位/建日期页 → 防重复 → 建子页(写 children) → 可选在某标题后插图。返回子页 id 或 None(已存在)。"""
     date_page = ensure_date_page(date_str)
     if dedup_prefix and find_child_page(date_page, dedup_prefix):
         print(f"ABORT 已存在同名子页: {dedup_prefix}"); return None
-    pid = create_page(date_page, title, children)
+    pid = create_page(
+        date_page,
+        title,
+        children,
+        daily_payload_source=daily_payload_source,
+    )
     if img_after_heading and img_paths:
         insert_images_after_heading(pid, img_after_heading, img_paths)
     return pid

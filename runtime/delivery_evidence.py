@@ -92,6 +92,8 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
     if not _strict_delivery_contract_active(trading_date):
         return
     shape = publish.get("notion_payload_shape")
+    source = publish.get("notion_payload_source")
+    colors = publish.get("notion_payload_colors")
     verifier = publish.get("frozen_verifier")
     expected_payload_count = {
         "morning": 25,
@@ -107,6 +109,16 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
         and shape.get("block_count_before_images") == expected_payload_count,
         "notion_payload_image_count": isinstance(shape, dict)
         and shape.get("image_count") == 3,
+        "notion_payload_source": isinstance(source, dict),
+        "notion_payload_source_passed": isinstance(source, dict)
+        and source.get("status") == "passed",
+        "notion_payload_source_kind": isinstance(source, dict)
+        and source.get("kind") == "combined_md_to_notion_payload",
+        "notion_payload_colors": isinstance(colors, dict),
+        "notion_payload_colors_passed": isinstance(colors, dict)
+        and colors.get("status") == "passed",
+        "notion_payload_colors_template": isinstance(colors, dict)
+        and colors.get("template") == "daily-gold-run-colors-v1",
         "frozen_verifier": isinstance(verifier, dict),
         "frozen_verifier_returncode": isinstance(verifier, dict)
         and verifier.get("returncode") == 0,

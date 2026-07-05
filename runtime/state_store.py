@@ -77,6 +77,7 @@ LOGIC_FILES = {
     "penalty_agent": "agents/penalty_agent.md",
 }
 SLOT_ORDER = {"morning": 1, "midday": 2, "evening": 3}
+PRIOR_SLOT = {"midday": "morning", "evening": "midday"}
 RESOLVED_STATE_KEYS = {
     "schema_version",
     "created_at",
@@ -187,6 +188,21 @@ def state_dir(trading_date: str, root: Path = ROOT) -> Path:
     return root / "runtime_state" / trading_date
 
 
+def _delivery_manifest_exists(directory: Path, slot: str) -> bool:
+    return (directory / f"delivery_{slot}.json").is_file()
+
+
+def _prior_parent_for_reissue(directory: Path, slot: str) -> dict | None:
+    prior = PRIOR_SLOT.get(slot)
+    if prior is None:
+        return None
+    filename = "base.json" if prior == "morning" else f"resolved_{prior}.json"
+    parent = load_json(directory / filename)
+    if not parent or parent.get("slot") != prior:
+        raise ValueError(f"cannot reissue {slot} without committed {prior} parent")
+    return parent
+
+
 @contextmanager
 def exclusive_lock(path: Path, *, stale_seconds: int = 1800):
     """Acquire a cross-process lock and never remove another owner's lock."""
@@ -237,6 +253,7 @@ def prepare_transition(
     max_reasoning_confirmed: bool = False,
     full_recollection_performed: bool = False,
     replace_prepared_transition: bool = False,
+    allow_same_slot_reissue: bool = False,
     capture_manifest_path: Path | None = None,
     workflow_lease_id: str | None = None,
     prior_state_skip_reason: str | None = None,
@@ -249,6 +266,23 @@ def prepare_transition(
         )
     directory = state_dir(trading_date, root)
     parent = load_json(directory / "current.json")
+    reissue = None
+    if parent and parent.get("slot") == slot:
+        if not allow_same_slot_reissue:
+            raise ValueError(
+                f"{slot} is already committed; pass explicit same-slot reissue "
+                "authorization before delivery to replace it"
+            )
+        if _delivery_manifest_exists(directory, slot):
+            raise ValueError(f"{slot} is already delivered; same-slot reissue blocked")
+        reissue = {
+            "kind": "same_slot_reissue_before_delivery",
+            "previous_commit_id": parent.get("commit_id"),
+            "previous_state_version": parent.get("state_version"),
+            "previous_report_sha256": parent.get("report_sha256"),
+            "previous_capture_manifest": parent.get("capture_manifest"),
+        }
+        parent = _prior_parent_for_reissue(directory, slot)
     current_logic = logic_versions(root)
     capture_name = (
         f"capture_{slot}_full.json"
@@ -302,6 +336,17 @@ def prepare_transition(
                 capture_manifest.get("workflow_lease_id") == workflow_lease_id
                 and bool(re.fullmatch(r"[0-9a-f]{64}", workflow_lease_id))
             )
+            or (
+                allow_same_slot_reissue
+                and reissue is not None
+                and isinstance(capture_manifest.get("workflow_lease_id"), str)
+                and bool(
+                    re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        str(capture_manifest.get("workflow_lease_id")),
+                    )
+                )
+            )
         ),
     }
     failed_capture_checks = sorted(
@@ -312,6 +357,11 @@ def prepare_transition(
             "invalid capture manifest: " + ", ".join(failed_capture_checks)
         )
     evidence_root = _validate_evidence_snapshot(directory, slot, capture_manifest)
+    if reissue is not None:
+        reissue["reused_capture_workflow_lease_id"] = capture_manifest.get(
+            "workflow_lease_id"
+        )
+        reissue["active_reissue_workflow_lease_id"] = workflow_lease_id
     snapshot = scan_source_snapshot(evidence_root)
     comparison = compare_snapshots(
         parent.get("sources") if parent else None,
@@ -440,6 +490,8 @@ def prepare_transition(
         "analysis_invalidation_reasons": analysis_invalidation_reasons,
         "prior_state_skip": prior_state_skip,
     }
+    if reissue:
+        transition["reissue"] = reissue
     target = directory / f"transition_{slot}.json"
     existing = load_json(target)
     if existing and not replace_prepared_transition:
@@ -470,6 +522,7 @@ def commit_transition(
     commit_id: str,
     *,
     root: Path = ROOT,
+    allow_same_slot_reissue: bool = False,
 ) -> tuple[dict, Path]:
     if not re.fullmatch(r"[0-9a-f]{64}", commit_id):
         raise ValueError("commit_id must be a lowercase SHA-256 hex digest")
@@ -477,16 +530,18 @@ def commit_transition(
     parent = load_json(directory / "current.json") or {}
     filename = "base.json" if slot == "morning" else f"resolved_{slot}.json"
     target = directory / filename
+    transition = load_json(directory / f"transition_{slot}.json")
+    if transition is None:
+        raise ValueError(f"transition for {slot} has not been prepared")
     if parent.get("slot") == slot:
         if parent.get("commit_id") == commit_id and target.is_file():
             duplicate = copy.deepcopy(parent)
             duplicate["idempotent_reuse"] = True
             return duplicate, target
-        raise ValueError(f"{slot} is already committed with a different result")
-
-    transition = load_json(directory / f"transition_{slot}.json")
-    if transition is None:
-        raise ValueError(f"transition for {slot} has not been prepared")
+        if not allow_same_slot_reissue or not transition.get("reissue"):
+            raise ValueError(f"{slot} is already committed with a different result")
+        if _delivery_manifest_exists(directory, slot):
+            raise ValueError(f"{slot} is already delivered; same-slot reissue blocked")
     missing_sources = transition.get("missing_required_sources", [])
     if missing_sources:
         raise ValueError(

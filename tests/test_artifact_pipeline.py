@@ -22,6 +22,7 @@ from outputs import word_qa
 from outputs import publish_report
 from outputs import notion_push_lib
 from outputs import daily_color_template
+from outputs import daily_payload_builder
 from runtime.delivery_evidence import validate_delivery_evidence
 from runtime.session_runner import validate_report_structure
 
@@ -542,6 +543,16 @@ class DeliveryEvidenceTests(unittest.TestCase):
                 "block_count_before_images": 25,
                 "image_count": 3,
             }
+            payload["notion_payload_source"] = {
+                "status": "passed",
+                "kind": "combined_md_to_notion_payload",
+                "generator": "daily_payload_builder",
+                "generator_version": "1.0",
+            }
+            payload["notion_payload_colors"] = {
+                "status": "passed",
+                "template": "daily-gold-run-colors-v1",
+            }
             payload["frozen_verifier"] = {
                 "script": "C:\\repo\\outputs\\notion_verify_against_yesterday.py",
                 "args": [page_id, "morning"],
@@ -641,6 +652,16 @@ class PublishEvidenceTests(unittest.TestCase):
                 }
             )
             source_specs[label] = {"path": str(path)}
+        for name in ("blockbeats.json", "farside_btc_etf.json", "fedwatch.json"):
+            path = snapshot_root / name
+            path.write_text(json.dumps({"fixture": name}), encoding="utf-8")
+            entries.append(
+                {
+                    "path": name,
+                    "sha256": sha256_file(path),
+                    "size": path.stat().st_size,
+                }
+            )
         capture = capture_dir / "full_base_run1234567890abcdef.json"
         capture_payload = {
             "schema_version": "1.0",
@@ -670,6 +691,123 @@ class PublishEvidenceTests(unittest.TestCase):
             encoding="utf-8",
         )
         return source_specs
+
+    def _strict_daily_combined_text(self, date: str = "2026-07-05", slot: str = "morning") -> str:
+        slot_cn = {"morning": "早间", "midday": "午间", "evening": "晚间"}[slot]
+        maker_strategy = (
+            "反弹空：入场区间 62,940-63,120，持仓 500-1000 刀，Binance Maker，左侧，5x，盈亏比 1:2.5 以上。"
+            if slot == "evening"
+            else "低多：入场区间 62,560-62,650，挂单价 62,600，持仓 800 刀，OKX，左侧，5x，盈亏比 1:2.5 以上"
+        )
+        first_layer = (
+            "第一层：价格下行至 61,850 后，将止损移动至入场后形成的 4H K线结构高点极点；同时取消所有加仓。"
+            if slot == "evening"
+            else "第一层：价格首次触及 63,140 后，将止损移至 4H 级别 K 线极点低点 62,596，并取消所有加仓"
+        )
+        second_layer = (
+            "第二层：价格下行至 61,250 后，设置保本损；不减仓。"
+            if slot == "evening"
+            else "第二层：价格触及 63,500 附近后，止损保持不低于开仓均价 62,600 的保本损"
+        )
+        note = (
+            "注意事项：若价格未成交前优先跌破 62,300，则此策略取消。"
+            if slot == "evening"
+            else "注意事项：若价格未回踩入场区前优先触及 63,500，则取消此策略。"
+        )
+        cancel = (
+            "取消价不是止损：62,300 是未成交前撤单价，63,660 是成交后止损价。"
+            if slot == "evening"
+            else "取消价不等于止损：未成交前触发 63,500 是取消策略；成交后跌破 62,240 才是止损。"
+        )
+        core = (
+            "\n核心：只做反抽失败，不在支撑带追空；62,940-63,120 是 1H SMA20 与 VRVP 供给区。"
+            if slot == "evening"
+            else ""
+        )
+        final_boundary = "独立边界：本报告判断仅来自当次六源、门禁与心力事实。"
+        return "\n".join(
+            [
+                f"# 2026.7.5 {slot_cn}日报",
+                "",
+                "> 北京时间 2026-07-05 16:05-16:15 锁定采集；六源有效。",
+                "",
+                "## ① 正文",
+                "",
+                "### 基本面",
+                "",
+                "基本面：中性偏多（Farside 最新 Bitcoin ETF Flow 为 +223.5 US$m；FedWatch 未给出降息交易）价格已兑现部分",
+                "",
+                "### 技术面",
+                "",
+                "盘口（合约）：",
+                "",
+                "CVD上升 价格上升 资金费率上升（为正值） 持仓横盘",
+                "",
+                "### 解读",
+                "",
+                "解读：中性偏多（主动买盘确认但追涨盈亏比变差）",
+                "",
+                "盘面：",
+                "",
+                "日线级别：价格收在 62,948.90，重新站上日线 SMA20 的 62,038.56，但仍远低于 SMA200 的 74,755.74。中性偏多",
+                "",
+                "小时级别：4H 收 62,966.15，1H 收 63,021.41，重新站上 1H SMA20 的 62,974.20。中性偏多",
+                "",
+                "### 趋势确认",
+                "",
+                "趋势确认：多头趋势（短线）+ 震荡结构",
+                "",
+                "### 日内支撑/压力",
+                "",
+                "日内支撑：62,540-62,700　　日内压力：63,180-63,520",
+                "",
+                "### 策略",
+                "",
+                "策略：",
+                "",
+                "主账户不在 63,000 上方追高新增，继续等待更清晰的放量突破。",
+                "",
+                "## 不能做",
+                "",
+                "不能做：不能在压力下方追涨，不能在支撑带直接追空。",
+                "",
+                "## ② Maker 计划",
+                "",
+                "BTC（策略）：执行概率 45%（已执行 0%）　胜率 61%",
+                "",
+                maker_strategy,
+                "",
+                "止盈：TP1 63,500 减仓 50%；TP2 63,900 清剩余 50%，全计划 100% 闭合",
+                "",
+                "止损：62,240",
+                "",
+                "### 防守计划",
+                "",
+                first_layer,
+                "",
+                second_layer,
+                "",
+                note,
+                "",
+                cancel + core,
+                "",
+                final_boundary,
+                "",
+                "## ③ 后附",
+                "",
+                "BlockBeats、Coinglass、Exocharts、FedWatch、Farside BTC ETF Flow、TradingView 六源均有效。",
+            ]
+        )
+
+    def _seed_blockbeat_cards(self, root: Path, date: str, slot: str) -> list[Path]:
+        card_dir = root / "outputs" / "blockbeats"
+        card_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for index in range(1, 4):
+            path = card_dir / f"{date}_{slot}_{index}_fixture.png"
+            path.write_bytes(f"card:{slot}:{index}".encode("ascii"))
+            paths.append(path)
+        return paths
 
     def test_strict_daily_payload_shape_blocks_notion_render_drift(self):
         payload = {
@@ -770,6 +908,149 @@ class PublishEvidenceTests(unittest.TestCase):
                 "2026-07-05",
                 "evening",
                 report_text=report_text,
+            )
+
+    def test_daily_payload_builder_derives_payload_from_combined_and_snapshot(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "evening"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(
+                self._strict_daily_combined_text(date, slot),
+                encoding="utf-8",
+            )
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+
+            payload = daily_payload_builder.build_daily_payload(report, root=root)
+
+            self.assertEqual(payload["schema_version"], "daily-publish-payload-v2")
+            self.assertEqual(payload["date"], date)
+            self.assertEqual(payload["verifier_mode"], slot)
+            self.assertEqual(len(payload["children"]), 26)
+            self.assertEqual(
+                daily_payload_builder.block_plain_text(payload["children"][1]),
+                "不能做：不能在压力下方追涨，不能在支撑带直接追空。",
+            )
+            self.assertEqual(
+                daily_payload_builder.block_plain_text(payload["children"][-1]),
+                "独立边界：本报告判断仅来自当次六源、门禁与心力事实。",
+            )
+            self.assertEqual(payload["payload_source"]["status"] if "status" in payload["payload_source"] else None, None)
+            validated = daily_payload_builder.validate_payload_derivation(
+                payload,
+                report,
+                date,
+                slot,
+                root=root,
+            )
+            self.assertEqual(validated["status"], "passed")
+            self.assertEqual(validated["kind"], "combined_md_to_notion_payload")
+
+    def test_publish_rejects_strict_daily_payload_not_derived_from_combined(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "midday"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(
+                self._strict_daily_combined_text(date, slot),
+                encoding="utf-8",
+            )
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+            payload_obj = daily_payload_builder.build_daily_payload(report, root=root)
+            payload_obj["children"][23]["paragraph"]["rich_text"][0]["text"]["content"] = (
+                "取消价不等于止损：这是 combined 里没有的手写漂移。"
+            )
+            payload = outputs / f"{date}_{slot}_publish_payload.json"
+            payload.write_text(
+                json.dumps(payload_obj, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with patch.object(publish_report, "ROOT", root):
+                with self.assertRaisesRegex(ValueError, "not derived from combined"):
+                    publish_report.publish(payload, dry_run=True)
+
+    def test_publish_rejects_daily_payload_source_signature_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(
+                self._strict_daily_combined_text(date, slot),
+                encoding="utf-8",
+            )
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+            payload_obj = daily_payload_builder.build_daily_payload(report, root=root)
+            payload_obj["payload_source"]["children_signature_sha256"] = "tampered"
+            payload = outputs / f"{date}_{slot}_publish_payload.json"
+            payload.write_text(
+                json.dumps(payload_obj, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with patch.object(publish_report, "ROOT", root):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "source evidence mismatch for children_signature_sha256",
+                ):
+                    publish_report.publish(payload, dry_run=True)
+
+    def test_publish_rejects_daily_payload_without_source_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(
+                self._strict_daily_combined_text(date, slot),
+                encoding="utf-8",
+            )
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+            payload_obj = daily_payload_builder.build_daily_payload(report, root=root)
+            payload_obj.pop("payload_source")
+            payload = outputs / f"{date}_{slot}_publish_payload.json"
+            payload.write_text(
+                json.dumps(payload_obj, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with patch.object(publish_report, "ROOT", root):
+                with self.assertRaisesRegex(ValueError, "missing payload_source"):
+                    publish_report.publish(payload, dry_run=True)
+
+    def test_notion_push_lib_blocks_direct_daily_transaction_without_payload_source(self):
+        with self.assertRaisesRegex(RuntimeError, "daily report Notion writes"):
+            notion_push_lib.replace_page_transactional(
+                parent_id="parent",
+                title="🌅 2026.7.5 早间日报（11:00 评分点）",
+                title_prefix="🌅",
+                children=[],
+                image_after_heading="基本面",
+                image_paths=[],
+                verifier_mode="morning",
+            )
+
+    def test_notion_push_lib_blocks_direct_daily_create_without_payload_source(self):
+        with self.assertRaisesRegex(RuntimeError, "daily report Notion writes"):
+            notion_push_lib.create_page(
+                parent="parent",
+                title="🌙 2026.7.5 晚间日报（20:00 评分点）",
+                children=[],
             )
 
     def test_daily_color_template_normalizes_gold_run_distribution(self):

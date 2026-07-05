@@ -809,6 +809,182 @@ class DependencyTests(unittest.TestCase):
                     root=root,
                 )
 
+    def test_same_slot_reissue_requires_explicit_authorization_before_delivery(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            trading_date = "2026-06-30"
+            seed_logic_files(root)
+            seed_inbox(root / "data_sources" / "inbox" / trading_date)
+            seed_capture_manifest(root, trading_date, "midday", full=True)
+            directory = root / "runtime_state" / trading_date
+            morning_state = {
+                "slot": "morning",
+                "state_version": 1,
+                "logic_version": {},
+                "sources": {},
+                "commit_id": "1" * 64,
+            }
+            midday_state = {
+                "slot": "midday",
+                "state_version": 2,
+                "parent_version": 1,
+                "logic_version": {},
+                "sources": {},
+                "commit_id": "2" * 64,
+                "report_sha256": "a" * 64,
+                "capture_manifest": {"path": "captures/midday/old.json"},
+            }
+            (directory / "base.json").write_text(
+                json.dumps(morning_state), encoding="utf-8"
+            )
+            (directory / "current.json").write_text(
+                json.dumps(midday_state), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "already committed"):
+                prepare_transition(
+                    trading_date,
+                    "midday",
+                    root=root,
+                    max_reasoning_confirmed=True,
+                    full_recollection_performed=True,
+                )
+            transition, _ = prepare_transition(
+                trading_date,
+                "midday",
+                root=root,
+                max_reasoning_confirmed=True,
+                full_recollection_performed=True,
+                allow_same_slot_reissue=True,
+            )
+            self.assertEqual(transition["parent_version"], 1)
+            self.assertEqual(transition["state_version"], 2)
+            self.assertEqual(
+                transition["reissue"]["previous_commit_id"], "2" * 64
+            )
+
+    def test_same_slot_reissue_commit_overwrites_only_with_explicit_authorization(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            directory = root / "runtime_state" / "2026-06-29"
+            directory.mkdir(parents=True)
+            transition = {
+                "schema_version": "3.0",
+                "trading_date": "2026-06-29",
+                "slot": "midday",
+                "state_version": 2,
+                "parent_version": 1,
+                "logic_version": {},
+                "sources": {},
+                "capture_manifest": {
+                    "path": "captures/midday/full_recollection_new.json",
+                    "sha256": "a" * 64,
+                    "mode": "full_recollection",
+                    "completed_at": "2026-06-29T00:00:00Z",
+                    "evidence_snapshot": {"root": "evidence/midday/new"},
+                },
+                "changed_sources": ["fedwatch"],
+                "source_affected_nodes": [],
+                "missing_required_sources": [],
+                "invalidated_nodes": sorted(required_analysis_nodes("midday")),
+                "post_lock_nodes": sorted(required_post_lock_nodes("midday")),
+                "analysis_policy": {
+                    "reasoning_effort": "max",
+                    "max_reasoning_confirmed": True,
+                    "use_highest_available_model": True,
+                    "full_analysis_recompute": True,
+                    "prior_decision_access": "post_analysis_lock_only",
+                    "reuse_prior_analysis": False,
+                    "insufficient_reasoning_resources": "halt",
+                },
+                "collection_mode": "full_recollection",
+                "full_fallback_used": True,
+                "fallback_reasons": ["publish evidence expired"],
+                "reissue": {
+                    "kind": "same_slot_reissue_before_delivery",
+                    "previous_commit_id": "2" * 64,
+                    "previous_state_version": 2,
+                },
+            }
+            (directory / "transition_midday.json").write_text(
+                json.dumps(transition), encoding="utf-8"
+            )
+            old_state = {
+                "slot": "midday",
+                "state_version": 2,
+                "commit_id": "2" * 64,
+                "report_sha256": "a" * 64,
+            }
+            (directory / "current.json").write_text(
+                json.dumps(old_state), encoding="utf-8"
+            )
+            (directory / "resolved_midday.json").write_text(
+                json.dumps(old_state), encoding="utf-8"
+            )
+            updates = {
+                "analysis_archive": {"scores": {"total": 69}},
+                "decision": {"maker": {"direction": "long"}},
+                "notion_state": {"positions": "not_read_before_lock"},
+            }
+            new_commit = "6" * 64
+            lock = self._analysis_lock("midday", new_commit)
+            with self.assertRaisesRegex(ValueError, "different result"):
+                commit_transition(
+                    "2026-06-29",
+                    "midday",
+                    updates,
+                    lock,
+                    new_commit,
+                    root=root,
+                )
+            resolved, _ = commit_transition(
+                "2026-06-29",
+                "midday",
+                updates,
+                lock,
+                new_commit,
+                root=root,
+                allow_same_slot_reissue=True,
+            )
+            self.assertEqual(resolved["commit_id"], new_commit)
+            self.assertEqual(
+                json.loads((directory / "current.json").read_text())["commit_id"],
+                new_commit,
+            )
+
+    def test_same_slot_reissue_is_blocked_after_delivery_manifest_exists(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            directory = root / "runtime_state" / "2026-06-29"
+            directory.mkdir(parents=True)
+            (directory / "current.json").write_text(
+                json.dumps({"slot": "midday", "commit_id": "2" * 64}),
+                encoding="utf-8",
+            )
+            (directory / "transition_midday.json").write_text(
+                json.dumps(
+                    {
+                        "slot": "midday",
+                        "reissue": {"kind": "same_slot_reissue_before_delivery"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (directory / "delivery_midday.json").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "already delivered"):
+                commit_transition(
+                    "2026-06-29",
+                    "midday",
+                    {
+                        "analysis_archive": {"scores": {"total": 69}},
+                        "decision": {"maker": {"direction": "long"}},
+                        "notion_state": {"positions": "flat"},
+                    },
+                    self._analysis_lock("midday", "7" * 64),
+                    "7" * 64,
+                    root=root,
+                    allow_same_slot_reissue=True,
+                )
+
     def test_session_lock_rejects_concurrent_owner(self):
         with tempfile.TemporaryDirectory() as td:
             lock_path = Path(td) / "session.lock"

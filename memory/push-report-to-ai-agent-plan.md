@@ -16,7 +16,8 @@ metadata:
 - **内容格式**：按**主账户 plan**(`交易Plan 主账户` page `21bfda35-a098-8025-a61e-e474bafe172b`)的子页格式——H2`不能做` → H3`基本面` → H3`技术面`/盘口段落 → H3`解读` → 盘面段落 → H3`趋势确认` → H3`日内支撑/压力` → H3`策略`；之后 divider + H2`Maker 计划`。即把日报 ①正文 套主账户标题块、②Maker 计划附后。对齐见 [[report-template-alignment]]。
 - **硬规则(用户强调)**：**只允许在「AI agent（plan）」内操作**，其它所有 Notion 项目**仅读取、绝不写**。写前先 GET 子页列表防重复(同名 `2026.M.D` 已存在则 ABORT)。
 
-**⚡ 唯一推送路径(2026-06-02 深度优化·机制层)**：用**可复用库 `outputs/notion_push_lib.py`** + `py`(真 Python 3.14·自带 requests；`python3` 是 Windows stub 不可用)。每天的推送脚本只 `import notion_push_lib as n` 后**填 blocks 内容 + 调 `n.push_subpage(...)`/`n.create_page`**，plumbing 全在库里、不再每天重推导：
+**⚡ 唯一推送路径(2026-07-05 根因修复·日报正文唯一真相源)**：新日报不再写日期专用 push 脚本，也不再手填 Notion `blocks`/`children`。先运行 `py outputs/daily_payload_builder.py outputs/<date>_<slot>_combined.md`，由 locked `combined.md` 与 source binding 机械派生 payload；再运行 `py outputs/publish_report.py outputs/<date>_<slot>_publish_payload.json`。`publish_report.py` 必须在任何 Notion 写入前重新派生并校验 `payload_source.kind=combined_md_to_notion_payload`、children 签名、三图路径和 source_specs；不一致即硬停。
+  - `outputs/notion_push_lib.py` 仍是底层 plumbing 库，只供 `publish_report.py` 调用；不再作为日报正文作者界面。历史 `_notion_push_*` / `_prepare_*` / 手写 JSON 仅保留作回滚证据，禁止新日报复制使用。
   - 库已封装：rich_text/各类 block 构造器(`rt/para/h2/h3/quote/callout/divider/table/trow/cell/image_block`)、`get_children/find_child_page/find_heading/ensure_date_page/create_page(自动分页>100)/upload_image(multipart 三步)/insert_images_after_heading/copy_block(迁移旧块·剥只读字段)/push_subpage(一站式建页+插图+去重)`。
   - **token 走 `$env:NOTION_TOKEN`(绝不硬编码进库/git)**；🟢 **双源(2026-06-10 加固)**：主源=User 级注册表环境变量 `[Environment]::GetEnvironmentVariable('NOTION_TOKEN','User')`(经用户授权已持久化·无人值守 cron 直读注册表不受父进程影响)，后备=`notion-positions` SKILL 火种行(🟥禁删)，两源皆失则显式 throw。图片 `image` 块用 `file_upload` id(本地 PNG 重传，S3 URL 会过期不能复用)。
   - 🟥 **写操作禁盲重试(2026-06-10 加固)**：`create_page`/`insert_images_after_heading` 失败后**先 GET 核实服务端实际落地状态**(`_find_exact_child_page` 查同名页 / 数块计数)再决定续用或重发——SSL EOF 多在响应阶段、请求可能已成功，盲重发会重复建页/重复插块(6/9 实际事故的防范对象)；插图函数幂等(页内图已齐则跳过，固化 6/9 守卫脚本)。GET 读取仍 3 次重试。
@@ -41,4 +42,4 @@ metadata:
 - 入库：Notion 文件上传 3 步 = `POST /v1/file_uploads`→`POST {upload_url}/send`(PS5.1 手搓 multipart：field name `file`、Content-Type image/png、boundary)→拿 file_upload id；再 `PATCH /blocks/{page}/children` 用 `{children:[image块], after:基本面heading_id}` **插到基本面标题之后**(image 块 = `{type:image,image:{type:file_upload,file_upload:{id}}}`；`after` 参数 2022-06-28 版可用、已验证生效)。
 
 **Why**：用户授予了 AI agent（plan）的编辑权限做日报自动归档，但其余项目是他的真实交易台账，误写会污染。
-**How to apply**：每天出完日报后，按上述格式建当天 `2026.M.D` 子页写入；只碰这一个页面。
+**How to apply**：每天出完日报后，用 `daily_payload_builder.py` 从当次 `combined.md` 生成 payload，再交给 `publish_report.py` 建当天 `2026.M.D` 子页；只碰这一个页面。

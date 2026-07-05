@@ -23,9 +23,10 @@ metadata:
 - 🔑 **颜色跟情绪词走、不跟金标块位置走**（这是对旧记忆的反转）。~~**「中性偏空」恒黄**（基本面 label + 解读 label 都黄·非红非橙）~~【❌已订正 2026-06-12：用户迭代为**中性偏空→红、中性偏多→绿**，2026-06-03"中性偏空恒黄"口径废止；SENTIMENT 表已同步】；日内支撑/压力的「标签」run 默认色、只有「数值」run 上色（支撑绿/压力红）。
 
 ## 唯一正确流程（每次早/晚 Notion 出稿都照走）
-1. **任何写入前先过时效+lint**：`assert_source_freshness(...)`（Coinglass/Exo/TV四档≤4h；BlockBeats/FedWatch当日）→`run_report_lint(...)`；失败即重采/重评分/重出稿。
-2. **事务式 staging 发布**：snapshot全部旧同名前缀页→唯一staging标题建新页→上传三图→落库检查→改最终标题。准备阶段失败只归档staging、旧页保留。
-3. **改最终标题后立即跑结构+配色双门**（脚本默认对照 6/2 金标）：
+1. **Daily payload 先机械派生**：新日报只允许 `py outputs/daily_payload_builder.py outputs/<date>_<slot>_combined.md` 生成 Notion payload；`combined.md` 是正文唯一真相源。禁止手写 `children` JSON、复制日期专用 `_notion_push_*` / `_prepare_*`，也禁止补写 combined 不存在的 Maker、取消价、独立边界或空段落。
+2. **任何写入前先过时效+lint+派生签名**：`assert_source_freshness(...)`（Coinglass/Exo/TV四档≤4h；BlockBeats/FedWatch当日）→`run_report_lint(...)`→`publish_report.py` 重新从 combined 派生并校验 `payload_source.kind=combined_md_to_notion_payload`；失败即重采/重评分/重出稿。
+3. **事务式 staging 发布**：snapshot全部旧同名前缀页→唯一staging标题建新页→上传三图→落库检查→改最终标题。准备阶段失败只归档staging、旧页保留。
+4. **改最终标题后立即跑结构+配色双门**（脚本默认对照 6/2 金标）：
    ```
    $env:NOTION_TOKEN=...; py outputs/notion_verify_against_yesterday.py <今日page_id> morning|evening|review
    ```
@@ -42,6 +43,7 @@ metadata:
 
 ## 工具
 - `outputs/report_colors.py`：唯一色规则 + 语义配色审计/自动修复；`expected_color(text)` 供 push 脚本 import；含 Notion SSL `UNEXPECTED_EOF` 重试（偶发·重跑即过）。
+- `outputs/daily_payload_builder.py <combined>`：日报 Notion payload 唯一生成器；从 locked combined 与 source binding 机械派生标题、25/26 个正文块、三张 BlockBeats 图和 `payload_source` 签名。
 - `outputs/notion_verify_against_yesterday.py <today> <morning|evening|review>`：结构门 + 调 report_colors 配色门。**禁 print emoji**（PS GBK 崩，用 [PASS]/[FAIL]）。
 - 事务式替换唯一入口：`outputs/notion_push_lib.py::replace_page_transactional(...)`；禁止各日报脚本自行“先归档旧页再建页”。
 

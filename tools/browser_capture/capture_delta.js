@@ -1,8 +1,7 @@
 // Conservative midday/evening delta capture.
 //
 // Business logic stays unchanged:
-//   - dynamic decision sources are refreshed;
-//   - FedWatch may be reused only when a valid same-day artifact exists;
+//   - every report slot refreshes all six required sources;
 //   - any core failure triggers one bounded full capture fallback;
 //   - all scripts remain sequential because browser profiles are exclusive.
 
@@ -73,41 +72,8 @@ function localDate() {
   }).format(new Date());
 }
 
-function isValidSameDayFile(filePath, date) {
-  if (!fs.existsSync(filePath)) return false;
-  const stat = fs.statSync(filePath);
-  if (!stat.isFile() || stat.size === 0) return false;
-  const fileDate = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(stat.mtime);
-  return fileDate === date;
-}
-
 function fileSha256(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
-}
-
-function hasCommittedReusableFedWatch(date, inbox) {
-  const currentPath = path.join(ROOT, 'runtime_state', date, 'current.json');
-  if (!fs.existsSync(currentPath)) return false;
-  try {
-    const current = JSON.parse(fs.readFileSync(currentPath, 'utf8'));
-    const source = current?.sources?.fedwatch;
-    if (!source?.valid || !Array.isArray(source.files)) return false;
-    return source.files.some((entry) => {
-      const filePath = path.join(inbox, entry.path);
-      return (
-        isValidSameDayFile(filePath, date)
-        && typeof entry.sha256 === 'string'
-        && fileSha256(filePath) === entry.sha256
-      );
-    });
-  } catch {
-    return false;
-  }
 }
 
 function run(script, args = [], extraEnv = {}) {
@@ -123,20 +89,15 @@ function run(script, args = [], extraEnv = {}) {
 }
 
 const date = localDate();
-const inbox = path.join(ROOT, 'data_sources', 'inbox', date);
-const fedwatchPng = path.join(inbox, 'fedwatch.png');
-const fedwatchJson = path.join(inbox, 'fedwatch.json');
-const reuseFedWatch =
-  hasCommittedReusableFedWatch(date, inbox)
-  && (isValidSameDayFile(fedwatchJson, date) || isValidSameDayFile(fedwatchPng, date));
 
 const corePlan = [
   { script: 'capture_blockbeats.js', reason: 'news cursor may advance' },
   { script: 'capture_coinglass.js', reason: '1H orderflow is decision-dynamic' },
   { script: 'capture_exo.js', reason: 'orderflow confirmation is decision-dynamic' },
-  ...(reuseFedWatch
-    ? []
-    : [{ script: 'capture_fedwatch.js', reason: 'no valid same-day macro artifact' }]),
+  {
+    script: 'capture_fedwatch.js',
+    reason: 'macro source must be refreshed for every report slot',
+  },
   {
     script: 'capture_farside_btc_etf.js',
     reason: 'spot ETF flow confirms spot-side liquidity direction and health',
@@ -153,7 +114,6 @@ const plan = {
   slot: SLOT,
   generated_at: new Date().toISOString(),
   mode: 'conservative_delta',
-  reused_sources: reuseFedWatch ? ['fedwatch'] : [],
   captures: corePlan,
   auxiliary: ['capture_liqheatmap.js'],
   fallback: (

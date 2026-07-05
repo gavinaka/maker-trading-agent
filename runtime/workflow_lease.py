@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -66,10 +67,16 @@ def lease_id(token: str) -> str:
 
 
 def load_json(path: Path) -> dict | None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return None
+    for attempt in range(8):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            break
+        except FileNotFoundError:
+            return None
+        except json.JSONDecodeError:
+            if attempt == 7:
+                raise
+            time.sleep(0.01 * (attempt + 1))
     if not isinstance(payload, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return payload
@@ -84,16 +91,16 @@ def _validate_identity(trading_date: str, slot: str) -> None:
 
 def _atomic_create(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    temp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+        with temp.open("w", encoding="utf-8", newline="\n") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
+        os.link(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
 
 
 def _append_audit(root: Path, payload: dict) -> None:

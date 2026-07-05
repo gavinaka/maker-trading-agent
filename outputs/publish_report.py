@@ -30,6 +30,15 @@ from notion_push_lib import (
     run_report_lint,
 )
 from daily_color_template import style_daily_payload_children
+from daily_payload_builder import validate_payload_derivation
+from daily_publish_contract import (
+    CRITICAL_REPORT_TEXT_PREFIXES,
+    DAILY_PAYLOAD_TEXT_PREFIXES,
+    DAILY_PAYLOAD_TYPES_BY_SLOT,
+    FINAL_TEXT_PREFIXES,
+    REQUIRED_SOURCE_LABELS,
+    SOURCE_LABEL_FILES,
+)
 from report_structure_gate import (
     assert_combined_structure,
     display_date,
@@ -50,93 +59,6 @@ REQUIRED = {
     "image_after_heading",
     "image_paths",
 }
-REQUIRED_SOURCE_LABELS = {
-    "blockbeats",
-    "coinglass",
-    "exocharts",
-    "fedwatch",
-    "farside_btc_etf",
-    "tradingview_1d",
-    "tradingview_4h",
-    "tradingview_1h",
-    "tradingview_15m",
-}
-SOURCE_LABEL_FILES = {
-    "blockbeats": {"blockbeats.png", "blockbeats.json"},
-    "coinglass": {"coinglass.png"},
-    "exocharts": {"exocharts.png"},
-    "fedwatch": {"fedwatch.png", "fedwatch.json"},
-    "farside_btc_etf": {"farside_btc_etf.png", "farside_btc_etf.json"},
-    "tradingview_1d": {"tradingview_btc_1d.png"},
-    "tradingview_4h": {"tradingview_btc_4h.png"},
-    "tradingview_1h": {"tradingview_btc_1h.png"},
-    "tradingview_15m": {"tradingview_btc_15m.png"},
-}
-DAILY_PAYLOAD_TYPES_25 = (
-    "quote",
-    "heading_2",
-    "heading_3",
-    "heading_3",
-    "paragraph",
-    "paragraph",
-    "heading_3",
-    "paragraph",
-    "paragraph",
-    "paragraph",
-    "heading_3",
-    "heading_3",
-    "heading_3",
-    "paragraph",
-    "divider",
-    "heading_2",
-    "paragraph",
-    "paragraph",
-    "paragraph",
-    "heading_3",
-    "paragraph",
-    "paragraph",
-    "paragraph",
-    "paragraph",
-    "paragraph",
-)
-DAILY_PAYLOAD_TYPES_26 = DAILY_PAYLOAD_TYPES_25 + ("paragraph",)
-DAILY_PAYLOAD_TYPES_BY_SLOT = {
-    "morning": DAILY_PAYLOAD_TYPES_25,
-    "midday": DAILY_PAYLOAD_TYPES_25,
-    "evening": DAILY_PAYLOAD_TYPES_26,
-}
-DAILY_PAYLOAD_TEXT_PREFIXES = {
-    1: "不能做：",
-    2: "基本面",
-    3: "技术面",
-    6: "解读",
-    10: "趋势确认",
-    11: "日内支撑",
-    12: "策略",
-    15: "BTC",
-    19: "防守计划",
-}
-CRITICAL_REPORT_TEXT_PREFIXES = (
-    "不能做：",
-    "BTC（策略）：",
-    "反弹空：",
-    "高空：",
-    "低空：",
-    "做空：",
-    "低多：",
-    "反弹多：",
-    "高多：",
-    "做多：",
-    "止盈：",
-    "止损：",
-    "第一层：",
-    "第二层：",
-    "注意事项：",
-    "核心：",
-)
-FINAL_TEXT_PREFIXES = ("独立边界", "持仓校准")
-
-
 def _rich_text_plain(block: dict) -> str:
     block_type = block.get("type")
     body = block.get(block_type)
@@ -254,6 +176,7 @@ def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) ->
         return True
     shape = manifest.get("notion_payload_shape")
     colors = manifest.get("notion_payload_colors")
+    source = manifest.get("notion_payload_source")
     expected_count = {
         "morning": 25,
         "midday": 25,
@@ -269,6 +192,9 @@ def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) ->
         and isinstance(colors, dict)
         and colors.get("status") == "passed"
         and colors.get("template") == "daily-gold-run-colors-v1"
+        and isinstance(source, dict)
+        and source.get("status") == "passed"
+        and source.get("kind") == "combined_md_to_notion_payload"
         and isinstance(verifier, dict)
         and verifier.get("returncode") == 0
         and "[PASS]" in str(verifier.get("stdout", ""))
@@ -496,6 +422,13 @@ def publish(
             f"{expected_display_date}, not ISO date {trading_date}"
         )
     report_text = report.read_text(encoding="utf-8")
+    payload_source = validate_payload_derivation(
+        payload,
+        report,
+        trading_date,
+        report_slot,
+        root=ROOT,
+    )
     payload_shape = validate_daily_payload_shape(
         payload,
         trading_date,
@@ -561,6 +494,7 @@ def publish(
         "image_paths": image_paths,
         "block_count": len(payload["children"]),
         "dry_run": dry_run,
+        "notion_payload_source": payload_source,
         "source_binding": source_binding,
     }
 
@@ -579,6 +513,7 @@ def publish(
             image_after_heading=payload["image_after_heading"],
             image_paths=image_paths,
             verifier_mode=payload["verifier_mode"],
+            daily_payload_source=payload_source,
         )
         if not isinstance(publish_result, tuple) or len(publish_result) not in (2, 3):
             raise ValueError("replace_page_transactional returned an invalid result")
@@ -604,6 +539,7 @@ def publish(
             "page_id": page_id,
             "frozen_verifier_pass": True,
             "frozen_verifier": frozen_verifier_evidence,
+            "notion_payload_source": payload_source,
             "notion_payload_shape": payload_shape,
             "notion_payload_colors": payload_colors,
             "unique_page_pass": True,
@@ -651,6 +587,7 @@ def publish(
             "report_path": report_path,
             "report_sha256": report_hash,
             "source_binding": source_binding,
+            "notion_payload_source": payload_source,
             "failure_class": type(exc).__name__,
             "failure_reason": str(exc),
         }
