@@ -17,13 +17,13 @@ metadata:
 - **硬规则(用户强调)**：**只允许在「AI agent（plan）」内操作**，其它所有 Notion 项目**仅读取、绝不写**。写前先 GET 子页列表防重复(同名 `2026.M.D` 已存在则 ABORT)。
 
 **⚡ 唯一推送路径(2026-07-05 根因修复·日报正文唯一真相源)**：新日报不再写日期专用 push 脚本，也不再手填 Notion `blocks`/`children`。先运行 `py outputs/daily_payload_builder.py outputs/<date>_<slot>_combined.md`，由 locked `combined.md` 与 source binding 机械派生 payload；再运行 `py outputs/publish_report.py outputs/<date>_<slot>_publish_payload.json`。`publish_report.py` 必须在任何 Notion 写入前重新派生并校验 `payload_source.kind=combined_md_to_notion_payload`、children 签名、三图路径和 source_specs；不一致即硬停。
-  - `outputs/notion_push_lib.py` 仍是底层 plumbing 库，只供 `publish_report.py` 调用；不再作为日报正文作者界面。历史 `_notion_push_*` / `_prepare_*` / 手写 JSON 仅保留作回滚证据，禁止新日报复制使用。
+  - `outputs/notion_push_lib.py` 仍是底层 plumbing 库，只供 `publish_report.py` 调用；不再作为日报正文作者界面。活工作区不保留日期专用日报 `_notion_push_*` / `_prepare_*` / 手写 JSON 脚本作为可复制入口；历史审计以 `context_log`、publish manifest 和 Git commit 为准。
   - 库已封装：rich_text/各类 block 构造器(`rt/para/h2/h3/quote/callout/divider/table/trow/cell/image_block`)、`get_children/find_child_page/find_heading/ensure_date_page/create_page(自动分页>100)/upload_image(multipart 三步)/insert_images_after_heading/copy_block(迁移旧块·剥只读字段)/push_subpage(一站式建页+插图+去重)`。
   - **token 走 `$env:NOTION_TOKEN`(绝不硬编码进库/git)**；🟢 **双源(2026-06-10 加固)**：主源=User 级注册表环境变量 `[Environment]::GetEnvironmentVariable('NOTION_TOKEN','User')`(经用户授权已持久化·无人值守 cron 直读注册表不受父进程影响)，后备=`notion-positions` SKILL 火种行(🟥禁删)，两源皆失则显式 throw。图片 `image` 块用 `file_upload` id(本地 PNG 重传，S3 URL 会过期不能复用)。
   - 🟥 **写操作禁盲重试(2026-06-10 加固)**：`create_page`/`insert_images_after_heading` 失败后**先 GET 核实服务端实际落地状态**(`_find_exact_child_page` 查同名页 / 数块计数)再决定续用或重发——SSL EOF 多在响应阶段、请求可能已成功，盲重发会重复建页/重复插块(6/9 实际事故的防范对象)；插图函数幂等(页内图已齐则跳过，固化 6/9 守卫脚本)。GET 读取仍 3 次重试。
   - 🟥 **Python 字符串坑**：中文引号一律用全角「」，**禁用半角 `"`**(与定界符冲突→SyntaxError)。
   - 🟥 **控制台坑**：Windows PS 控制台 GBK 编码**打印 emoji/部分中文会报 UnicodeEncodeError**——脚本里别 `print` emoji(用 `json.dumps(...,ensure_ascii=True)` 或不打)，不影响 API 写入。
-  - 参考实现：`outputs/_notion_push_0602_{morning,evening,review}.py`(date-hardcoded 示例)。
+  - 禁止用日期硬编码脚本作为参考实现；日报发布参考实现是 `outputs/daily_payload_builder.py` + `outputs/publish_report.py`。
 
 **写入技术要点(REST，token 见 [[../skills 中 notion-positions]])**：
 - 创建子页：`POST /v1/pages`，`parent={page_id}`、`properties.title`、`children=[blocks]`；中文必须 `[Text.Encoding]::UTF8.GetBytes($json)` 发字节。
