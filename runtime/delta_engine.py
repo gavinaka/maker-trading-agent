@@ -19,6 +19,7 @@ SOURCE_PATTERNS: dict[str, tuple[str, ...]] = {
     "coinglass": ("coinglass.png",),
     "exocharts": ("exocharts.png",),
     "fedwatch": ("fedwatch.json", "fedwatch.png"),
+    "farside_btc_etf": ("farside_btc_etf.json", "farside_btc_etf.png"),
     "tradingview_1d": ("tradingview_btc_1d.png", "tradingview_btc_1d_liq.png"),
     "tradingview_4h": ("tradingview_btc_4h.png", "tradingview_btc_4h_liq.png"),
     "tradingview_1h": ("tradingview_btc_1h.png", "tradingview_btc_1h_liq.png"),
@@ -29,6 +30,7 @@ SOURCE_COMPLETENESS = {
     "coinglass": "all",
     "exocharts": "all",
     "fedwatch": "any",
+    "farside_btc_etf": "all",
     "tradingview_1d": "all",
     "tradingview_4h": "all",
     "tradingview_1h": "all",
@@ -135,6 +137,88 @@ def scan_source_snapshot(inbox: Path) -> dict[str, dict]:
             except (OSError, UnicodeError, json.JSONDecodeError):
                 valid = False
                 invalid_reasons.append("blockbeats.json is not valid UTF-8 JSON")
+        if source == "farside_btc_etf" and mechanically_complete:
+            try:
+                payload = json.loads(
+                    (inbox / "farside_btc_etf.json").read_text(encoding="utf-8")
+                )
+                if payload.get("source") != "farside_btc_etf":
+                    valid = False
+                    invalid_reasons.append(
+                        "farside_btc_etf.json must record source=farside_btc_etf"
+                    )
+                url = payload.get("url")
+                if not isinstance(url, str) or not url.startswith(
+                    "https://farside.co.uk/btc"
+                ):
+                    valid = False
+                    invalid_reasons.append(
+                        "farside_btc_etf.json must record the Farside BTC URL"
+                    )
+                if payload.get("unit") != "US$m":
+                    valid = False
+                    invalid_reasons.append(
+                        "farside_btc_etf.json must record unit=US$m"
+                    )
+                latest = payload.get("latest")
+                if not isinstance(latest, dict):
+                    valid = False
+                    invalid_reasons.append(
+                        "farside_btc_etf.json must include latest flow row"
+                    )
+                else:
+                    total = latest.get("total_usd_m")
+                    if not isinstance(total, (int, float)) or isinstance(total, bool):
+                        valid = False
+                        invalid_reasons.append(
+                            "farside_btc_etf.json latest.total_usd_m must be numeric"
+                        )
+                    else:
+                        expected_direction = (
+                            "inflow" if total > 0 else "outflow" if total < 0 else "flat"
+                        )
+                        if latest.get("direction") != expected_direction:
+                            valid = False
+                            invalid_reasons.append(
+                                "farside_btc_etf.json latest.direction must match total_usd_m"
+                            )
+                    if not isinstance(latest.get("date"), str) or not latest["date"].strip():
+                        valid = False
+                        invalid_reasons.append(
+                            "farside_btc_etf.json latest.date must be present"
+                        )
+                rows = payload.get("rows")
+                if not isinstance(rows, list) or not rows:
+                    valid = False
+                    invalid_reasons.append(
+                        "farside_btc_etf.json must include parsed daily rows"
+                    )
+                validity = payload.get("validity")
+                required_flags = [
+                    "title_match",
+                    "table_found",
+                    "has_total_column",
+                    "latest_daily_row",
+                    "latest_total_is_number",
+                ]
+                if not isinstance(validity, dict):
+                    valid = False
+                    invalid_reasons.append(
+                        "farside_btc_etf.json must include validity object"
+                    )
+                else:
+                    failed_flags = [
+                        flag for flag in required_flags if validity.get(flag) is not True
+                    ]
+                    if failed_flags:
+                        valid = False
+                        invalid_reasons.append(
+                            "farside_btc_etf.json failed validity flags: "
+                            + ", ".join(failed_flags)
+                        )
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                valid = False
+                invalid_reasons.append("farside_btc_etf.json is not valid UTF-8 JSON")
         snapshot[source] = {
             "valid": valid,
             "mechanically_complete": mechanically_complete,

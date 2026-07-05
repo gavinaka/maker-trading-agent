@@ -22,11 +22,47 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
-const SLOT = process.argv.includes('--evening') ? 'evening' : 'midday';
 const PLAN_ONLY = process.argv.includes('--plan-only');
-const leaseArg = process.argv.indexOf('--lease-token');
-const LEASE_TOKEN = leaseArg >= 0 ? process.argv[leaseArg + 1] : '';
+const VALID_DELTA_SLOTS = new Set(['midday', 'evening']);
 const RUN_ID = crypto.randomUUID();
+
+function argValue(name) {
+  const index = process.argv.indexOf(name);
+  if (index < 0) return null;
+  const value = process.argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
+}
+
+function parseSlot() {
+  const slot = argValue('--slot');
+  const legacyEvening = process.argv.includes('--evening');
+  if (slot && legacyEvening && slot !== 'evening') {
+    throw new Error('--evening cannot be combined with --slot other than evening');
+  }
+  const resolved = slot ?? (legacyEvening ? 'evening' : null);
+  if (!resolved) {
+    throw new Error('missing --slot; capture_delta.js requires --slot midday|evening');
+  }
+  if (!VALID_DELTA_SLOTS.has(resolved)) {
+    throw new Error(`unsupported delta slot: ${resolved}; use --slot midday|evening`);
+  }
+  return resolved;
+}
+
+function parseOrExit(fn) {
+  try {
+    return fn();
+  } catch (error) {
+    console.error(error.message);
+    process.exit(3);
+  }
+}
+
+const SLOT = parseOrExit(parseSlot);
+const LEASE_TOKEN = parseOrExit(() => argValue('--lease-token') ?? '');
 
 function localDate() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -101,6 +137,10 @@ const corePlan = [
   ...(reuseFedWatch
     ? []
     : [{ script: 'capture_fedwatch.js', reason: 'no valid same-day macro artifact' }]),
+  {
+    script: 'capture_farside_btc_etf.js',
+    reason: 'spot ETF flow confirms spot-side liquidity direction and health',
+  },
   {
     script: 'capture_tv.js',
     reason: 'visual source has no trustworthy remote change token; refresh conservatively',

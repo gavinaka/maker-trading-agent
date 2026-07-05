@@ -21,6 +21,32 @@ ROOT = Path(__file__).resolve().parents[1]
 SLOTS = ("morning", "midday", "evening")
 PRIOR_SLOT = {"midday": "morning", "evening": "midday"}
 DATE_RE = re.compile(r"^20\d{2}-\d{2}-\d{2}$")
+PAGE_ID_RE = re.compile(
+    r"^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
+    re.I,
+)
+DELIVERY_REQUIRED_FLAGS = (
+    "frozen_verifier_pass",
+    "unique_page_pass",
+    "word_visual_qa_pass",
+    "context_log_recorded",
+)
+DELIVERY_MINIMUM_EVIDENCE_BINDINGS = (
+    "report_sha256",
+    "docx_path",
+    "docx_sha256",
+    "render_manifest",
+    "render_manifest_sha256",
+    "word_qa_manifest",
+    "word_qa_manifest_sha256",
+    "publish_manifest",
+    "publish_manifest_sha256",
+    "published_at",
+)
+DELIVERY_OPTIONAL_EVIDENCE_BINDINGS = (
+    "context_log_block_sha256",
+    "source_binding",
+)
 
 
 def now_iso() -> str:
@@ -95,29 +121,129 @@ def _archive(root: Path, payload: dict) -> Path:
     return target
 
 
+def _delivery_path(trading_date: str, slot: str, root: Path) -> Path:
+    return root / "runtime_state" / trading_date / f"delivery_{slot}.json"
+
+
+def _resolved_state_path(trading_date: str, slot: str, root: Path) -> Path:
+    filename = "base.json" if slot == "morning" else f"resolved_{slot}.json"
+    return root / "runtime_state" / trading_date / filename
+
+
+def _delivery_state(trading_date: str, slot: str, commit_id: str, root: Path) -> dict | None:
+    current = load_json(root / "runtime_state" / trading_date / "current.json")
+    if (
+        current
+        and current.get("slot") == slot
+        and current.get("commit_id") == commit_id
+    ):
+        return current
+    resolved = load_json(_resolved_state_path(trading_date, slot, root))
+    if (
+        resolved
+        and resolved.get("slot") == slot
+        and resolved.get("commit_id") == commit_id
+    ):
+        return resolved
+    return None
+
+
+def _delivery_evidence_matches(recorded: object, actual: dict) -> bool:
+    if not isinstance(recorded, dict):
+        return False
+    required_match = all(
+        recorded.get(key) == actual.get(key)
+        for key in DELIVERY_MINIMUM_EVIDENCE_BINDINGS
+    )
+    if not required_match:
+        return False
+    return all(
+        key not in recorded or recorded.get(key) == actual.get(key)
+        for key in DELIVERY_OPTIONAL_EVIDENCE_BINDINGS
+    )
+
+
+def _delivery_recorded(trading_date: str, slot: str, root: Path) -> bool:
+    delivery = load_json(_delivery_path(trading_date, slot, root))
+    if not delivery:
+        return False
+    evidence = delivery.get("evidence")
+    if not isinstance(evidence, dict):
+        return False
+    page_id = str(delivery.get("page_id", ""))
+    checks = {
+        "schema_version": delivery.get("schema_version") == "2.0",
+        "date": delivery.get("trading_date") == trading_date,
+        "slot": delivery.get("slot") == slot,
+        "commit_id": bool(
+            re.fullmatch(r"[0-9a-f]{64}", str(delivery.get("commit_id", "")))
+        ),
+        "workflow_lease_id": bool(
+            re.fullmatch(r"[0-9a-f]{64}", str(delivery.get("workflow_lease_id", "")))
+        ),
+        "page_id": bool(PAGE_ID_RE.fullmatch(page_id)),
+        "flags": all(delivery.get(flag) is True for flag in DELIVERY_REQUIRED_FLAGS),
+        "published_at": bool(delivery.get("published_at"))
+        and delivery.get("published_at") == evidence.get("published_at"),
+        "minimum_evidence": all(
+            evidence.get(key)
+            for key in DELIVERY_MINIMUM_EVIDENCE_BINDINGS
+            if key != "published_at"
+        ),
+    }
+    return all(checks.values())
+
+
+def _delivery_complete(trading_date: str, slot: str, root: Path) -> bool:
+    delivery = load_json(_delivery_path(trading_date, slot, root))
+    if not delivery:
+        return False
+    page_id = str(delivery.get("page_id", ""))
+    checks = {
+        "schema_version": delivery.get("schema_version") == "2.0",
+        "date": delivery.get("trading_date") == trading_date,
+        "slot": delivery.get("slot") == slot,
+        "commit_id": bool(
+            re.fullmatch(r"[0-9a-f]{64}", str(delivery.get("commit_id", "")))
+        ),
+        "workflow_lease_id": bool(
+            re.fullmatch(r"[0-9a-f]{64}", str(delivery.get("workflow_lease_id", "")))
+        ),
+        "page_id": bool(PAGE_ID_RE.fullmatch(page_id)),
+        "flags": all(delivery.get(flag) is True for flag in DELIVERY_REQUIRED_FLAGS),
+        "published_at": bool(delivery.get("published_at")),
+    }
+    if any(not passed for passed in checks.values()):
+        return False
+
+    state = _delivery_state(trading_date, slot, delivery["commit_id"], root)
+    if not state:
+        return False
+
+    try:
+        from runtime.delivery_evidence import validate_delivery_evidence
+
+        evidence = validate_delivery_evidence(
+            trading_date,
+            slot,
+            page_id,
+            current=state,
+            root=root,
+        )
+    except (OSError, ValueError, RuntimeError, TypeError, KeyError, json.JSONDecodeError):
+        return False
+
+    return (
+        delivery.get("published_at") == evidence.get("published_at")
+        and _delivery_evidence_matches(delivery.get("evidence"), evidence)
+    )
+
+
 def _prior_delivery_complete(trading_date: str, slot: str, root: Path) -> bool:
     prior = PRIOR_SLOT.get(slot)
     if prior is None:
         return True
-    target = (
-        root
-        / "runtime_state"
-        / trading_date
-        / f"delivery_{prior}.json"
-    )
-    delivery = load_json(target)
-    required = (
-        "frozen_verifier_pass",
-        "unique_page_pass",
-        "word_visual_qa_pass",
-        "context_log_recorded",
-    )
-    return bool(
-        delivery
-        and delivery.get("trading_date") == trading_date
-        and delivery.get("slot") == prior
-        and all(delivery.get(flag) is True for flag in required)
-    )
+    return _delivery_complete(trading_date, prior, root)
 
 
 def _record_prior_delivery_skip(
@@ -187,25 +313,7 @@ def _assert_prior_delivery(
 
 
 def _assert_not_already_delivered(trading_date: str, slot: str, root: Path) -> None:
-    target = (
-        root
-        / "runtime_state"
-        / trading_date
-        / f"delivery_{slot}.json"
-    )
-    delivery = load_json(target)
-    required = (
-        "frozen_verifier_pass",
-        "unique_page_pass",
-        "word_visual_qa_pass",
-        "context_log_recorded",
-    )
-    if (
-        delivery
-        and delivery.get("trading_date") == trading_date
-        and delivery.get("slot") == slot
-        and all(delivery.get(flag) is True for flag in required)
-    ):
+    if _delivery_recorded(trading_date, slot, root):
         raise RuntimeError(
             f"{trading_date} {slot} is already delivered; duplicate workflow blocked"
         )

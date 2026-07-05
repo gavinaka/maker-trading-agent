@@ -23,6 +23,7 @@
 - CVD读取失败
 - 资金费率失败
 - BlockBeats失败
+- Farside BTC ETF Flow 读取失败或 `latest.total_usd_m` 非数值
 
 则该模块标记“待补充”。
 

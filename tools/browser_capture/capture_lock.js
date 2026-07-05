@@ -10,6 +10,8 @@ const EVIDENCE_FILES = [
   'exocharts.png',
   'fedwatch.json',
   'fedwatch.png',
+  'farside_btc_etf.json',
+  'farside_btc_etf.png',
   'tradingview_btc_1d.png',
   'tradingview_btc_1d_liq.png',
   'tradingview_btc_4h.png',

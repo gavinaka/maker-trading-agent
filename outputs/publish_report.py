@@ -29,6 +29,11 @@ from notion_push_lib import (
     replace_page_transactional,
     run_report_lint,
 )
+from report_structure_gate import (
+    assert_combined_structure,
+    display_date,
+    strict_contract_active,
+)
 from runtime.state_store import atomic_json_write
 from runtime.usage_logger import append_usage
 
@@ -49,6 +54,7 @@ REQUIRED_SOURCE_LABELS = {
     "coinglass",
     "exocharts",
     "fedwatch",
+    "farside_btc_etf",
     "tradingview_1d",
     "tradingview_4h",
     "tradingview_1h",
@@ -59,11 +65,137 @@ SOURCE_LABEL_FILES = {
     "coinglass": {"coinglass.png"},
     "exocharts": {"exocharts.png"},
     "fedwatch": {"fedwatch.png", "fedwatch.json"},
+    "farside_btc_etf": {"farside_btc_etf.png", "farside_btc_etf.json"},
     "tradingview_1d": {"tradingview_btc_1d.png"},
     "tradingview_4h": {"tradingview_btc_4h.png"},
     "tradingview_1h": {"tradingview_btc_1h.png"},
     "tradingview_15m": {"tradingview_btc_15m.png"},
 }
+DAILY_PAYLOAD_TYPES = (
+    "quote",
+    "heading_2",
+    "heading_3",
+    "heading_3",
+    "paragraph",
+    "paragraph",
+    "heading_3",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "heading_3",
+    "heading_3",
+    "heading_3",
+    "paragraph",
+    "divider",
+    "heading_2",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "heading_3",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+)
+DAILY_PAYLOAD_TEXT_PREFIXES = {
+    1: "不能做",
+    2: "基本面",
+    3: "技术面",
+    6: "解读",
+    10: "趋势确认",
+    11: "日内支撑",
+    12: "策略",
+    15: "BTC",
+    19: "防守计划",
+}
+
+
+def _rich_text_plain(block: dict) -> str:
+    block_type = block.get("type")
+    body = block.get(block_type)
+    if not isinstance(body, dict):
+        return ""
+    parts = []
+    for item in body.get("rich_text", []):
+        if not isinstance(item, dict):
+            continue
+        if item.get("plain_text") is not None:
+            parts.append(str(item["plain_text"]))
+            continue
+        text = item.get("text")
+        if isinstance(text, dict):
+            parts.append(str(text.get("content", "")))
+    return "".join(parts).strip()
+
+
+def validate_daily_payload_shape(
+    payload: dict,
+    trading_date: str,
+    report_slot: str,
+) -> dict:
+    """Hard-stop new daily payloads before Notion writes if they drift from gold shape."""
+    if payload.get("verifier_mode") not in {"morning", "midday", "evening"}:
+        return {"status": "skipped", "reason": "non-daily verifier mode"}
+    if not strict_contract_active(trading_date):
+        return {"status": "skipped", "reason": "historical report before strict shape gate"}
+    children = payload.get("children")
+    if not isinstance(children, list):
+        raise ValueError("daily payload shape gate requires children array")
+    actual_types = tuple(
+        block.get("type") if isinstance(block, dict) else None
+        for block in children
+    )
+    if actual_types != DAILY_PAYLOAD_TYPES:
+        raise ValueError(
+            "daily Notion payload block type sequence does not match frozen gold shape: "
+            f"expected={list(DAILY_PAYLOAD_TYPES)}, actual={list(actual_types)}"
+        )
+    if len(payload.get("image_paths", [])) != 3:
+        raise ValueError("daily Notion payload must publish exactly 3 fundamental images")
+    if payload.get("image_after_heading") != "基本面":
+        raise ValueError("daily Notion payload must insert images after 基本面")
+    expected_display_date = display_date(trading_date)
+    if expected_display_date not in str(payload.get("title", "")):
+        raise ValueError("daily Notion payload title must use display date YYYY.M.D")
+    if trading_date in str(payload.get("title", "")):
+        raise ValueError("daily Notion payload title must not use ISO date")
+    expected_slot = {
+        "morning": "早间日报",
+        "midday": "午间日报",
+        "evening": "晚间日报",
+    }[report_slot]
+    if expected_slot not in str(payload.get("title", "")):
+        raise ValueError(f"daily Notion payload title must contain {expected_slot}")
+    for index, expected_prefix in DAILY_PAYLOAD_TEXT_PREFIXES.items():
+        text = _rich_text_plain(children[index])
+        if not text.startswith(expected_prefix):
+            raise ValueError(
+                "daily Notion payload text slot drift: "
+                f"block {index + 1} expected prefix {expected_prefix!r}, got {text!r}"
+            )
+    return {
+        "status": "passed",
+        "gold_shape": "2026-06-02 daily 28-block shape excluding inserted images",
+        "block_count_before_images": len(children),
+        "image_count": len(payload["image_paths"]),
+    }
+
+
+def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) -> bool:
+    if not strict_contract_active(trading_date):
+        return True
+    shape = manifest.get("notion_payload_shape")
+    verifier = manifest.get("frozen_verifier")
+    return bool(
+        isinstance(shape, dict)
+        and shape.get("status") == "passed"
+        and shape.get("block_count_before_images") == 25
+        and shape.get("image_count") == 3
+        and isinstance(verifier, dict)
+        and verifier.get("returncode") == 0
+        and "[PASS]" in str(verifier.get("stdout", ""))
+    )
 
 
 def _attempt_manifest_path(
@@ -278,6 +410,15 @@ def publish(
     if mode != "review" and mode != report_slot:
         raise ValueError("verifier_mode does not match report filename slot")
     telemetry_slot = report_slot
+    report_lines = report.read_text(encoding="utf-8").splitlines()
+    assert_combined_structure(report_lines, trading_date, report_slot)
+    expected_display_date = display_date(trading_date)
+    if expected_display_date not in payload["title"] or trading_date in payload["title"]:
+        raise ValueError(
+            "publish title must use human display date "
+            f"{expected_display_date}, not ISO date {trading_date}"
+        )
+    payload_shape = validate_daily_payload_shape(payload, trading_date, report_slot)
     payload_hash = sha256_file(payload_path)
     report_hash = sha256_file(report)
     source_binding = validate_publish_source_binding(
@@ -302,6 +443,7 @@ def publish(
         and existing.get("payload_sha256") == payload_hash
         and existing.get("report_sha256") == report_hash
         and existing.get("source_binding") == source_binding
+        and _publish_manifest_has_quality_evidence(existing, trading_date)
     ):
         append_usage(
             trading_date=trading_date,
@@ -341,7 +483,7 @@ def publish(
             return summary
 
         parent_id = ensure_date_page(payload["date"])
-        page_id, archived_pages = replace_page_transactional(
+        publish_result = replace_page_transactional(
             parent_id=parent_id,
             title=payload["title"],
             title_prefix=payload["title_prefix"],
@@ -350,6 +492,13 @@ def publish(
             image_paths=image_paths,
             verifier_mode=payload["verifier_mode"],
         )
+        if not isinstance(publish_result, tuple) or len(publish_result) not in (2, 3):
+            raise ValueError("replace_page_transactional returned an invalid result")
+        if len(publish_result) == 3:
+            page_id, archived_pages, frozen_verifier_evidence = publish_result
+        else:
+            page_id, archived_pages = publish_result
+            frozen_verifier_evidence = None
         published_at = datetime.now().astimezone().isoformat(timespec="seconds")
         evidence = {
             "schema_version": "1.0",
@@ -366,6 +515,8 @@ def publish(
             "source_binding": source_binding,
             "page_id": page_id,
             "frozen_verifier_pass": True,
+            "frozen_verifier": frozen_verifier_evidence,
+            "notion_payload_shape": payload_shape,
             "unique_page_pass": True,
             "archived_pages": archived_pages,
         }

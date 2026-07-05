@@ -8,7 +8,7 @@
 ## 文件命名约定（必须遵守）
 * `<tf>`：`1d` / `4h` / `1h` / `15m`
 * 例：`tradingview_btc_1d.png` / `tradingview_btc_1d.json`
-* 🟥 **四档缺一 = 五源未齐 = 硬停**（见 `data_sources/required_sources.md` 数据缺失规则）。
+* 🟥 **四档缺一 = 六源未齐 = 硬停**（见 `data_sources/required_sources.md` 数据缺失规则）。
 
 ## 数据源
 TradingView · BTCUSDT · 交易所 Binance（与日内极值/手绘线口径一致）
@@ -69,7 +69,7 @@ TradingView · BTCUSDT · 交易所 Binance（与日内极值/手绘线口径一
 ---
 
 ## 失败处理
-* 缺任一档（日/4H/1H/15m）→ `valid:false` + `missing_timeframes:[...]` → **五源未齐硬停**，不评分。
+* 缺任一档（日/4H/1H/15m）→ `valid:false` + `missing_timeframes:[...]` → **六源未齐硬停**，不评分。
 * 结构/趋势判断不确定 → 对应字段 `uncertain` / `none`，不允许猜测。
 
 ---

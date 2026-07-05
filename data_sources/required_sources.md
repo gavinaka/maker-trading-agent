@@ -106,9 +106,28 @@ https://www.cmegroup.com/cn-s/markets/interest-rates/cme-fedwatch-tool.html
 
 # 数据源5
 
+## Farside BTC ETF Flow
+https://farside.co.uk/btc/
+
+> Collector SOP: `data_sources/collectors/farside_btc_etf.md`
+
+### 用途
+- 美国 BTC 现货 ETF 日度净流入/净流出确认。
+- 用于验证现货侧流动性回归或稀缺：价格下跌 + ETF 流出为一致看空，流出扩大为强一致；价格上涨 + ETF 流入为一致看多，流入扩大为强一致；价格与 ETF 流方向相反时，视为行情健康度下降或反弹/下跌缺乏现货确认。
+- 定位是策略辅助验证，不替代 Coinglass/Exocharts 盘口判断，也不替代 TradingView 盘面评分。
+
+### 输出要求
+- `farside_btc_etf.png`：页面截图，须能看出 `Bitcoin ETF Flow (US$m)` 表格。
+- `farside_btc_etf.json`：结构化解析，须包含 `source=farside_btc_etf`、`url=https://farside.co.uk/btc/`、`unit=US$m`、`latest.date`、数值型 `latest.total_usd_m`、`latest.direction`、`rows` 与 `validity`。
+- `validity.title_match/table_found/has_total_column/latest_daily_row/latest_total_is_number` 必须全部为 true；否则该源无效。
+
+---
+
+# 数据源6
+
 ## TradingView（BTCUSDT · Binance）
 > Collector SOP: `data_sources/collectors/tradingview.md`
-> 🟥 硬要求（2026-06-14 订正·宪法级）：必须 **日线 / 4H / 1H / 15m 四档截图齐**，缺任一档 = 五源未齐 = 硬停。
+> 🟥 硬要求（2026-06-14 订正·宪法级）：必须 **日线 / 4H / 1H / 15m 四档截图齐**，缺任一档 = 六源未齐 = 硬停。
 
 ### 角色
 🟥 **盘面(技术面)解读核心源**。盘面30分技术评分 + 趋势确认 + 日内支撑压力来自本源（非 Exocharts）。
@@ -127,4 +146,4 @@ https://www.cmegroup.com/cn-s/markets/interest-rates/cme-fedwatch-tool.html
 
 # 数据缺失规则
 任意核心数据缺失，必须标注“待补充”，不得强行生成交易计划。
-🟥 **五源缺一不可**（BlockBeats / Exocharts / Coinglass / FedWatch / TradingView，TV 须四档齐）：任一缺失立即硬停，不得用昨日/上份兜底、不得推演占位、不得跳过缺源。唯一例外：FedWatch 截图渲染失败但已按权威网络回退规则取得、双源核验并留存当日真实数据时，视为该源有效。
+🟥 **六源缺一不可**（BlockBeats / Coinglass / Exocharts / FedWatch / Farside BTC ETF Flow / TradingView，TV 须四档齐）：任一缺失立即硬停，不得用昨日/上份兜底、不得推演占位、不得跳过缺源。唯一例外：FedWatch 截图渲染失败但已按权威网络回退规则取得、双源核验并留存当日真实数据时，视为该源有效。

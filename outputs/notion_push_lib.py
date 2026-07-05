@@ -9,6 +9,7 @@ plumbing（multipart 上传 / 去重 / after 插图 / 旧块迁移 / 分页>100�
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -98,6 +99,18 @@ def find_child_pages(parent, title_prefix):
         if b["type"] == "child_page"
         and b["child_page"]["title"].startswith(title_prefix)
     ]
+
+_ISO_DATE_TITLE = re.compile(r"^(20\d{2})-(\d{1,2})-(\d{1,2})$")
+_DOTTED_DATE_TITLE = re.compile(r"^(20\d{2})\.(\d{1,2})\.(\d{1,2})$")
+
+def _date_page_title(date_str):
+    """Normalize report date-page titles to the historical ``YYYY.M.D`` form."""
+    value = str(date_str).strip()
+    match = _ISO_DATE_TITLE.match(value) or _DOTTED_DATE_TITLE.match(value)
+    if not match:
+        return value
+    year, month, day = match.groups()
+    return f"{int(year):04d}.{int(month)}.{int(day)}"
 
 def find_heading(blocks, text_prefix):
     for b in blocks:
@@ -263,8 +276,9 @@ def assert_source_freshness(source_specs, now_ts=None):
 
 def run_python_gate(script_path, args, label):
     """Run a Python quality gate and propagate its exit status."""
+    command = [sys.executable, os.path.abspath(script_path), *args]
     result = subprocess.run(
-        [sys.executable, os.path.abspath(script_path), *args],
+        command,
         check=False,
         capture_output=True,
         text=True,
@@ -285,6 +299,14 @@ def run_python_gate(script_path, args, label):
             detail += f"; stderr_tail={stderr_tail}"
         raise SystemExit(detail)
     print(f"{label} PASS")
+    return {
+        "label": label,
+        "script": os.path.abspath(script_path),
+        "args": list(args),
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
 
 def run_report_lint(report_path):
     run_python_gate(
@@ -294,7 +316,7 @@ def run_report_lint(report_path):
     )
 
 def run_frozen_verifier(page_id, mode):
-    run_python_gate(
+    return run_python_gate(
         os.path.join(
             os.path.dirname(__file__),
             "notion_verify_against_yesterday.py",
@@ -348,7 +370,7 @@ def replace_page_transactional(
         print("PUBLISH VERIFY PASS:", message)
 
         set_page_title(page_id, title)
-        run_frozen_verifier(page_id, verifier_mode)
+        verifier_evidence = run_frozen_verifier(page_id, verifier_mode)
     except BaseException:
         if page_id:
             try:
@@ -378,7 +400,7 @@ def replace_page_transactional(
     if not unique:
         raise RuntimeError("LIVE PAGE UNIQUENESS FAILED: " + unique_message)
     print("LIVE PAGE UNIQUENESS PASS:", unique_message)
-    return page_id, old_pages
+    return page_id, old_pages, verifier_evidence
 
 def create_page(parent, title, children):
     assert_workspace()  # 🔴前置门：token 指向错误 workspace 即 abort，杜绝推错地方
@@ -417,8 +439,15 @@ def create_page(parent, title, children):
 
 def ensure_date_page(date_str):
     """date_str 形如 '2026.6.2'，返回 AI agent plan 下日期子页 id，缺则建空页。"""
-    pid = find_child_page(AI_AGENT_PLAN, date_str)
-    return pid if pid else create_page(AI_AGENT_PLAN, date_str, [])
+    title = _date_page_title(date_str)
+    pid = find_child_page(AI_AGENT_PLAN, title)
+    if pid:
+        return pid
+    legacy_pid = None if title == date_str else find_child_page(AI_AGENT_PLAN, date_str)
+    if legacy_pid:
+        set_page_title(legacy_pid, title)
+        return legacy_pid
+    return create_page(AI_AGENT_PLAN, title, [])
 
 def upload_image(path, name=None):
     if not os.path.isfile(path):  # 🔴门D：图文件不存在即明确 abort（治 cards 没生成/push 图名不匹配的 FileNotFoundError 半途崩）

@@ -17,13 +17,14 @@
 ## 验证流程
 
 ### 1. 数据完整性
-- 检查每个数据源是否返回数据（🟥 五源缺一不可）
+- 检查每个数据源是否返回数据（🟥 六源缺一不可）
   - ExoCharts
   - Coinglass
   - BlockBeats
   - CME FedWatch
+  - Farside BTC ETF Flow（`farside_btc_etf.png` + `farside_btc_etf.json`，latest Total 必须为数值）
   - TradingView（日/4H/1H/15m 四档齐·2026-06-14 补）
-- 若数据缺失（含 TV 任一档）→ 输出“待补充”，禁止继续生成计划
+- 若数据缺失（含 TV 任一档或 Farside JSON 无效）→ 输出“待补充”，禁止继续生成计划
 - FedWatch 截图渲染失败不等于宏观数据缺失：若已按 `fedwatch.md` 的权威网络回退规则取得当日数据、关键数字双源核验并落 `fedwatch.json`，则该源完整性通过；若权威数据同样缺失，仍硬停。
 
 ### 2. 数据格式验证

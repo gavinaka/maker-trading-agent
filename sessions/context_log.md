@@ -7,6 +7,30 @@
 
 ---
 
+## 2026-07-05（会话 #71 · 早间日报链 A · 观望不挂单）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 早报工作流，未触发、串联或输出 `quant-summary`。automation gate key=`daily-2026-07-05-morning`，claim token 已取得；整链 lease token 已贯穿 begin-session、capture、prepare、lock、post-lock、commit、render、Word-QA、publish。
+- 六源于北京时间 08:48-08:58 完成 full baseline 采集并全部通过有效性门：BlockBeats 12 小时重要快讯候选 16 条、入选 3 条；Coinglass、Exocharts、FedWatch/CME、Farside BTC ETF Flow、TradingView 1D/4H/1H/15m 结构图与 `_liq` 图齐。采集 manifest=`runtime_state/2026-07-05/captures/morning/full_base_f8d81c6a-69a8-47c5-9ff8-5ac67dde8c8f.json`。
+- 产出 `outputs/2026-07-05_morning_combined.md`、canonical Word `outputs/2026-07-05_morning_render.docx`、发布 payload `outputs/2026-07-05_morning_publish_payload.json`、三张 BlockBeats 卡片。报告 SHA-256=`3cad31d06b5a2b1b6a121358d62d01270f03c4a9bed46008b987903a0369fd6d`，Word SHA-256=`2958ae60d68a407c74736fc21c516a8b6ce1d96238b2320fd31ff73c331d072b`。
+- `report_lint` 0 HARD、11 WARN（图读近似值与旧金标表面代理，均已核对非占位）；正文元叙事、中文术语、解耦、流动性周期、VRVP 主判、胜率反下偏全部 PASS。分析锁 `runtime_state/2026-07-05/analysis_lock_morning.json` 已建立，post-lock 连续性已 finalize，`commit` 已写入 `runtime_state/2026-07-05/base.json`。
+- Word 经隐藏 Word COM 导出 PDF、Poppler 渲染 6 页并逐页检查；无乱码、空白页、重叠、截断或越界，Word 视觉 QA PASS。render manifest=`runtime_state/2026-07-05/render_morning.json`，Word QA manifest=`runtime_state/2026-07-05/word_qa_morning.json`。
+- Notion 早间日报最终唯一存活页 `394fda35-a098-8118-84e3-fa8dcfb7237b`，北京时间 2026-07-05 09:14:47 发布；28 个顶层块（含 3 图），落库验证、语义配色、正文元叙事、冻结 verifier PASS、同前缀唯一页 PASS。publish manifest=`runtime_state/2026-07-05/publish_morning.json`，source binding 指向 `runtime_state/2026-07-05/evidence/morning/f8d81c6a-69a8-47c5-9ff8-5ac67dde8c8f` 锁定快照。
+
+### B. 独立判断
+- 门禁真值：可交易，身体正常、情绪平静、节奏顺、连续止损 0、结果依赖无；2026-07-05 当日心力监控 0 行，不继承历史异常。
+- 基本面中性偏空、价格已兑现部分：Farside 最新单日 2026-07-02 净流入 223.5 百万美元，与价格从 58,215 附近反弹到 63,000 上方形成单日一致看多；但近 5 日仍净流出 970.6 百万美元，BlockBeats 周度口径显示 BTC 现货 ETF 净流出 5.261 亿美元，中线资金面不足以给强确认。
+- 盘口：CVD 上升、价格上升、资金费率上升且为正值、持仓横盘，结论中性偏空。Coinglass 当前价约 63,019.90、CVD 1.206K、资金费率 0.0053、OI 57.538K；Exocharts 最新价约 62,941、Delta -1.2M、CVD 9.9M、POC 62,982。
+- 盘面：日线重新贴近 SMA20 62,043 上方但未扭转下降结构；4H 突破下行线后在 63,500 下方回落；1H/15m 显示 63,300-63,800 为近端压力，62,600-62,900 为近端支撑。盘口 42/70，盘面 17/30，总分 59，胜率 56%，执行概率 45%。
+- 主账户：维持观察，不在 63,000 上方追随反弹加仓；若日线收盘站稳 63,800 上方再评估短线修复是否升级，若跌回 62,600 下方则等待 61,000-61,300 或 60,700-61,000 承接质量。
+- Maker：观望不挂单。不能做：追多。原因是盘口没有明确背离，结构边缘不够极致，63,300-63,800 压力和 62,600-62,900 支撑均离现价过近。
+
+### C. 交付证据
+- Word 视觉 QA PASS；frozen verifier PASS；unique page PASS；source binding PASS；context_log 已在 render、Word-QA、publish 证据真实存在后写入。
+- 待本块写入后运行 `session_runner.py deliver --date 2026-07-05 --slot morning --page-id 394fda35-a098-8118-84e3-fa8dcfb7237b` 形成最终交付状态，并以 `runtime_state/2026-07-05/delivery_morning.json` 关闭 automation gate。
+
+---
+
 ## 2026-07-04（会话 #70 · 晚间日报链 B · 用户授权提前 · 反弹空 62,700-62,760）
 
 ### A. 最终产出与发布

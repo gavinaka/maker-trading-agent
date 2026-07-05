@@ -24,6 +24,8 @@ outputs/_*.py
 outputs/*.docx
 outputs/*.html
 outputs/*_combined.md
+outputs/*_cards.json
+outputs/*_publish_payload.json
 outputs/blockbeats/
 
 # 运行态采集产物(不入库·2026-06-20 补)

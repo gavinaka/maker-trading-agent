@@ -37,6 +37,7 @@ from runtime.workflow_lease import (
     complete_lease,
     recover_lease,
 )
+from outputs.report_structure_gate import assert_combined_structure
 
 
 PAGE_ID = re.compile(
@@ -82,6 +83,11 @@ def run_report_lint(report: Path) -> None:
     if completed.returncode != 0:
         detail = (completed.stdout + "\n" + completed.stderr).strip()
         raise ValueError("report lint failed before analysis lock:\n" + detail)
+
+
+def validate_report_structure(report: Path, trading_date: str, slot: str) -> None:
+    lines = report.read_text(encoding="utf-8").splitlines()
+    assert_combined_structure(lines, trading_date, slot)
 
 
 def add_usage_arguments(parser: argparse.ArgumentParser) -> None:
@@ -161,7 +167,13 @@ def main() -> int:
     )
     lock_analysis.add_argument("--report", required=True, type=Path)
     lock_analysis.add_argument(
-        "--confirm-five-source-validation", action="store_true", required=True
+        "--confirm-five-source-validation",
+        action="store_true",
+        required=True,
+        help=(
+            "legacy flag name; confirms all REQUIRED_SOURCES are valid, "
+            "including Farside BTC ETF Flow"
+        ),
     )
     lock_analysis.add_argument(
         "--confirm-full-analysis", action="store_true", required=True
@@ -326,6 +338,7 @@ def main() -> int:
             args.slot,
             report,
         )
+        validate_report_structure(report, args.date, args.slot)
         run_report_lint(report)
         text = report.read_text(encoding="utf-8")
         updates = extract_report_state(text)
@@ -460,6 +473,7 @@ def main() -> int:
             report_sha256 = sha256_file(report)
             if report_sha256 != analysis_lock.get("report_sha256"):
                 raise ValueError("report changed after analysis lock")
+            validate_report_structure(report, args.date, args.slot)
             text = report.read_text(encoding="utf-8")
             updates = extract_report_state(text)
             omissions = validate_report_state(text, updates)
@@ -468,6 +482,15 @@ def main() -> int:
                     "commit blocked by incomplete report: " + ", ".join(omissions)
                 )
         else:
+            report_value = analysis_lock.get("report_path")
+            if not report_value:
+                raise ValueError("analysis lock is missing report_path")
+            report = Path(str(report_value)).resolve()
+            if not report.exists():
+                raise ValueError(f"locked report is missing: {report}")
+            if sha256_file(report) != analysis_lock.get("report_sha256"):
+                raise ValueError("locked report changed after analysis lock")
+            validate_report_structure(report, args.date, args.slot)
             updates = load_object(args.updates)
         resolved, target = commit_transition(
             args.date,

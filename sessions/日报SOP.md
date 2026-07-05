@@ -1,6 +1,6 @@
 # 日报执行 SOP（确定性流程 · 照此走不试错）
 
-> ⚡ **已落成 skill**：跑日报直接调 `/daily-report`（先取得整链租约，五源统一走带 lease token 的 capture 脚本；Notion 实际持仓只允许分析锁后校准）。本文件是权威全文，skill 是其可执行 checklist；路径/规则变更时**本文件 + 对应 SKILL.md + memory 三处同步**。
+> ⚡ **已落成 skill**：跑日报直接调 `/daily-report`（先取得整链租约，六源统一走带 lease token 的 capture 脚本；Notion 实际持仓只允许分析锁后校准）。本文件是权威全文，skill 是其可执行 checklist；路径/规则变更时**本文件 + 对应 SKILL.md + memory 三处同步**。
 > 🟥 **工作流永久隔离边界（2026-06-28 用户明确）**：今后每一次早报／午报／晚报均只执行本 SOP 及其明确列出的本仓库子流程；与任何其他报告、总结或跨仓库工作流无关。禁止调用、串联、读取或写入其他工作流（包括 `quant-summary`），禁止把其他工作流的规则、上下文或产物混入日报。此规则永久生效，不是单次例外。
 > 目的：减少踩坑、省 token。每条都是已验证的「唯一正确路径」，不要再探索替代方案。
 > 维护：发现新坑或路径变化时更新本文件 + 对应 memory。
@@ -14,15 +14,15 @@
 
 > 🟥 **报告节点＝每日三份（2026-06-20 用户拍板·原 2 份→3 份·只新增「午报」一个节点·其余任何逻辑内容均不变）**：
 > - **早报 08:00–10:00（亚洲开盘）** ＝ 原早间链 A 全骨架，Notion 子页 `🌅`。
-> - **午报 15:30–16:00（欧美交接）** ＝ **新增节点·走与早报完全相同的全骨架**（五源+70/30评分+主账户plan+Maker plan，受开单双门槛），Notion 子页 `🌇`，结构门复用早间 28 块金标。**门禁沿用当日早间结论·不重读**（门禁是每日一次的硬前置）。
+> - **午报 15:30–16:00（欧美交接）** ＝ **新增节点·走与早报完全相同的全骨架**（六源+70/30评分+主账户plan+Maker plan，受开单双门槛），Notion 子页 `🌇`，结构门复用早间 28 块金标。**门禁沿用当日早间结论·不重读**（门禁是每日一次的硬前置）。
 > - **晚报 20:00–20:30（美盘开盘前）** ＝ 原晚间链 B（Maker 新增/更新计划 + 反思四件套 + 独立审查），Notion 子页 `🌙`+`🔍`。
-> - 🟥 **三个报告节点的内部逻辑/评分/模板/五源/门槛全部一致·零改动**——午报只是「把早报全骨架在欧美交接时段再跑一次」。
-> - 🟥🟥 **三报告各自 MAX 深度独立思考·禁复制前序判断（宪法级）**：早/午/晚每节点都从当时完整有效五源重新验真、读图、转录、分析、评分、胜率、风险并形成决策。共享层仅复用原始证据、来源指纹与确定性事实元数据，禁止复用派生特征、评分、胜率、风险或判断。采集后的所有推理节点使用最高可用模型能力与 MAX 思考预算；资源不足硬停，禁止降档、截断、只重算变化节点。分析锁定前禁止读取前序方向、分数、胜率和 Maker 结论，锁定后仅用于撤旧挂新及漂移对照。
+> - 🟥 **三个报告节点的内部逻辑/评分/模板/六源/门槛全部一致·零改动**——午报只是「把早报全骨架在欧美交接时段再跑一次」。
+> - 🟥🟥 **三报告各自 MAX 深度独立思考·禁复制前序判断（宪法级）**：早/午/晚每节点都从当时完整有效六源重新验真、读图、转录、分析、评分、胜率、风险并形成决策。共享层仅复用原始证据、来源指纹与确定性事实元数据，禁止复用派生特征、评分、胜率、风险或判断。采集后的所有推理节点使用最高可用模型能力与 MAX 思考预算；资源不足硬停，禁止降档、截断、只重算变化节点。分析锁定前禁止读取前序方向、分数、胜率和 Maker 结论，锁定后仅用于撤旧挂新及漂移对照。
 > - 「11:00／15:30／20:00 评分点」是冻结模板节点标签，不是实际采集/发布时间；quote 必须写真实采集时段。发布可执行计划前动态检查源文件年龄：Coinglass／Exocharts／TradingView 四档任一超过 4 小时即硬停并重采、重评分、重出稿；禁止把过期报告晚推后继续当实时计划。
 
-> 系统前置（用户不列、我必跑）：先取得整链租约 + 采集五源 + 门禁/心力硬前置。**分析锁定前禁止读取两库交易Check 实际持仓；持仓只允许锁后操作校准，且不得改变独立报告判断。** 独立报告边界见 `memory/independent-report-no-user-reference.md`。
-> 🟢 **五源统一采集（2026-07-02 整链加固·报告前先跑）：BlockBeats／Coinglass／Exocharts／FedWatch／TradingView 全部由本仓库 Playwright 采集器顺序处理。** 先 `begin-session`；早报运行 `capture_all.js --slot morning --lease-token <token>` 建立完整基线，午报和晚报运行带同一 token 的 `capture_delta.js`。每次生成 slot/lease/run-id 强绑定、不可覆盖的 manifest；出任何报告前五源都必须重新通过有效性门。
-> 五源喂入对应步骤：BlockBeats→主账户基本面；Exocharts/Coinglass→技术评分；TradingView 15m→Maker 最终把关。
+> 系统前置（用户不列、我必跑）：先取得整链租约 + 采集六源 + 门禁/心力硬前置。**分析锁定前禁止读取两库交易Check 实际持仓；持仓只允许锁后操作校准，且不得改变独立报告判断。** 独立报告边界见 `memory/independent-report-no-user-reference.md`。
+> 🟢 **六源统一采集（2026-07-05 加入 Farside BTC ETF Flow）：BlockBeats／Coinglass／Exocharts／FedWatch／Farside BTC ETF Flow／TradingView 全部由本仓库 Playwright 采集器顺序处理。** 先 `begin-session`；早报运行 `capture_all.js --slot morning --lease-token <token>` 建立完整基线，午报运行 `capture_delta.js --slot midday --lease-token <token>`，晚报运行 `capture_delta.js --slot evening --lease-token <token>`。每次生成 slot/lease/run-id 强绑定、不可覆盖的 manifest；出任何报告前六源都必须重新通过有效性门。
+> 六源喂入对应步骤：BlockBeats→主账户基本面；Farside→BTC 现货 ETF 流入/流出与价格方向一致性验证（策略辅助确认，不替代盘口/盘面评分）；Exocharts/Coinglass→技术评分；TradingView 15m→Maker 最终把关。
 
 ### 每日早报（08:00–10:00 亚洲开盘 · 链 A 全骨架）
 1. **开仓前门禁** —— ⛔ **硬前置**：门禁关闭 → **今日工作暂停，不做任何计划**（主账户/Maker 计划都不写），报告只记"门禁关闭·今日观望"。门禁开启才往下走。
@@ -33,8 +33,8 @@
    - → 早报工作完毕。
 
 ### 每日午报（15:30–16:00 欧美交接 · 新增节点 · 与早报同骨架）
-> 🟢 **走与早报完全一致的链 A 全骨架·逐步同上**（五源有效性确认和增量采集→完整五源 MAX 独立分析→主账户plan→70/30全量重算→Maker plan 受双门槛→「不能做」最后回填→有开仓补 Check），只两点差异：① **门禁不重读**，沿用当日早间门禁结论（关闭则午报同样只记观望）；② **Notion 子页用 `🌇 2026.M.D 午间`**，结构门 `py outputs/notion_verify_against_yesterday.py <午报page_id> midday`（midday 复用早间 28 块金标）。其余评分/模板/字段/三门收尾与早报零差异。
-> 🟥 **「走与早报相同骨架」＝只复用模板/字段/块序和有效原始证据，不复用判断**：午间在采集层做保守 delta，但分析层必须读取当时完整有效五源，完整独立重做验真、读图、转录、评分、胜率、风险、情景与方向；**禁照搬早报的基本面/盘口/盘面/趋势/Maker 结论**（欧美盘已走出新行情，判断据当时证据重出、可与早报不同）。这是一次全新探索，不是把早报稿改改时间戳。
+> 🟢 **走与早报完全一致的链 A 全骨架·逐步同上**（六源有效性确认和增量采集→完整六源 MAX 独立分析→主账户plan→70/30全量重算→Maker plan 受双门槛→「不能做」最后回填→有开仓补 Check），只两点差异：① **门禁不重读**，沿用当日早间门禁结论（关闭则午报同样只记观望）；② **Notion 子页用 `🌇 2026.M.D 午间`**，结构门 `py outputs/notion_verify_against_yesterday.py <午报page_id> midday`（midday 复用早间 28 块金标）。其余评分/模板/字段/三门收尾与早报零差异。
+> 🟥 **「走与早报相同骨架」＝只复用模板/字段/块序和有效原始证据，不复用判断**：午间在采集层做保守 delta，但分析层必须读取当时完整有效六源，完整独立重做验真、读图、转录、评分、胜率、风险、情景与方向；**禁照搬早报的基本面/盘口/盘面/趋势/Maker 结论**（欧美盘已走出新行情，判断据当时证据重出、可与早报不同）。这是一次全新探索，不是把早报稿改改时间戳。
 
 ### 每日晚报（20:00–20:30 美盘开盘前 · 链 B）
 0. **（20:00-20:30）交易 Plan Maker 晚间新增计划（撰写）** —— 20:00 晚间评分点后，按当天行情更新/新增 Maker 计划；「不能做」同样最后回填。
@@ -54,7 +54,7 @@
 ## 0. 开场（每次会话固定）
 1. 运行 `context_pack.py`，先核对生成包中的 `authority_sha256`、`authority_manifest` 与 `authority_read_plan`。只固定读取 `read_policy.mandatory_guardrails_always_read` 列出的硬门文件；其余权威文件按当前阶段（采集验真／分析评分／风控执行／渲染发布）展开读取，禁止每次盲读全量权威文件。若权威摘要意外变化、阶段边界不清或相关文件缺失，则读取受影响权威文件并硬停确认。分析锁定前禁止直接读取 `sessions/context_log.md`、`memory/MEMORY.md`、前序报告、`analysis_*.json` 或 `decision_*.json`。
 2. 确认今天出早报(🌅链A)、午报(🌇新增·同早报全骨架)还是晚报(🌙链B)。
-3. 不再拉取 Chrome 扩展 schema；五源统一走本仓库 Playwright 采集器，Notion REST 走 PowerShell。
+3. 不再拉取 Chrome 扩展 schema；六源统一走本仓库 Playwright 采集器，Notion REST 走 PowerShell。
 4. **分析锁定前不读两库交易Check 实际持仓**。禁止沿用上次 state，也禁止用 Notion 已开/已平、已成交比例、缺均价、缺止损等改变 Maker/主账户独立判断。持仓校准只能在 `lock-analysis` 成功后作为单独操作校准执行。
 5. **读 `开仓前门禁` + `心力监控` 当日行（工作流第 1 步·硬前置）**：
    - 门禁=关闭 / 主观=「不可交易」 → ⛔ **今日工作暂停，不写任何计划（主账户/Maker 都不写）**，报告只记"门禁关闭·今日观望"+原因（5/25 身体疲惫、5/21 团建收缩机制即此类）。
@@ -63,7 +63,7 @@
    - 🟥 **心力状态按自然日隔离，禁止跨日继承**：仅日期等于报告日期的心力行可干预当日报告；当日查询结果为 0 行时，只记录“今日无心力记录”，不得把前一日或更早的收缩机制、复盘机制、双重异常外推至今日。历史心力只能作为后附事实，不得改变今日主账户/Maker 方向、技术评分、胜率、是否挂单或风控结论。
 
 ### 0.1 原始证据共享与全量分析协议（2026-06-30）
-> 🟥 **2026-06-26 前本地 Word 金标的正确用法（2026-07-04 修正）**：金标只代表已经学习并固化的思考方式、推理逻辑和维度，不是每次报告重新读取旧 Word/旧 combined 的运行输入，也不是 MD 生成后为了“像金标”补字数、补价位、补 rubric。五源采集与 `prepare` 完成后、动笔前，必须以 `scoring/golden_report_reasoning_alignment.md` 的压缩契约组织推理；`session_runner.py prepare` 只生成 `runtime_state/<date>/golden_reasoning_<slot>.json` 作为阶段与契约哈希证明，`lock-analysis` 校验该 manifest 早于报告文件。旧样本不得进入每次报告上下文，节省 token；表面长度/锚点检查只能 WARN，不能作为质量证明。推理方式、深度和维度硬对齐；旧 Word/冻结金标的格式只要求接近 100%，但字段含义、交易参数、Word QA 与 Notion 发布校验仍是硬门。
+> 🟥 **2026-06-26 前本地 Word 金标的正确用法（2026-07-04 修正）**：金标只代表已经学习并固化的思考方式、推理逻辑和维度，不是每次报告重新读取旧 Word/旧 combined 的运行输入，也不是 MD 生成后为了“像金标”补字数、补价位、补 rubric。六源采集与 `prepare` 完成后、动笔前，必须以 `scoring/golden_report_reasoning_alignment.md` 的压缩契约组织推理；`session_runner.py prepare` 只生成 `runtime_state/<date>/golden_reasoning_<slot>.json` 作为阶段与契约哈希证明，`lock-analysis` 校验该 manifest 早于报告文件。旧样本不得进入每次报告上下文，节省 token；表面长度/锚点检查只能 WARN，不能作为质量证明。推理方式、深度和维度硬对齐；旧 Word/冻结金标的格式只要求接近 100%，但字段含义、交易参数、Word QA 与 Notion 发布校验仍是硬门。
 
 1. `context_pack.py` 只提取交付连续性、权威文件哈希与分阶段读取计划，不复制台账中的方向、评分、胜率或计划；context 包只有在 `context_log` 哈希和权威 manifest 哈希同时未变时才允许复用。
 2. 早报建立来源基线；午/晚只在采集层做 delta。`current.json` 仅保存来源清单、指纹和运行事实元数据。
@@ -71,24 +71,24 @@
 4. 分析结论与决策分别归档为 `analysis_<slot>.json`／`decision_<slot>.json`，均为 post-lock only，禁止进入下一节点分析前上下文。
 5. 采集完成后、进入源验真前必须确认宿主为最高可用模型且 Effort=`Max`，并以 `session_runner.py prepare ... --capture-manifest <精确路径> --lease-token <token> --max-reasoning-confirmed` 留下机械确认；缺任一项硬停。从源验真至审查结束全部使用 MAX 思考预算。
 6. 完整独立分析和 combined.md 通过 lint 后，必须先运行 `session_runner.py lock-analysis` 建立与报告哈希绑定的分析锁，再允许读取前序计划。
-7. 锁后完成撤旧挂新／漂移对照；晚报同时完成三段独立审查。运行 `session_runner.py finalize-post-lock` 后才可 commit；缺分析锁、post-lock 门、五源覆盖或任一完整分析节点时硬停。
+7. 锁后完成撤旧挂新／漂移对照；晚报同时完成三段独立审查。运行 `session_runner.py finalize-post-lock` 后才可 commit；缺分析锁、post-lock 门、六源覆盖或任一完整分析节点时硬停。
 8. 最终 Notion 唯一页、冻结 verifier、Word 视觉 QA 和 `context_log.md` 最终记录全部完成后，必须运行 `session_runner.py deliver` 写入最终交付遥测。
 9. 运行命令以本 SOP 与 `.agents/skills/daily-report/SKILL.md` 为准；`.claude/skills/daily-report/SKILL.md` 仅为本机 Claude Code 兼容镜像，不得覆盖 committed Codex 权威。业务逻辑、三报告、模板、Notion 四子页及三门不变。
 10. 🟥 **报告／数据源独立性与时间锁（2026-06-30 用户拍板）**：每份报告绑定唯一不可变证据快照（交易日＋slot＋真实采集时间＋来源 SHA-256）。早／午／晚的报告与数据源均相互独立；后续时段采集不得覆盖、替换、补鲜、重新解释或替前序报告通过 freshness 门。分析锁建立后样本时间与来源冻结，发布延迟不改变样本时点；Notion、Word、台账和 deliver 必须使用同一报告哈希及同一 slot 快照。用户明确要求继续交付已锁定时点报告时，不吸收后续采集。工程实现与验收见 `memory/report-evidence-time-lock.md`。
 
 ---
 
-## 1. 五源数据采集（唯一路径，按源对号入座）
+## 1. 六源数据采集（唯一路径，按源对号入座）
 
-### ①②③④⑤ BlockBeats / Exocharts / Coinglass / FedWatch / TradingView — **统一自动采集**
-🟢 **2026-06-28 起五源全部自动抓取**（机制/坑全见 `memory/browser-capture-toolset.md`）：
-- **命令**：先 `begin-session`，再运行 `node tools/browser_capture/capture_all.js --slot morning --lease-token <token>`（工具在 `tools/browser_capture/`）。用 PowerShell/Bash 跑、**必须前台 + 关沙箱（dangerouslyDisableSandbox）**。禁止旧 `npm run all` 无租约快捷入口。顺序＝BlockBeats → Coinglass → Exocharts → FedWatch → TradingView → 清算热力图辅助源。
+### ①②③④⑤⑥ BlockBeats / Coinglass / Exocharts / FedWatch / Farside BTC ETF Flow / TradingView — **统一自动采集**
+🟢 **2026-07-05 起六源全部自动抓取**（机制/坑全见 `memory/browser-capture-toolset.md`）：
+- **命令**：先 `begin-session`，早报运行 `node tools/browser_capture/capture_all.js --slot morning --lease-token <token>`，午报运行 `node tools/browser_capture/capture_delta.js --slot midday --lease-token <token>`，晚报运行 `node tools/browser_capture/capture_delta.js --slot evening --lease-token <token>`（工具在 `tools/browser_capture/`）。用 PowerShell/Bash 跑、**必须前台 + 关沙箱（dangerouslyDisableSandbox）**。禁止旧 `npm run all` / `npm run delta` 无租约快捷入口。顺序＝BlockBeats → Coinglass → Exocharts → FedWatch → TradingView → 清算热力图辅助源。
 - **BlockBeats 产物**：`blockbeats.png` + `blockbeats.json`。🟥 任何早报／午报／晚报及单源重采，只要发生 BlockBeats 抓取行为，均须先勾选页面「重要快讯」，并覆盖抓取前 12 小时内所有可加载重要快讯；截图必须显示已勾选，JSON 必须包含 `"important_only": true`、`"capture_window_hours": 12`、`"window_covered": true`、不少于 3 条 `candidate_rows`、正好 3 条 `selected_rows`，且 `rows` 必须等于按基本面影响优先级筛出的 selected top3。未勾选、勾选状态丢失、12 小时窗口不足、top3 缺失、`rows` 与 `selected_rows` 不一致或字段不合规均按核心源无效硬停，禁止退回未筛选快讯、只看最新几条或缩短窗口。完整契约见 `memory/blockbeats-important-only.md`。
 - **前置**：TV/Exo 登录态长期存在 `~/.tv_chrome_profile`；跑前确认这几个独立 profile 的 Chrome 窗口已关（独占锁；与你日常 Chrome 默认配置互不影响）。
 - 🧹 **自动清理（capture_all 开头先跑 `cleanup.js`）**：动态图(inbox 7 张 + blockbeats 快讯卡)读完/推完即无价值，capture_all 每次开头**只删"日期<cutoff"的过期图、保留最近 `CLEANUP_KEEP_DAYS` 天(默认 2=今天+昨天)**，绝不碰当天在用的图；也可 `npm run cleanup` 手动。两处目录均已 gitignore、不进库。
-- 🟥 **采集后验证门（接五源硬停·防把登录墙/空图/陈旧当数据读）**：Read 每张确认是**真实登录态正确图**——Exo 须 Bybit BTCUSD·Bid-Ask·有 VWAP/Footprint 统计·非"delayed 24h"·非默认 BitMEX；TV 四档须有手绘线/正确周期·非"需要登录"墙；Coinglass 须干净 4 面板·1H；CME 须工具概率表已渲染。**除 FedWatch 浏览器渲染故障外，任一核心源失败 = 该源缺失 = 按五源硬停规则**（`memory/five-sources-complete-or-halt.md`）→ 重登或回退该源用户手动截图；**绝不拿登录墙/空图/陈旧图当数据读**。
+- 🟥 **采集后验证门（接六源硬停·防把登录墙/空图/陈旧当数据读）**：Read 每张确认是**真实登录态正确图/结构化数据**——Exo 须 Bybit BTCUSD·Bid-Ask·有 VWAP/Footprint 统计·非"delayed 24h"·非默认 BitMEX；TV 四档须有手绘线/正确周期·非"需要登录"墙；Coinglass 须干净 4 面板·1H；CME 须工具概率表已渲染；Farside 须同时存在 `farside_btc_etf.png` + `farside_btc_etf.json`，JSON 标题匹配 `Bitcoin ETF Flow (US$m)`、Total 列可解析、latest 日度净流入/流出为数值。**除 FedWatch 浏览器渲染故障外，任一核心源失败 = 该源缺失 = 按六源硬停规则**（`memory/five-sources-complete-or-halt.md` 兼容旧名）→ 重登或回退该源用户手动截图；**绝不拿登录墙/空图/陈旧图当数据读**。
 - 🟢 **FedWatch 固定回退（2026-06-28 用户拍板）**：若 `fedwatch.png` 为浏览器错误页、空白页或 iframe 未渲染，先重试 1 次；仍失败则允许全网检索**当日权威数据**补全，不再因单一截图渲染故障硬停。来源优先级：① CME Group 官方 FedWatch 页面/API/官方发布；② Federal Reserve 官方资料；③ 能明确标注数据时点并直接引用 CME FedWatch 的主流金融数据源。必须记录来源 URL、采集时间、下次 FOMC 日期、各目标利率区间概率及相对 1 日/1 周/1 月变化；至少两处权威来源交叉核验关键数字。不得使用搜索摘要、旧闻、无日期转载或模型估算。替代数据写入 `data_sources/inbox/<当天>/fedwatch.json`，标记 `capture_mode=authoritative_web_fallback` 和截图失败原因；`fedwatch.png` 保留作故障证据但不得当有效图引用。
-- `capture_all` 走**独立 Playwright/Chrome、不经 Claude-in-Chrome 扩展**；五源均走此唯一路径。
+- `capture_all` 走**独立 Playwright/Chrome、不经 Claude-in-Chrome 扩展**；六源均走此唯一路径。
 - 🟥 **采集只取图、判读口径全不变**：以下各源读取法、盘口锚点 3 问自检、81/16 组合、评分门槛一律按原逻辑执行（纯采集层改动·思考零改）。
 - ② Exocharts：BTCUSD 日线 footprint → 读 POC / Delta / CVD / 日波幅。
 - ③ Coinglass：BTCUSDT **1h** → 读 CVD / 价格 / 资金费率 / OI 四维。
@@ -130,9 +130,9 @@
      * 震荡且**无明确方向倾向**（中性/双爆筹码消耗）→ 禁「追多空」（两边都禁，如 3/24、4/24）。
      * 震荡但**有方向倾向**（利多/反弹/诱多，或 利空/破位/诱空）→ **只禁那个拥挤侧**（利多反弹诱多→禁「做多」，如 4/14、5/15；利空破位→禁「做空/追空」）。
    - 「追」前缀=力度区分：**「做X」禁全部该方向**；**「追X」只禁右侧追单**，对侧左侧反应单仍可（行情已延伸时用「追」，趋势刚启动用「做X」如 5/18）。详见 `constitution/cannot_do_mapping.md`。
-2. **主账户策略段 = 独立中线计划**：分析锁定前不得读交易Check 最新持仓；先按五源与中线框架独立输出「保持/迭代/暂停/新增计划/观望」等系统计划。实际仓位、防守层级、已成交比例只能在锁后作为操作校准事实，不得改变正文判断。
+2. **主账户策略段 = 独立中线计划**：分析锁定前不得读交易Check 最新持仓；先按六源与中线框架独立输出「保持/迭代/暂停/新增计划/观望」等系统计划。实际仓位、防守层级、已成交比例只能在锁后作为操作校准事实，不得改变正文判断。
 3. **基本面必带「价格{已/未/部分}兑现」字段**（原模板漏此字段；主线锚定是否取代计数法仍观察）。
-   - 🟥 **正文括号精炼铁律（2026-06-19 用户迭代·在 2026-06-12 精简基础上再收紧·纯文字输出层·思考/推理/系统底层框架零改动）**：「基本面：标签（……）价格兑现」与「盘口·解读：标签（……）」**两个括号内只给精炼的核心结论与本质判断**——标签后一句话定性 ＋ 最关键 1-2 个驱动/矛盾本质；**不做"所有信息逐条叙事铺陈"的全量输出**。分维证据、Tier 逐条、各源细节、完整推导链**全部移到 ③ 后附**（本地 docx·不进 Notion 正文）。**无字数限制——抓到核心本质即可、不卡死字数**（取代 06-12 的"约 150 字内"上限）。⚠️ **只动括号内文字密度，不动 Notion 块结构/金标块数/run 结构/配色**——基本面仍 1 个 heading_3、解读仍在原块内括号、verifier 门①不受影响（6/2 金标本就把全部基本面/盘口推理装在这两个括号内）。🟥 **逻辑推理深度、五源全读、81/16 组合判定、评分/胜率/门槛推导一律按原系统逻辑全量执行**——详尽推理只换地方放（进 ③ 后附）、绝不缩减。🟥 **正文禁元叙事（2026-06-19 用户追加）：日报正文（基本面/解读括号 + 盘面 + 趋势 + 策略 + Maker 全段）禁出现"内部规则/铁律/方法论/评分代号/门槛判定"的元叙事**——禁写 C25/52分/极端候选/价格锚点法/背离合成引擎/投入产出比/参 rebound-short-highest-edge 等规则引用，禁写"双门槛全满足→必挂"/"门槛①②"/"≥65门槛"/"(20xx-xx-xx铁律)"等机制措辞；正文只用自然语言给结论与本质（像给执行者直接看的 plan）。组合代号(CXX)/方法论名/评分分项/门槛判定/规则出处全部只进 ③ 后附（6/2 金标本就是干净写法；6/18 稿把这些写进正文＝漂移，须回归金标）。🟢 **金标字段豁免**：Maker 段首行 `执行概率X%（已执行X%）　胜率X%` 是 Notion 金标固定字段·照写不算元叙事（被禁的是另塞的 总评分/C代号/门槛①✔/双门槛→必挂）；观望日 Maker 段只写「观望·不挂单＋一句自然语言理由」，分数/胜率自估值/哪项未达进 ③ 后附；门禁评分的稿首 `>` 自查摘要属内部工作笔记·不入 Notion 正文·不在本约束内。🪦 06-12 旧口径（基本面"标签＋Tier1 1-2条＋对冲1条＋价格兑现"、解读"组合结论＋四维一句话证据＋保留项"、各约150字内）仍是有效下限参照，06-19 进一步要求"括号内只留结论本质、细节全进③后附、不卡字数、且禁元叙事"。见 `memory/fundamentals-brief-core-priority.md`。
+   - 🟥 **正文括号精炼铁律（2026-06-19 用户迭代·在 2026-06-12 精简基础上再收紧·纯文字输出层·思考/推理/系统底层框架零改动）**：「基本面：标签（……）价格兑现」与「盘口·解读：标签（……）」**两个括号内只给精炼的核心结论与本质判断**——标签后一句话定性 ＋ 最关键 1-2 个驱动/矛盾本质；**不做"所有信息逐条叙事铺陈"的全量输出**。分维证据、Tier 逐条、各源细节、完整推导链**全部移到 ③ 后附**（本地 docx·不进 Notion 正文）。**无字数限制——抓到核心本质即可、不卡死字数**（取代 06-12 的"约 150 字内"上限）。⚠️ **只动括号内文字密度，不动 Notion 块结构/金标块数/run 结构/配色**——基本面仍 1 个 heading_3、解读仍在原块内括号、verifier 门①不受影响（6/2 金标本就把全部基本面/盘口推理装在这两个括号内）。🟥 **逻辑推理深度、六源全读、81/16 组合判定、评分/胜率/门槛推导一律按原系统逻辑全量执行**——详尽推理只换地方放（进 ③ 后附）、绝不缩减。🟥 **正文禁元叙事（2026-06-19 用户追加）：日报正文（基本面/解读括号 + 盘面 + 趋势 + 策略 + Maker 全段）禁出现"内部规则/铁律/方法论/评分代号/门槛判定"的元叙事**——禁写 C25/52分/极端候选/价格锚点法/背离合成引擎/投入产出比/参 rebound-short-highest-edge 等规则引用，禁写"双门槛全满足→必挂"/"门槛①②"/"≥65门槛"/"(20xx-xx-xx铁律)"等机制措辞；正文只用自然语言给结论与本质（像给执行者直接看的 plan）。组合代号(CXX)/方法论名/评分分项/门槛判定/规则出处全部只进 ③ 后附（6/2 金标本就是干净写法；6/18 稿把这些写进正文＝漂移，须回归金标）。🟢 **金标字段豁免**：Maker 段首行 `执行概率X%（已执行X%）　胜率X%` 是 Notion 金标固定字段·照写不算元叙事（被禁的是另塞的 总评分/C代号/门槛①✔/双门槛→必挂）；观望日 Maker 段只写「观望·不挂单＋一句自然语言理由」，分数/胜率自估值/哪项未达进 ③ 后附；门禁评分的稿首 `>` 自查摘要属内部工作笔记·不入 Notion 正文·不在本约束内。🪦 06-12 旧口径（基本面"标签＋Tier1 1-2条＋对冲1条＋价格兑现"、解读"组合结论＋四维一句话证据＋保留项"、各约150字内）仍是有效下限参照，06-19 进一步要求"括号内只留结论本质、细节全进③后附、不卡字数、且禁元叙事"。见 `memory/fundamentals-brief-core-priority.md`。
    - 🟥 **正文一律中文铁律（2026-06-25 用户迭代·纯文字输出层·思考/逻辑/评分/框架零改）**：日报 Notion 正文（①正文 + ②Maker）所有可中译叙事术语必须写中文；保留指标缩写、模板字段/账户名和新闻专有名词。③后附明细和方法论文档可保留英文。机械强制由 `outputs/report_lint.py` 正文英文术语门执行；见 `memory/report-chinese-only-narrative.md`。
 4. **支撑/压力恒为区间** XXXXX-XXXXX（宽约 300-500 点），不输出单点。
 5. **盘面两层各以单字结论收口**：日线层 + 小时层，每层末尾给「中性/利空/利多」。
@@ -141,7 +141,7 @@
    - 🟥 **仓位帐一致性=金标口径锁死（2026-06-11 用户发现双扣矛盾后拍板·禁止飘移）**：仓位扣减**只在止盈档**（TP1 减仓50% → TP2 清剩余50%·全计划帐 100% 闭合）；**浮盈防守层只"移止损/保本损/取消加仓"、禁写任何减仓/平仓百分比**（6/2 冻结金标即此口径；6/3-6/10 曾漂移回 6/1 旧手写措辞"第二层减仓50%+保本损"与 TP1 双扣、TP2 成死条款＝飘移事故）。审查/复盘表述："价格触及 TPx"≠"仓位捕获至 TPx"，仓位已在 TP1 全部离场则禁写"TP2 命中·完整兑现"。门② lint 含此硬检查。见 `memory/defense-layer2-vs-tp1-conflict.md`。
    - 🟥 **第一层防守级别锁死（2026-07-04 事故修复）**：Maker 浮盈防守第一层必须写 **4H级别K线极点**；空单用 4H 极点高点，多单用 4H 极点低点。禁止写 1H、1小时、15m、15分钟或笼统“小时级别”。第一层必须有具体触发价、4H极点、取消所有加仓；第二层只设保本损。
    - ⚠️ **「取消价(注意事项)」≠「止损」（2026-06-01 用户纠错）**：取消价=挂单**成交前**失效价（价格优先触及反方向某位→撤掉未成交挂单，如"优先跌破71,000则取消"）；止损=**成交后**离场价（常写在防守层第一层"触及X设X级别极点为止损"，受宪法"单笔3%以内""浮盈≥+1.5R 才激活防守层"约束）。"站稳XXX上方=结构失效"是止损，别误标成取消价。
-   - 🟥 **精确数字铁律（2026-06-02 用户拍板）**：报告里所有价格/百分比必须是核对过的确切数字；禁止 `71,2xx`、`712XX`、`@~71,7xx`、臆造 `~3%` 或具体价格位写 `73k`。现价取最新最细粒度图的确切收/现价；入场、止盈、止损、防守层触发价由五源和风险参数推导。出稿前自查无模糊数字残留；见 `memory/precise-numbers-no-fuzzy.md`。
+   - 🟥 **精确数字铁律（2026-06-02 用户拍板）**：报告里所有价格/百分比必须是核对过的确切数字；禁止 `71,2xx`、`712XX`、`@~71,7xx`、臆造 `~3%` 或具体价格位写 `73k`。现价取最新最细粒度图的确切收/现价；入场、止盈、止损、防守层触发价由六源和风险参数推导。出稿前自查无模糊数字残留；见 `memory/precise-numbers-no-fuzzy.md`。
    - edge 是资金保全（5 月成交 9 笔=盈2/保本5/亏2，7/9 不亏），不是高胜率；写到可执行单粒度。
 7. **盘口 footprint 表的 Coinglass 四维呈现为「上升/横盘/下降」**（按阶段性高低点斜率读，1H 周期），**资金费率双轨**=趋势「上升/横盘/下降」+ 水平「（为正值/为负值/低于正常值）」一起写（5 样本校验：你实际写法即"资金费率下降（为负值）"）；读数后跟一句文本含义，不要求精确数值。⚠️ 注意：旧稿常把 OI 写「稳/偏升」(24h 口径)，新口径须从最近阶段高/低点判（如 5/28 峰 62K→56K 应读**下降**）。
 8. **框架优先级按账户分流**（权威：`constitution/trading_constitution.md` §一·补）：
@@ -153,7 +153,7 @@
 - 盘口 70（footprint 16 组合；C01/C02 极端=自动70，其余手动）+ 盘面 30（接近度10/掠夺10/SMA20·5/量价3/斐波2）。
 - **总分 ≥65 且 胜率自估 ≥60%（双硬门槛全满足）→ 必须挂 Maker 单**（方向由盘口定，挂价=⑤源高质量边缘；Maker 限价单挂边缘等待、价不到不成交，天然满足"入场位置要求极高"，**位置不优只改挂单价、不改是否挂单**）；**总分 <65 或 胜率 <60% → 观望不挂**。执行概率 ≥50% 为软参考·非门槛（只定挂价可达性、够不到也照常开单）。门禁关闭/收缩/风控阻断优先于此（即便双门槛满足也不挂）。2026-06-01 确立必开制·2026-06-16 总评分门槛70→65+胜率升级硬门槛+执行概率降软参考，见 `memory/score70-must-place-maker.md`。
 - **盘面分析只有两层：日线级别 + 小时级别**（Notion 固定格式，6 样本核实）。15m 只属于第⑤源「TradingView 盘面执行 Check」，不要写成「盘面·15m级别」。
-- 出稿：python-docx（`py` 运行，字体 Microsoft YaHei）。正文按用户 Notion 手写格式（主账户段 + Maker 段在文首可直接复制），后附评分明细/五源支撑。
+- 出稿：python-docx（`py` 运行，字体 Microsoft YaHei）。正文按用户 Notion 手写格式（主账户段 + Maker 段在文首可直接复制），后附评分明细/六源支撑。
   - docx 被占用报 PermissionError → 换新文件名。
   - 生成后用一条命令确认文件存在即可，不要反复 Read/Glob 验证。
 
@@ -185,8 +185,8 @@
 - **门②反幻觉 lint（push 前硬门）**：`py outputs/report_lint.py outputs/{date}_{morning|midday|evening}_combined.md` → `[PASS]`（0 HARD）才能 push；WARN 逐条人工确认。**含 Maker 仓位帐门（2026-06-11 加）**：防守层出现减仓/平仓百分比、或 TP1 部分止盈而无 TP2 清仓档（帐不闭合）＝HARD。
 - **门①结构+配色（push 后硬门）**：`py outputs/notion_verify_against_yesterday.py <今日page_id> morning|midday|evening|review`（午报用 `midday`·复用早间 28 块金标）→ 对照 **2026.6.2 冻结金标**（非昨日·防错误逐日传播；金标 id 在脚本 `GOLD` 字典）逐块比对类型/块数/图数 + 语义配色按情绪词唯一规则逐 run 校验。`[PASS]` 才算完成；`[FAIL]`/`MISMATCH` 必改 push 脚本→归档重建→重跑到 PASS，绝不带 FAIL 交付。
 - **失败码铁律（2026-06-27 根因修复）**：verifier PASS＝输出 `[PASS]` 且进程退出码 0；`[FAIL]`／异常必须退出非零，调用方必须传播并回滚 staging。禁止仅凭日志字符串自行打印“PASS”。
-- **Word 视觉门（2026-07-02 整链修复）**：唯一入口为 `render_from_combined.py <combined> --date <date> --slot <slot>`，唯一产物为 `outputs/<date>_<slot>_render.docx`。渲染前硬拦标题中的 `.md/_combined/morning/midday/evening/report/v2/v3/POC/debug/test` 与孤立 `>`；源稿＋渲染器哈希一致时直接复用，最多两次，第三次硬停。随后只运行 `word_qa.py export`：本 Windows 主机确定性选择隐藏 Word COM（不先试 LibreOffice）＋Poppler；在 MAX 下逐页查看 manifest 中的 PNG 后才运行 `word_qa.py approve`。禁止生成 V2/V3/report/中文名 DOCX 副本或日期专用 VBS/PS1。只验 ZIP/XML 不算视觉 PASS。
-- **门③回复前自查**：模板对齐/独立成稿/五源齐/精确数字等清单自查。
+- **Word 视觉门（2026-07-02 整链修复；2026-07-05 底稿结构硬门）**：唯一入口为 `render_from_combined.py <combined> --date <date> --slot <slot>`，唯一产物为 `outputs/<date>_<slot>_render.docx`。渲染前由 `outputs/report_structure_gate.py` 硬拦：人类可见标题必须为 `YYYY.M.D 早/午/晚间日报`，combined 必须保留 `## ① 正文` → `## 不能做` → `## ② Maker 计划` → `## ③ 后附` 骨架，禁止裸 `---` 渲成 Word 文本，禁止 2026-07-05 起任何报告仍写“五源”，③后附必须覆盖 BlockBeats／Coinglass／Exocharts／FedWatch／Farside／TradingView 六源。渲染后再次抽取 DOCX 段落结构校验同一骨架；源稿＋渲染器＋结构门哈希一致时直接复用，最多两次，第三次硬停。随后只运行 `word_qa.py export`：本 Windows 主机确定性选择隐藏 Word COM（不先试 LibreOffice）＋Poppler；在 MAX 下逐页查看 manifest 中的 PNG 后才运行 `word_qa.py approve`。禁止生成 V2/V3/report/中文名 DOCX 副本或日期专用 VBS/PS1。只验 ZIP/XML 不算视觉 PASS。
+- **门③回复前自查**：模板对齐/独立成稿/六源齐/精确数字等清单自查。
 - ⚠️ verifier 与 lint 脚本禁 print emoji（PS 控制台 GBK 崩）。
 
 ### 5.3 晚报链 B 专属·必做（见 `memory/evening-review-visual-to-notion.md`）

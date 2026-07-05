@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import report_colors as rc  # 单一配色权威
+from report_structure_gate import assert_combined_structure, assert_rendered_docx_structure
 from runtime.state_store import atomic_json_write
 from runtime.usage_logger import append_usage
 
@@ -75,17 +76,6 @@ def _load_object(path):
     return payload
 
 
-def _date_matches_title(title, trading_date):
-    year, month, day = (int(part) for part in trading_date.split("-"))
-    patterns = {
-        f"{year:04d}-{month:02d}-{day:02d}",
-        f"{year:04d}.{month}.{day}",
-        f"{year:04d}/{month}/{day}",
-        f"{year:04d}年{month}月{day}日",
-    }
-    return any(value in title for value in patterns)
-
-
 def preflight(lines, trading_date, slot):
     """Resolve a safe title and block known render-loop markers before DOCX."""
     if slot not in SLOT_CN:
@@ -97,27 +87,20 @@ def preflight(lines, trading_date, slot):
     ]
     if lone_markers:
         raise ValueError(f"lone blockquote marker at line(s): {lone_markers}")
-    headings = [
-        plain_markdown(line[2:].strip())
-        for line in lines
-        if line.startswith("# ")
-    ]
-    if len(headings) > 1:
-        raise ValueError("combined report contains multiple H1 titles")
-    title = headings[0] if headings else f"{trading_date} {SLOT_CN[slot]}日报"
-    if not _date_matches_title(title, trading_date):
-        raise ValueError(f"title date does not match {trading_date}: {title}")
+    title = assert_combined_structure(lines, trading_date, slot)
     forbidden = TITLE_FORBIDDEN.search(title)
     if forbidden:
         raise ValueError(f"forbidden generator/debug marker in title: {forbidden.group(0)}")
-    if SLOT_CN[slot] not in title or "日报" not in title:
-        raise ValueError(f"title does not match {slot}: {title}")
     return title
 
 
 def renderer_sha256():
     digest = hashlib.sha256()
-    for path in (Path(__file__), Path(__file__).with_name("report_colors.py")):
+    for path in (
+        Path(__file__),
+        Path(__file__).with_name("report_colors.py"),
+        Path(__file__).with_name("report_structure_gate.py"),
+    ):
         digest.update(path.name.encode("utf-8"))
         digest.update(path.read_bytes())
     return digest.hexdigest()
@@ -346,6 +329,7 @@ def render_canonical(combined_path, trading_date, slot, *, root=ROOT):
             temporary,
             source_title=title,
         )
+        assert_rendered_docx_structure(temporary, trading_date, slot)
         os.replace(temporary, target)
         docx_hash = sha256_file(target)
         payload = {

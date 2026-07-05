@@ -14,6 +14,13 @@
 等联动短语 = HARD FAIL。含解耦声明（解耦/不联动/与用户…无关/不纳入判断/事后对照）的行豁免。
 """
 import sys, re
+from datetime import date
+from pathlib import Path
+
+try:
+    from .report_structure_gate import validate_combined_structure
+except ImportError:  # pragma: no cover - script execution path
+    from report_structure_gate import validate_combined_structure
 
 # ---------------- 解耦门（门②扩展·2026-06-16） ----------------
 # 联动红旗：把用户实际持仓当系统持仓在「管理/镜像/复述决策」。系统稿禁现，命中即 HARD。
@@ -173,7 +180,7 @@ def liquidity_check(lines):
 # 清算热力图仅「辅助印证」。防漂移＝「拿辅助源(热力图)当主判、§九五步只走③④⑤(热力图+落点)跳过①②
 # (各周期摆动高低 + VRVP概率主判)」(2026-06-21 核验发现 6/21 早报 0 引用、晚报靠热力图articulate足
 # 但 VRVP/POC 主判articulate不足)。WARN-only·不阻 push·只提醒每份盘面走满五步、主判用 VRVP 非热力图。
-# 🟥 主判词刻意排除裸「POC」——②Exocharts 五源每份都有「POC 阶梯」会误判；§九主判用 TV-VRVP 专属词。
+# 🟥 主判词刻意排除裸「POC」——②Exocharts 六源每份都有「POC 阶梯」会误判；§九主判用 TV-VRVP 专属词。
 _MAINJUDGE = re.compile(r"VRVP|VAH|VAL|HVN|LVN|价值区|高量节点|成交量结构|量峰")
 _AUXHEAT   = re.compile(r"清算热力|热力图|liqheatmap|清算带")
 _PANEL     = re.compile(r"流动性掠夺|流掠|流动性猎杀|猎杀位|猎杀")
@@ -532,7 +539,7 @@ def analysis_depth_check(lines):
     """MAX 独立分析深度门。
 
     ③ 后附是本地报告承载完整推理的位置。若这里只剩短摘要，即使正文格式正确，
-    也等于没有完成五源验真、转录、评分、胜率、风险与情景推理。
+    也等于没有完成六源验真、转录、评分、胜率、风险与情景推理。
     """
     section = _third_section_text(lines)
     issues = []
@@ -543,7 +550,7 @@ def analysis_depth_check(lines):
             0,
             "③后附分析过短，疑似摘要化/降档推理",
             f"{len(section)} chars",
-            "最低要求 5000 字符，且必须覆盖完整五源、评分、胜率、风险、情景",
+            "最低要求 5000 字符，且必须覆盖完整六源、评分、胜率、风险、情景",
         ))
     required_markers = [
         ("BlockBeats", "基本面源细节"),
@@ -554,6 +561,8 @@ def analysis_depth_check(lines):
         ("胜率", "胜率推导"),
         ("风险", "风险验算"),
     ]
+    if _requires_six_sources(lines):
+        required_markers.insert(4, ("Farside", "BTC ETF Flow 源细节"))
     for marker, desc in required_markers:
         if marker not in section:
             issues.append((0, f"③后附缺{desc}", marker, ""))
@@ -573,13 +582,38 @@ def numeric_anchor_dump_check(lines):
             0,
             "后附出现数值锚点组堆砌，疑似以数字列表替代承重推理",
             f"{len(matches)} groups",
-            "数字必须嵌入五源、评分、胜率、风险、情景链条；不得用锚点组凑金标深度",
+            "数字必须嵌入六源、评分、胜率、风险、情景链条；不得用锚点组凑金标深度",
         )]
     return []
 
 
 _GOLDEN_PRICE_REF = re.compile(r"\d{2},\d{3}|\d{5}(?:\.\d+)?")
-_GOLDEN_SOURCES = ("BlockBeats", "Exocharts", "Coinglass", "FedWatch", "TradingView")
+_STRICT_SIX_SOURCE_FROM = date(2026, 7, 5)
+_BASE_GOLDEN_SOURCES = ("BlockBeats", "Exocharts", "Coinglass", "FedWatch", "TradingView")
+_SIXTH_SOURCE = "Farside"
+
+
+def _report_date(lines):
+    head = "\n".join(lines[:12])
+    match = re.search(
+        r"(20\d{2})[-./年](\d{1,2})[-./月](\d{1,2})",
+        head,
+    )
+    if not match:
+        return None
+    year, month, day = (int(part) for part in match.groups())
+    return date(year, month, day)
+
+
+def _requires_six_sources(lines):
+    report_date = _report_date(lines)
+    return report_date is not None and report_date >= _STRICT_SIX_SOURCE_FROM
+
+
+def _required_source_markers(lines):
+    if _requires_six_sources(lines):
+        return _BASE_GOLDEN_SOURCES[:4] + (_SIXTH_SOURCE,) + _BASE_GOLDEN_SOURCES[4:]
+    return _BASE_GOLDEN_SOURCES
 
 
 def golden_surface_proxy_check(lines):
@@ -605,13 +639,15 @@ def golden_surface_proxy_check(lines):
             f"{len(section)} chars",
             "WARN only；不得为了过门补长度，真实金标以 pre-write reasoning manifest 为准",
         ))
-    missing_sources = [source for source in _GOLDEN_SOURCES if source not in section]
+    required_sources = _required_source_markers(lines)
+    missing_sources = [source for source in required_sources if source not in section]
     if missing_sources:
+        source_label = "六源" if _requires_six_sources(lines) else "五源"
         issues.append((
             0,
-            "golden-surface-proxy：③后附未承载完整五源逐项证据",
+            f"golden-surface-proxy：③后附未承载完整{source_label}逐项证据",
             ",".join(missing_sources),
-            "WARN only；五源缺失仍会由分析深度门/源覆盖门硬拦",
+            f"WARN only；{source_label}缺失仍会由分析深度门/源覆盖门硬拦",
         ))
     price_refs = len(_GOLDEN_PRICE_REF.findall(section))
     if price_refs < 120:
@@ -619,7 +655,7 @@ def golden_surface_proxy_check(lines):
             0,
             "golden-surface-proxy：数值/价位证据锚点低于旧样本表面下限",
             f"{price_refs} refs",
-            "WARN only；禁止补价位凑数，必须来自当次五源证据",
+            "WARN only；禁止补价位凑数，必须来自当次六源证据",
         ))
     rubric_refs = section.lower().count("rubric")
     if rubric_refs < 2:
@@ -652,6 +688,21 @@ def main():
     path = sys.argv[1]
     txt = open(path, encoding="utf-8").read()
     lines = txt.splitlines()
+    structure_hits = []
+    report_match = re.match(
+        r"^(20\d{2}-\d{2}-\d{2})_(morning|midday|evening)_",
+        Path(path).name,
+    )
+    if report_match:
+        _, structure_issues = validate_combined_structure(
+            lines,
+            report_match.group(1),
+            report_match.group(2),
+        )
+        structure_hits = [
+            (issue.line, issue.code, issue.message, "")
+            for issue in structure_issues
+        ]
     hard_hits, warn_hits = [], []
     for i, ln in enumerate(lines, 1):
         for pat, desc in HARD:
@@ -677,6 +728,9 @@ def main():
         print(f"[WARN] L{i} {desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in hard_hits:
         print(f"[HARD] L{i} {desc}: '{hit}'  | {ctx}")
+    for i, code, message, ctx in structure_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} report-structure·{code}: {message}")
     for i, desc, hit, ctx in coupling_hits:
         print(f"[HARD] L{i} 解耦门·联动红旗 {desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in meta_hits:
@@ -728,8 +782,10 @@ def main():
     else:
         print("[OK] 胜率反下偏门: 胜率未落临界带[55,59](无贴门槛下偏嫌疑)")
     print()
-    if hard_hits or ledger_issues or coupling_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or anchor_dump_hits:
+    if structure_hits or hard_hits or ledger_issues or coupling_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or anchor_dump_hits:
         msgs = []
+        if structure_hits:
+            msgs.append(f"{len(structure_hits)} 处底稿结构/六源契约错误（修正 combined 骨架、日期展示或六源证据）")
         if hard_hits:
             msgs.append(f"{len(hard_hits)} 处模糊位/占位/臆造（用核过的确切数字替换）")
         if ledger_issues:
@@ -749,7 +805,7 @@ def main():
         if exo_hits:
             msgs.append(f"{len(exo_hits)} 处 Exocharts OHLC/当前价不自洽（重读截图或重采）")
         if depth_hits:
-            msgs.append(f"{len(depth_hits)} 处分析深度不足（③后附必须承载完整五源/评分/胜率/风险/情景）")
+            msgs.append(f"{len(depth_hits)} 处分析深度不足（③后附必须承载完整六源/评分/胜率/风险/情景）")
         if anchor_dump_hits:
             msgs.append(f"{len(anchor_dump_hits)} 处数值锚点组堆砌（数字必须嵌入推理链而非列表凑数）")
         print(f"[FAIL] " + "；".join(msgs) + " —— 修正后重跑")

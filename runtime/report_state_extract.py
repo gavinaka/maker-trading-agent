@@ -17,6 +17,7 @@ REQUIRED_SOURCE_MARKERS = {
     "coinglass": re.compile(r"Coinglass", re.I),
     "exocharts": re.compile(r"Exocharts", re.I),
     "fedwatch": re.compile(r"FedWatch|CME", re.I),
+    "farside_btc_etf": re.compile(r"Farside|Bitcoin ETF Flow|ETF Flow", re.I),
     "tradingview": re.compile(r"TradingView", re.I),
 }
 

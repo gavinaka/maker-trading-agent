@@ -245,6 +245,7 @@ def build_context_pack(
             "load_all_authoritative_methodology": False,
             "expand_authority_by_phase": True,
             "load_complete_resolved_five_source_evidence": True,
+            "load_complete_resolved_six_source_evidence": True,
             "mandatory_guardrails_always_read": (
                 authority_read_plan()["always_read"]
             ),

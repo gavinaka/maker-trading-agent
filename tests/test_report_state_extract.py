@@ -27,7 +27,7 @@ CVD下降　价格下降　资金费率上升（为正值）　持仓上升
 - **总分 57+20＝77，达到技术门槛。**
 - **胜率自估 66%**
 - **风险验算**：风险低于3%。
-BlockBeats / Coinglass / Exocharts / FedWatch / TradingView
+BlockBeats / Coinglass / Exocharts / FedWatch / Farside / TradingView
 """
 
 
@@ -61,6 +61,7 @@ class ReportStateExtractTests(unittest.TestCase):
     def test_empty_report_cannot_be_locked(self):
         omissions = validate_report_state("空报告")
         self.assertIn("score_total", omissions)
+        self.assertIn("source_evidence:farside_btc_etf", omissions)
         self.assertIn("source_evidence:tradingview", omissions)
 
 

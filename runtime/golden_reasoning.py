@@ -76,7 +76,7 @@ def build_golden_reasoning_manifest(
             "format_only_needs_near_100_percent_alignment_plus_mechanical_gates"
         ),
         "phase_order": [
-            "five_source_capture_manifest_ready",
+            "six_source_capture_manifest_ready",
             "prepare_transition_ready",
             "golden_reasoning_contract_active",
             "combined_report_drafting",
@@ -86,7 +86,8 @@ def build_golden_reasoning_manifest(
         "capture_manifest": _file_record(capture, root),
         "transition": _file_record(transition, root),
         "required_dimensions": [
-            "five_source_validation_and_transcription",
+            "six_source_validation_and_transcription",
+            "farside_btc_etf_flow_consistency",
             "sample_derived_reasoning_order_from_june_word_reports",
             "blockbeats_tier_and_price_realization",
             "fedwatch_probability_delta",

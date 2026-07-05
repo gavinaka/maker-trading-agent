@@ -12,6 +12,7 @@ from collections import deque
 DEPENDENCIES: dict[str, set[str]] = {
     "source:blockbeats": {"feature:news", "feature:fundamentals"},
     "source:fedwatch": {"feature:macro"},
+    "source:farside_btc_etf": {"feature:spot_etf_flow"},
     "source:coinglass": {"feature:orderflow"},
     "source:exocharts": {"feature:orderflow_confirmation"},
     "source:tradingview_1d": {"feature:chart_1d", "feature:liquidity"},
@@ -31,6 +32,11 @@ DEPENDENCIES: dict[str, set[str]] = {
         "decision:cannot_do",
     },
     "feature:orderflow_confirmation": {"feature:orderflow"},
+    "feature:spot_etf_flow": {
+        "feature:fundamentals",
+        "feature:liquidity_confirmation",
+        "score:winrate",
+    },
     "feature:orderflow": {"score:orderflow", "score:winrate"},
     "feature:chart_1d": {"score:chart", "feature:trend_regime"},
     "feature:chart_4h": {"score:chart", "feature:trend_regime"},
@@ -57,11 +63,14 @@ DEPENDENCIES: dict[str, set[str]] = {
 SESSION_OUTPUT_NODES = {"decision:session", "output:report"}
 ANALYSIS_ASSURANCE_NODES = {
     "validation:five_sources",
+    "validation:six_sources",
     "transcription:blockbeats",
     "transcription:coinglass",
     "transcription:exocharts",
     "transcription:fedwatch",
+    "transcription:farside_btc_etf",
     "transcription:tradingview",
+    "analysis:spot_etf_flow_confirmation",
     "analysis:market_structure",
     "analysis:cross_source_synthesis",
     "analysis:volatility_regime",

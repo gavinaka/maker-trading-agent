@@ -25,7 +25,7 @@ https://www.theblockbeats.info/newsflash
    * `data_sources/inbox/<YYYY-MM-DD>/blockbeats.json`
 5. JSON 写入 `"important_only": true`、`"capture_window_hours": 12`、`"window_covered": true`、`candidate_rows`、`selected_rows` 和兼容字段 `rows`。
 6. `candidate_rows` 保留抓取前 12 小时内所有可加载重要快讯；`selected_rows`/`rows` 只保留按基本面影响优先级筛出的 3 条。
-7. 有效性门：`important_only=true`、`capture_window_hours=12`、`window_covered=true`、至少 3 条 12 小时候选、正好 3 条 selected top3、`rows` 等于 `selected_rows`、最新快讯时间格式有效；失败退出码 2，由 `capture_all.js`／`capture_delta.js` 按五源缺失硬停。
+7. 有效性门：`important_only=true`、`capture_window_hours=12`、`window_covered=true`、至少 3 条 12 小时候选、正好 3 条 selected top3、`rows` 等于 `selected_rows`、最新快讯时间格式有效；失败退出码 2，由 `capture_all.js`／`capture_delta.js` 按六源缺失硬停。
 
 ## 失败处理
 

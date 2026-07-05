@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SLOT_CN = {"morning": "早间", "midday": "午间", "evening": "晚间"}
+STRICT_DELIVERY_CONTRACT_FROM = date(2026, 7, 5)
 
 
 def sha256_file(path: Path) -> str:
@@ -80,6 +81,37 @@ def _parse_time(value: str, label: str) -> datetime:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (AttributeError, ValueError) as exc:
         raise ValueError(f"invalid {label}: {value!r}") from exc
+
+
+def _strict_delivery_contract_active(trading_date: str) -> bool:
+    year, month, day = (int(part) for part in trading_date.split("-"))
+    return date(year, month, day) >= STRICT_DELIVERY_CONTRACT_FROM
+
+
+def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) -> None:
+    if not _strict_delivery_contract_active(trading_date):
+        return
+    shape = publish.get("notion_payload_shape")
+    verifier = publish.get("frozen_verifier")
+    checks = {
+        "notion_payload_shape": isinstance(shape, dict),
+        "notion_payload_shape_passed": isinstance(shape, dict)
+        and shape.get("status") == "passed",
+        "notion_payload_block_count": isinstance(shape, dict)
+        and shape.get("block_count_before_images") == 25,
+        "notion_payload_image_count": isinstance(shape, dict)
+        and shape.get("image_count") == 3,
+        "frozen_verifier": isinstance(verifier, dict),
+        "frozen_verifier_returncode": isinstance(verifier, dict)
+        and verifier.get("returncode") == 0,
+        "frozen_verifier_script": isinstance(verifier, dict)
+        and str(verifier.get("script", "")).endswith("notion_verify_against_yesterday.py"),
+        "frozen_verifier_stdout": isinstance(verifier, dict)
+        and "[PASS]" in str(verifier.get("stdout", "")),
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise ValueError("invalid strict publish quality evidence: " + ", ".join(failed))
 
 
 def _publish_source_binding(
@@ -183,6 +215,7 @@ def validate_delivery_evidence(
     failed = sorted(name for name, passed in publish_checks.items() if not passed)
     if failed:
         raise ValueError("invalid publish evidence: " + ", ".join(failed))
+    _validate_strict_publish_quality_evidence(publish, trading_date)
 
     source_binding = _publish_source_binding(publish, trading_date, slot, root)
     current_capture = current.get("capture_manifest")

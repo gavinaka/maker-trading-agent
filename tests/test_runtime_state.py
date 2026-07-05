@@ -12,6 +12,7 @@ from runtime.dependency_graph import (
     required_analysis_nodes,
     required_post_lock_nodes,
 )
+from runtime.delivery_evidence import SLOT_CN, validate_delivery_evidence
 from runtime.state_store import (
     LOGIC_FILES,
     commit_transition,
@@ -34,6 +35,8 @@ def seed_inbox(inbox: Path) -> None:
         "blockbeats.png",
         "coinglass.png",
         "exocharts.png",
+        "farside_btc_etf.json",
+        "farside_btc_etf.png",
         "fedwatch.png",
         "tradingview_btc_1d.png",
         "tradingview_btc_1d_liq.png",
@@ -59,6 +62,51 @@ def seed_inbox(inbox: Path) -> None:
                         "candidate_rows": rows,
                         "selected_rows": rows,
                         "rows": rows,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        elif name == "farside_btc_etf.json":
+            (inbox / name).write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "source": "farside_btc_etf",
+                        "url": "https://farside.co.uk/btc/",
+                        "unit": "US$m",
+                        "latest": {
+                            "date": "02 Jul 2026",
+                            "date_iso": "2026-07-02",
+                            "total_usd_m": 223.5,
+                            "direction": "inflow",
+                        },
+                        "previous": {
+                            "date": "01 Jul 2026",
+                            "date_iso": "2026-07-01",
+                            "total_usd_m": -296.0,
+                            "direction": "outflow",
+                        },
+                        "rows": [
+                            {
+                                "date": "01 Jul 2026",
+                                "date_iso": "2026-07-01",
+                                "total_usd_m": -296.0,
+                                "direction": "outflow",
+                            },
+                            {
+                                "date": "02 Jul 2026",
+                                "date_iso": "2026-07-02",
+                                "total_usd_m": 223.5,
+                                "direction": "inflow",
+                            },
+                        ],
+                        "validity": {
+                            "title_match": True,
+                            "table_found": True,
+                            "has_total_column": True,
+                            "latest_daily_row": True,
+                            "latest_total_is_number": True,
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -131,6 +179,146 @@ def seed_capture_manifest(
     )
 
 
+def seed_complete_delivery(root: Path, trading_date: str, slot: str) -> str:
+    from datetime import datetime, timedelta, timezone
+
+    page_id = "38ffda35-a098-817d-8e2b-fa12afe16d8c"
+    commit_id = "1" * 64
+    lease_id = "2" * 64
+    outputs = root / "outputs"
+    state = root / "runtime_state" / trading_date
+    qa_dir = state / "word_qa" / slot / "attempt-1-test"
+    sessions = root / "sessions"
+    outputs.mkdir(parents=True)
+    state.mkdir(parents=True)
+    qa_dir.mkdir(parents=True)
+    sessions.mkdir(parents=True)
+
+    report = outputs / f"{trading_date}_{slot}_combined.md"
+    docx = outputs / f"{trading_date}_{slot}_render.docx"
+    pdf = qa_dir / f"{trading_date}_{slot}_render.pdf"
+    page = qa_dir / "page-1.png"
+    report.write_text("# report\n", encoding="utf-8")
+    docx.write_bytes(b"docx")
+    pdf.write_bytes(b"pdf")
+    page.write_bytes(b"png")
+    report_hash = file_hash(report)
+    docx_hash = file_hash(docx)
+    capture_manifest = {
+        "path": f"captures/{slot}/full_base_run1234567890abcdef.json",
+        "sha256": "c" * 64,
+        "evidence_snapshot": {
+            "root": f"evidence/{slot}/run1234567890abcdef",
+        },
+    }
+    source_binding = {
+        "capture_manifest_path": (
+            f"runtime_state/{trading_date}/"
+            f"captures/{slot}/full_base_run1234567890abcdef.json"
+        ),
+        "capture_manifest_sha256": "c" * 64,
+        "evidence_snapshot_root": (
+            f"runtime_state/{trading_date}/evidence/{slot}/run1234567890abcdef"
+        ),
+        "sources": {},
+    }
+    now = datetime.now(timezone.utc) - timedelta(seconds=2)
+    (state / f"render_{slot}.json").write_text(
+        json.dumps(
+            {
+                "status": "success",
+                "trading_date": trading_date,
+                "slot": slot,
+                "source_sha256": report_hash,
+                "docx_path": str(docx),
+                "docx_sha256": docx_hash,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state / f"word_qa_{slot}.json").write_text(
+        json.dumps(
+            {
+                "status": "passed",
+                "visual_qa_pass": True,
+                "trading_date": trading_date,
+                "slot": slot,
+                "backend": "word_com",
+                "docx_path": str(docx),
+                "docx_sha256": docx_hash,
+                "pdf_path": str(pdf),
+                "pdf_sha256": file_hash(pdf),
+                "pages": [{"path": str(page), "sha256": file_hash(page)}],
+                "reviewed_at": now.isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state / f"publish_{slot}.json").write_text(
+        json.dumps(
+            {
+                "status": "success",
+                "trading_date": trading_date,
+                "slot": slot,
+                "page_id": page_id,
+                "frozen_verifier_pass": True,
+                "unique_page_pass": True,
+                "report_sha256": report_hash,
+                "source_binding": source_binding,
+                "published_at": now.isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    state_payload = {
+        "trading_date": trading_date,
+        "slot": slot,
+        "commit_id": commit_id,
+        "report_sha256": report_hash,
+        "capture_manifest": capture_manifest,
+    }
+    resolved_name = "base.json" if slot == "morning" else f"resolved_{slot}.json"
+    (state / resolved_name).write_text(json.dumps(state_payload), encoding="utf-8")
+    (state / "current.json").write_text(json.dumps(state_payload), encoding="utf-8")
+    (sessions / "context_log.md").write_text(
+        f"## {trading_date}（{SLOT_CN[slot]}日报）\n"
+        f"- 报告 SHA-256=`{report_hash}`，Word SHA-256=`{docx_hash}`。\n"
+        f"- Word 逐页视觉 QA PASS。\n"
+        f"- render manifest=`runtime_state/{trading_date}/render_{slot}.json`，"
+        f"Word QA manifest=`runtime_state/{trading_date}/word_qa_{slot}.json`，"
+        f"publish manifest=`runtime_state/{trading_date}/publish_{slot}.json`。\n"
+        f"- Notion 最终页=`{page_id}`，冻结 verifier PASS。\n",
+        encoding="utf-8",
+    )
+    evidence = validate_delivery_evidence(
+        trading_date,
+        slot,
+        page_id,
+        current=state_payload,
+        root=root,
+    )
+    (state / f"delivery_{slot}.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "2.0",
+                "trading_date": trading_date,
+                "slot": slot,
+                "commit_id": commit_id,
+                "workflow_lease_id": lease_id,
+                "page_id": page_id,
+                "published_at": evidence["published_at"],
+                "frozen_verifier_pass": True,
+                "unique_page_pass": True,
+                "word_visual_qa_pass": True,
+                "context_log_recorded": True,
+                "evidence": evidence,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return page_id
+
+
 class DeltaEngineTests(unittest.TestCase):
     def test_unchanged_snapshot_still_requires_full_analysis_recompute(self):
         with tempfile.TemporaryDirectory() as td:
@@ -197,6 +385,24 @@ class DeltaEngineTests(unittest.TestCase):
             self.assertFalse(source["valid"])
             self.assertIn(
                 "blockbeats.json must record important_only=true",
+                source["invalid_reasons"],
+            )
+
+    def test_farside_btc_etf_without_numeric_latest_total_is_invalid(self):
+        with tempfile.TemporaryDirectory() as td:
+            inbox = Path(td)
+            seed_inbox(inbox)
+            payload = json.loads((inbox / "farside_btc_etf.json").read_text())
+            payload["latest"]["total_usd_m"] = "223.5"
+            (inbox / "farside_btc_etf.json").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            source = scan_source_snapshot(inbox)["farside_btc_etf"]
+            self.assertTrue(source["mechanically_complete"])
+            self.assertFalse(source["valid"])
+            self.assertIn(
+                "farside_btc_etf.json latest.total_usd_m must be numeric",
                 source["invalid_reasons"],
             )
 
@@ -299,10 +505,21 @@ class DependencyTests(unittest.TestCase):
         self.assertNotIn("score:total", nodes)
         self.assertNotIn("score:winrate", nodes)
 
+    def test_farside_btc_etf_change_affects_spot_flow_confirmation(self):
+        nodes = affected_nodes({"farside_btc_etf"})
+        self.assertIn("feature:spot_etf_flow", nodes)
+        self.assertIn("feature:fundamentals", nodes)
+        self.assertIn("feature:liquidity_confirmation", nodes)
+        self.assertIn("score:winrate", nodes)
+        self.assertIn("decision:maker", nodes)
+
     def test_full_analysis_graph_includes_quality_assurance_nodes(self):
         nodes = required_analysis_nodes("evening")
         for node in {
             "validation:five_sources",
+            "validation:six_sources",
+            "transcription:farside_btc_etf",
+            "analysis:spot_etf_flow_confirmation",
             "analysis:risk",
             "analysis:scenarios",
             "output:quality_review",
@@ -794,10 +1011,15 @@ class WorkflowLeaseTests(unittest.TestCase):
     def test_already_delivered_slot_is_blocked_before_capture(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
+            seed_complete_delivery(root, "2026-06-30", "morning")
+            with self.assertRaisesRegex(RuntimeError, "already delivered"):
+                begin_lease("2026-06-30", "morning", root=root)
+
+    def test_prior_delivery_must_be_hash_closed_before_next_slot(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
             directory = root / "runtime_state" / "2026-06-30"
             directory.mkdir(parents=True)
-            import json
-
             (directory / "delivery_morning.json").write_text(
                 json.dumps(
                     {
@@ -811,8 +1033,82 @@ class WorkflowLeaseTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            with self.assertRaisesRegex(RuntimeError, "complete delivery manifest"):
+                begin_lease("2026-06-30", "midday", root=root)
+
+    def test_incomplete_delivery_record_does_not_block_recovery_run(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            directory = root / "runtime_state" / "2026-06-30"
+            directory.mkdir(parents=True)
+            (directory / "delivery_morning.json").write_text(
+                json.dumps(
+                    {
+                        "trading_date": "2026-06-30",
+                        "slot": "morning",
+                        "frozen_verifier_pass": True,
+                        "unique_page_pass": True,
+                        "word_visual_qa_pass": True,
+                        "context_log_recorded": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            lease = begin_lease("2026-06-30", "morning", root=root)
+            self.assertEqual(lease["slot"], "morning")
+
+    def test_next_slot_begins_after_complete_prior_delivery(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            seed_complete_delivery(root, "2026-06-30", "morning")
+            lease = begin_lease("2026-06-30", "midday", root=root)
+            self.assertEqual(lease["slot"], "midday")
+
+    def test_delivered_slot_stays_blocked_after_current_advances(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            seed_complete_delivery(root, "2026-06-30", "morning")
+            current = root / "runtime_state" / "2026-06-30" / "current.json"
+            current.write_text(
+                json.dumps(
+                    {
+                        "trading_date": "2026-06-30",
+                        "slot": "midday",
+                        "commit_id": "3" * 64,
+                    }
+                ),
+                encoding="utf-8",
+            )
             with self.assertRaisesRegex(RuntimeError, "already delivered"):
                 begin_lease("2026-06-30", "morning", root=root)
+
+    def test_legacy_recorded_delivery_blocks_duplicate_without_publish_payload(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            seed_complete_delivery(root, "2026-06-30", "morning")
+            delivery_path = root / "runtime_state" / "2026-06-30" / "delivery_morning.json"
+            delivery = json.loads(delivery_path.read_text(encoding="utf-8"))
+            delivery["evidence"].pop("context_log_block_sha256")
+            delivery["evidence"].pop("source_binding")
+            delivery_path.write_text(json.dumps(delivery), encoding="utf-8")
+            publish_path = root / "runtime_state" / "2026-06-30" / "publish_morning.json"
+            publish = json.loads(publish_path.read_text(encoding="utf-8"))
+            publish.pop("source_binding")
+            publish_path.write_text(json.dumps(publish), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "already delivered"):
+                begin_lease("2026-06-30", "morning", root=root)
+
+    def test_legacy_v2_delivery_still_counts_when_live_evidence_validates(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            seed_complete_delivery(root, "2026-06-30", "morning")
+            delivery_path = root / "runtime_state" / "2026-06-30" / "delivery_morning.json"
+            delivery = json.loads(delivery_path.read_text(encoding="utf-8"))
+            delivery["evidence"].pop("context_log_block_sha256")
+            delivery["evidence"].pop("source_binding")
+            delivery_path.write_text(json.dumps(delivery), encoding="utf-8")
+            lease = begin_lease("2026-06-30", "midday", root=root)
+            self.assertEqual(lease["slot"], "midday")
 
 
 if __name__ == "__main__":

@@ -23,9 +23,9 @@ $lease = py runtime/session_runner.py begin-session --date 2026-06-29 --slot mid
 $token = $lease.token
 
 # 3. 数据采集，保存输出中的 DELTA_MANIFEST/FULL_CAPTURE_MANIFEST 精确路径
-node tools/browser_capture/capture_delta.js --lease-token $token
+node tools/browser_capture/capture_delta.js --slot midday --lease-token $token
 # 晚报用：
-# node tools/browser_capture/capture_delta.js --evening --lease-token $token
+# node tools/browser_capture/capture_delta.js --slot evening --lease-token $token
 # 早报用：
 # node tools/browser_capture/capture_all.js --slot morning --lease-token $token
 
@@ -47,6 +47,9 @@ py runtime/session_runner.py lock-analysis `
   --confirm-full-analysis `
   --confirm-no-prior-judgment `
   --confirm-max-through-analysis
+
+# `--confirm-five-source-validation` 是历史兼容参数名；2026-07-05 起确认语义为
+# REQUIRED_SOURCES 全部有效（六源：BlockBeats/Coinglass/Exocharts/FedWatch/Farside/TradingView）。
 
 # 6. 锁后读取前序计划，完成撤旧挂新／漂移对照
 py runtime/session_runner.py finalize-post-lock `

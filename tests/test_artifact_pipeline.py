@@ -13,12 +13,71 @@ from outputs.render_from_combined import (
     render_canonical,
     sha256_file,
 )
+from outputs.report_structure_gate import (
+    assert_combined_structure,
+    expected_title,
+    validate_combined_structure,
+)
 from outputs import word_qa
 from outputs import publish_report
+from outputs import notion_push_lib
 from runtime.delivery_evidence import validate_delivery_evidence
+from runtime.session_runner import validate_report_structure
 
 
 class RenderPipelineTests(unittest.TestCase):
+    def _strict_valid_report(self, title: str | None = None) -> list[str]:
+        title = title or "# 2026.7.5 早间日报"
+        return [
+            title,
+            "",
+            "> 北京时间 2026-07-05 08:48-08:58 采集；六源有效。",
+            "",
+            "## ① 正文",
+            "",
+            "## 不能做",
+            "",
+            "不能做：追多。",
+            "",
+            "### 基本面：中性偏空，价格已兑现部分",
+            "",
+            "BlockBeats 与 Farside 提供基本面输入。",
+            "",
+            "### 技术面",
+            "",
+            "盘口（合约）：CVD上升，价格上升，资金费率上升，持仓横盘。",
+            "",
+            "### 解读",
+            "",
+            "盘面：中性偏空。",
+            "",
+            "### 趋势确认",
+            "",
+            "趋势确认：震荡结构。",
+            "",
+            "### 日内支撑/压力",
+            "",
+            "日内支撑：62,600-62,900。日内压力：63,300-63,800。",
+            "",
+            "### 策略",
+            "",
+            "主账户观察。",
+            "",
+            "## ② Maker 计划",
+            "",
+            "BTC（策略）：观望·不挂单。",
+            "",
+            "## ③ 后附",
+            "",
+            "BlockBeats：有效。",
+            "Coinglass：有效。",
+            "Exocharts：有效。",
+            "FedWatch：有效。",
+            "Farside BTC ETF Flow：有效。",
+            "TradingView：有效。",
+            "胜率：56%。风险：观望日无新单。情景：看多与看空路径均已列出。",
+        ]
+
     def test_canonical_render_is_idempotent_and_single_output(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -63,13 +122,62 @@ class RenderPipelineTests(unittest.TestCase):
                 "midday",
             )
 
-    def test_no_h1_gets_safe_slot_title(self):
-        title = preflight(
-            ["## ① 晚间日报正文", "不能做：追空"],
-            "2026-06-30",
-            "evening",
+    def test_strict_no_h1_is_blocked(self):
+        with self.assertRaisesRegex(ValueError, "title.count"):
+            preflight(
+                ["## ① 正文", "不能做：追空"],
+                "2026-07-05",
+                "evening",
+            )
+
+    def test_strict_structure_gate_accepts_canonical_skeleton(self):
+        lines = self._strict_valid_report()
+        self.assertEqual(
+            assert_combined_structure(lines, "2026-07-05", "morning"),
+            expected_title("2026-07-05", "morning"),
         )
-        self.assertEqual(title, "2026-06-30 晚间日报")
+
+    def test_strict_structure_gate_blocks_iso_title_and_missing_body_root(self):
+        bad_title = self._strict_valid_report("# 2026-07-05 早间日报")
+        _, issues = validate_combined_structure(bad_title, "2026-07-05", "morning")
+        self.assertTrue(any(issue.code == "title.display_date" for issue in issues))
+
+        missing_body = [line for line in self._strict_valid_report() if line != "## ① 正文"]
+        _, issues = validate_combined_structure(missing_body, "2026-07-05", "morning")
+        self.assertTrue(any(issue.code == "skeleton.h2_missing" for issue in issues))
+
+    def test_strict_structure_gate_blocks_raw_hr_and_legacy_five_sources(self):
+        lines = self._strict_valid_report()
+        lines.insert(12, "---")
+        lines.append("五源旧口径")
+        _, issues = validate_combined_structure(lines, "2026-07-05", "morning")
+        self.assertTrue(any(issue.code == "markdown.raw_hr" for issue in issues))
+        self.assertTrue(any(issue.code == "sources.legacy_five" for issue in issues))
+
+    def test_strict_structure_gate_requires_farside_as_sixth_source(self):
+        lines = [line for line in self._strict_valid_report() if "Farside" not in line]
+        _, issues = validate_combined_structure(lines, "2026-07-05", "morning")
+        self.assertTrue(
+            any(
+                issue.code == "sources.six_missing" and "Farside" in issue.message
+                for issue in issues
+            )
+        )
+
+    def test_session_runner_blocks_bad_structure_before_lock_or_commit(self):
+        with tempfile.TemporaryDirectory() as td:
+            report = Path(td) / "2026-07-05_morning_combined.md"
+            report.write_text(
+                "# 2026-07-05 早间日报\n\n"
+                "## 不能做：追多\n\n"
+                "### 基本面：中性偏空（细节塞进标题）价格已兑现部分\n\n"
+                "---\n\n"
+                "## ③ 后附\n\n"
+                "BlockBeats / Coinglass / Exocharts / FedWatch / Farside / TradingView\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "report structure gate failed"):
+                validate_report_structure(report, "2026-07-05", "morning")
 
     def test_historical_630_samples_cover_original_failures(self):
         root = Path(__file__).resolve().parents[1]
@@ -83,7 +191,7 @@ class RenderPipelineTests(unittest.TestCase):
             preflight(midday, "2026-06-30", "midday")
         self.assertEqual(
             preflight(evening, "2026-06-30", "evening"),
-            "2026-06-30 晚间日报",
+            "2026.6.30 晚间日报",
         )
         with tempfile.TemporaryDirectory() as td:
             test_root = Path(td)
@@ -99,7 +207,7 @@ class RenderPipelineTests(unittest.TestCase):
             from docx import Document
 
             document = Document(result["docx_path"])
-            self.assertEqual(document.paragraphs[0].text, "2026-06-30 晚间日报")
+            self.assertEqual(document.paragraphs[0].text, "2026.6.30 晚间日报")
 
     def test_third_render_attempt_is_hard_stopped(self):
         with tempfile.TemporaryDirectory() as td:
@@ -235,9 +343,12 @@ class WordQaTests(unittest.TestCase):
 
 
 class DeliveryEvidenceTests(unittest.TestCase):
-    def _seed(self, root: Path) -> tuple[dict, str]:
-        date = "2026-06-30"
-        slot = "morning"
+    def _seed(
+        self,
+        root: Path,
+        date: str = "2026-06-30",
+        slot: str = "morning",
+    ) -> tuple[dict, str]:
         page_id = "38ffda35-a098-817d-8e2b-fa12afe16d8c"
         outputs = root / "outputs"
         state = root / "runtime_state" / date
@@ -265,12 +376,12 @@ class DeliveryEvidenceTests(unittest.TestCase):
         }
         source_binding = {
             "capture_manifest_path": (
-                "runtime_state/2026-06-30/"
-                "captures/morning/full_base_run1234567890abcdef.json"
+                f"runtime_state/{date}/"
+                f"captures/{slot}/full_base_run1234567890abcdef.json"
             ),
             "capture_manifest_sha256": "c" * 64,
             "evidence_snapshot_root": (
-                "runtime_state/2026-06-30/evidence/morning/run1234567890abcdef"
+                f"runtime_state/{date}/evidence/{slot}/run1234567890abcdef"
             ),
             "sources": {},
         }
@@ -406,8 +517,97 @@ class DeliveryEvidenceTests(unittest.TestCase):
                     root=root,
                 )
 
+    def test_strict_delivery_requires_gold_verifier_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current, page_id = self._seed(root, date="2026-07-05")
+            with self.assertRaisesRegex(ValueError, "strict publish quality"):
+                validate_delivery_evidence(
+                    "2026-07-05",
+                    "morning",
+                    page_id,
+                    current=current,
+                    root=root,
+                )
+
+    def test_strict_delivery_accepts_hash_bound_gold_verifier_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current, page_id = self._seed(root, date="2026-07-05")
+            publish = root / "runtime_state" / "2026-07-05" / "publish_morning.json"
+            payload = json.loads(publish.read_text(encoding="utf-8"))
+            payload["notion_payload_shape"] = {
+                "status": "passed",
+                "block_count_before_images": 25,
+                "image_count": 3,
+            }
+            payload["frozen_verifier"] = {
+                "script": "C:\\repo\\outputs\\notion_verify_against_yesterday.py",
+                "args": [page_id, "morning"],
+                "returncode": 0,
+                "stdout": "[PASS] ALL CHECKS PASS\n",
+                "stderr": "",
+            }
+            publish.write_text(json.dumps(payload), encoding="utf-8")
+            evidence = validate_delivery_evidence(
+                "2026-07-05",
+                "morning",
+                page_id,
+                current=current,
+                root=root,
+            )
+            self.assertEqual(evidence["published_at"], payload["published_at"])
+
 
 class PublishEvidenceTests(unittest.TestCase):
+    def _daily_payload_children(self) -> list[dict]:
+        texts = {
+            0: "北京时间 2026-07-05 08:00 采集；六源有效。",
+            1: "不能做：追多",
+            2: "基本面：中性偏空（测试）价格已兑现部分",
+            3: "技术面",
+            4: "盘口（合约）：",
+            5: "CVD上升　价格上升　资金费率上升（为正值）　持仓横盘",
+            6: "解读：中性偏空（测试）",
+            7: "盘面：",
+            8: "日线级别：中性偏空。",
+            9: "小时级别：中性。",
+            10: "趋势确认：震荡结构",
+            11: "日内支撑：62,600-62,900　　日内压力：63,300-63,800",
+            12: "策略",
+            13: "主账户观察。",
+            15: "BTC（策略）：观望·不挂单",
+            16: "当前不挂单。",
+            17: "止盈：今日无新挂单。",
+            18: "止损：今日无新挂单。",
+            19: "防守计划",
+            20: "第一层：无。",
+            21: "第二层：无。",
+            22: "注意事项：无。",
+            23: "取消价≠止损。",
+            24: "独立边界：分析锁前未读取实际仓位。",
+        }
+        blocks = []
+        for index, block_type in enumerate(publish_report.DAILY_PAYLOAD_TYPES):
+            if block_type == "divider":
+                blocks.append({"object": "block", "type": "divider", "divider": {}})
+                continue
+            blocks.append(
+                {
+                    "object": "block",
+                    "type": block_type,
+                    block_type: {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {"content": texts.get(index, "")},
+                            }
+                        ]
+                    },
+                }
+            )
+        return blocks
+
     def _seed_publish_binding(self, root: Path, date: str = "2026-06-30", slot: str = "morning") -> dict:
         state = root / "runtime_state" / date
         snapshot_root = state / "evidence" / slot / "run1234567890abcdef"
@@ -418,6 +618,7 @@ class PublishEvidenceTests(unittest.TestCase):
             "blockbeats": "blockbeats.png",
             "coinglass": "coinglass.png",
             "exocharts": "exocharts.png",
+            "farside_btc_etf": "farside_btc_etf.png",
             "fedwatch": "fedwatch.png",
             "tradingview_1d": "tradingview_btc_1d.png",
             "tradingview_4h": "tradingview_btc_4h.png",
@@ -467,6 +668,30 @@ class PublishEvidenceTests(unittest.TestCase):
         )
         return source_specs
 
+    def test_strict_daily_payload_shape_blocks_notion_render_drift(self):
+        payload = {
+            "verifier_mode": "morning",
+            "title": "🌅 2026.7.5 早间日报（11:00 评分点）",
+            "children": self._daily_payload_children(),
+            "image_after_heading": "基本面",
+            "image_paths": ["a.png", "b.png", "c.png"],
+        }
+        result = publish_report.validate_daily_payload_shape(
+            payload,
+            "2026-07-05",
+            "morning",
+        )
+        self.assertEqual(result["status"], "passed")
+        bad = dict(payload)
+        bad["children"] = list(payload["children"])
+        bad["children"][1] = {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {"rich_text": []},
+        }
+        with self.assertRaisesRegex(ValueError, "block type sequence"):
+            publish_report.validate_daily_payload_shape(bad, "2026-07-05", "morning")
+
     def test_publish_manifest_makes_identical_retry_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -501,7 +726,17 @@ class PublishEvidenceTests(unittest.TestCase):
             ), patch.object(
                 publish_report,
                 "replace_page_transactional",
-                return_value=("page-id", []),
+                return_value=(
+                    "page-id",
+                    [],
+                    {
+                        "label": "FROZEN GOLD VERIFY",
+                        "args": ["page-id", "morning"],
+                        "returncode": 0,
+                        "stdout": "[PASS]\n",
+                        "stderr": "",
+                    },
+                ),
             ) as replace:
                 first = publish_report.publish(payload)
                 second = publish_report.publish(payload)
@@ -517,6 +752,8 @@ class PublishEvidenceTests(unittest.TestCase):
                 ).read_text(encoding="utf-8")
             )
             self.assertTrue(manifest["frozen_verifier_pass"])
+            self.assertEqual(manifest["frozen_verifier"]["returncode"], 0)
+            self.assertIn("[PASS]", manifest["frozen_verifier"]["stdout"])
             self.assertTrue(manifest["unique_page_pass"])
             self.assertIn("source_binding", manifest)
             self.assertEqual(
@@ -639,6 +876,40 @@ class PublishEvidenceTests(unittest.TestCase):
             with patch.object(publish_report, "ROOT", root):
                 with self.assertRaisesRegex(ValueError, "locked evidence snapshot"):
                     publish_report.publish(payload)
+
+
+class NotionDatePageTitleTests(unittest.TestCase):
+    def test_date_page_title_normalizes_iso_and_padded_dotted_dates(self):
+        self.assertEqual(notion_push_lib._date_page_title("2026-07-05"), "2026.7.5")
+        self.assertEqual(notion_push_lib._date_page_title("2026.07.05"), "2026.7.5")
+        self.assertEqual(notion_push_lib._date_page_title("2026.7.5"), "2026.7.5")
+        self.assertEqual(notion_push_lib._date_page_title("manual title"), "manual title")
+
+    def test_ensure_date_page_renames_legacy_iso_page(self):
+        def fake_find(_parent, prefix):
+            return "legacy-id" if prefix == "2026-07-05" else None
+
+        with patch.object(
+            notion_push_lib, "find_child_page", side_effect=fake_find
+        ), patch.object(notion_push_lib, "set_page_title") as rename, patch.object(
+            notion_push_lib, "create_page"
+        ) as create:
+            page_id = notion_push_lib.ensure_date_page("2026-07-05")
+
+        self.assertEqual(page_id, "legacy-id")
+        rename.assert_called_once_with("legacy-id", "2026.7.5")
+        create.assert_not_called()
+
+    def test_ensure_date_page_creates_with_normalized_title(self):
+        with patch.object(
+            notion_push_lib, "find_child_page", return_value=None
+        ), patch.object(
+            notion_push_lib, "create_page", return_value="new-id"
+        ) as create:
+            page_id = notion_push_lib.ensure_date_page("2026-07-06")
+
+        self.assertEqual(page_id, "new-id")
+        create.assert_called_once_with(notion_push_lib.AI_AGENT_PLAN, "2026.7.6", [])
 
 
 if __name__ == "__main__":
