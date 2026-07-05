@@ -93,12 +93,18 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
         return
     shape = publish.get("notion_payload_shape")
     verifier = publish.get("frozen_verifier")
+    expected_payload_count = {
+        "morning": 25,
+        "midday": 25,
+        "evening": 26,
+    }.get(str(publish.get("slot", "")))
     checks = {
         "notion_payload_shape": isinstance(shape, dict),
         "notion_payload_shape_passed": isinstance(shape, dict)
         and shape.get("status") == "passed",
+        "notion_payload_expected_slot": expected_payload_count is not None,
         "notion_payload_block_count": isinstance(shape, dict)
-        and shape.get("block_count_before_images") == 25,
+        and shape.get("block_count_before_images") == expected_payload_count,
         "notion_payload_image_count": isinstance(shape, dict)
         and shape.get("image_count") == 3,
         "frozen_verifier": isinstance(verifier, dict),

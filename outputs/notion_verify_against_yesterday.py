@@ -53,6 +53,17 @@ GOLD = {
     "evening": "373fda35-a098-816d-bd9e-d7227943e9d2",  # 🌙 2026.6.2 晚间
     "review":  "373fda35-a098-81e3-b197-c8d84f7d3e01",  # 🔍 2026.6.2 独立审查
 }
+TEXT_TYPES = {
+    "quote",
+    "heading_1",
+    "heading_2",
+    "heading_3",
+    "paragraph",
+    "callout",
+    "bulleted_list_item",
+    "numbered_list_item",
+}
+FINAL_TEXT_PREFIXES = ("独立边界", "持仓校准")
 
 def children(pid):
     out, cur = [], None
@@ -64,6 +75,48 @@ def children(pid):
         if d.get("has_more"): cur = d["next_cursor"]
         else: break
     return out
+
+
+def _plain_block(block):
+    t = block.get("type")
+    body = block.get(t)
+    if not isinstance(body, dict):
+        return ""
+    parts = []
+    for item in body.get("rich_text", []):
+        if item.get("plain_text") is not None:
+            parts.append(str(item.get("plain_text", "")))
+        else:
+            text = item.get("text")
+            if isinstance(text, dict):
+                parts.append(str(text.get("content", "")))
+    return "".join(parts).strip()
+
+
+def daily_semantic_scan(pid):
+    """Check semantic slots that type/color gates cannot prove."""
+    blocks = children(pid)
+    issues = []
+    text_blocks = []
+    for index, block in enumerate(blocks, 1):
+        block_type = block.get("type")
+        if block_type not in TEXT_TYPES:
+            continue
+        text = _plain_block(block)
+        text_blocks.append((index, block_type, text))
+        if not text:
+            issues.append((index, "empty_text_block", text))
+        if "??" in text:
+            issues.append((index, "encoding_corruption", text))
+    if len(blocks) >= 2:
+        cannot_do = _plain_block(blocks[1])
+        if not cannot_do.startswith("不能做：") or cannot_do == "不能做：":
+            issues.append((2, "cannot_do_incomplete", cannot_do))
+    if text_blocks:
+        last_index, _, last_text = text_blocks[-1]
+        if not last_text.startswith(FINAL_TEXT_PREFIXES):
+            issues.append((last_index, "final_boundary_drift", last_text))
+    return issues
 
 def meta_narrative_scan(pid):
     """元叙事门（2026-06-19·根因修复）：扫【实际已发布 Notion 页】全部块的完整 plain_text，
@@ -150,6 +203,20 @@ def main():
     print(f"\n图片数：今={ia} 标={ib} {'OK' if img_ok else '<<< MISMATCH 基本面配图缺失/多余'}")
     struct_ok = (bad == 0 and img_ok and len(A) == len(B))
 
+    semantic_ok = True
+    if ref in ("morning", "midday", "evening"):
+        semantic_issues = daily_semantic_scan(today)
+        print("\n语义槽位门：检查 不能做/空文本/尾部边界/编码污染", end="")
+        if semantic_issues:
+            semantic_ok = False
+            print("  <<< 槽位漂移")
+            for bi, reason, txt in semantic_issues[:8]:
+                print(f"   blk{bi}: {reason} 「{_disp(txt[:120])}」")
+            if len(semantic_issues) > 8:
+                print(f"   ... 另 {len(semantic_issues) - 8} 处")
+        else:
+            print("  OK")
+
     # ① b 配色门：morning/midday/evening 按情绪词唯一规则逐 run 校验语义配色（review 用分析配色·跳过）
     color_ok = True
     if ref in ("morning", "midday", "evening"):
@@ -168,6 +235,28 @@ def main():
             color_ok = False
             print(f"\n语义配色门：执行失败 {e}")
 
+        try:
+            from daily_color_template import audit_daily_blocks
+            template_viol, template_summary = audit_daily_blocks(children(today))
+            checked = template_summary.get("checked_blocks", 0)
+            print(f"\n金标run级配色门：校验 {checked} 个模板块", end="")
+            if template_viol:
+                color_ok = False
+                print("  <<< run级配色分布漂移")
+                for item in template_viol[:8]:
+                    print(
+                        f"   blk{item.get('block')}: {_disp(str(item.get('text_prefix', '')))} "
+                        f"期望={_disp(str(item.get('expected', ''))[:160])} "
+                        f"实际={_disp(str(item.get('actual', ''))[:160])}"
+                    )
+                if len(template_viol) > 8:
+                    print(f"   ... 另 {len(template_viol) - 8} 处")
+            else:
+                print("  OK")
+        except Exception as e:
+            color_ok = False
+            print(f"\n金标run级配色门：执行失败 {e}")
+
     # ① c 元叙事门：morning/midday/evening 扫实际已发布页全文·禁代号/方法论/分数/门槛（review 用分析配色·豁免）
     meta_ok = True
     if ref in ("morning", "midday", "evening"):
@@ -185,13 +274,14 @@ def main():
             meta_ok = False
             print(f"\n元叙事门：执行失败 {e}")
 
-    if title_ok and struct_ok and color_ok and meta_ok:
-        print("\n[PASS] ALL CHECKS PASS — 标题 + 块类型/块数/图片 对齐金标 + 语义配色符合唯一规则 + 正文无元叙事")
+    if title_ok and struct_ok and semantic_ok and color_ok and meta_ok:
+        print("\n[PASS] ALL CHECKS PASS — 标题 + 块类型/块数/图片 + 语义槽位 对齐金标 + 配色符合唯一规则 + 正文无元叙事")
         return 0
     else:
         msg = []
         if not title_ok: msg.append("标题格式不对齐金标")
         if not struct_ok: msg.append(f"{bad} 块类型不一致" + ("" if img_ok else "+图片数不符") + ("" if len(A)==len(B) else "+块数不符"))
+        if not semantic_ok: msg.append("语义槽位漂移（不能做/空文本/尾部边界/编码）")
         if not color_ok: msg.append("语义配色错配")
         if not meta_ok: msg.append("正文含元叙事（代号/方法论/分数/门槛→改自然语言·移③后附）")
         print(f"\n[FAIL] " + " / ".join(msg) + " —— 必须修复后重跑")

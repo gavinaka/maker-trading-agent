@@ -29,6 +29,7 @@ from notion_push_lib import (
     replace_page_transactional,
     run_report_lint,
 )
+from daily_color_template import style_daily_payload_children
 from report_structure_gate import (
     assert_combined_structure,
     display_date,
@@ -71,7 +72,7 @@ SOURCE_LABEL_FILES = {
     "tradingview_1h": {"tradingview_btc_1h.png"},
     "tradingview_15m": {"tradingview_btc_15m.png"},
 }
-DAILY_PAYLOAD_TYPES = (
+DAILY_PAYLOAD_TYPES_25 = (
     "quote",
     "heading_2",
     "heading_3",
@@ -98,8 +99,14 @@ DAILY_PAYLOAD_TYPES = (
     "paragraph",
     "paragraph",
 )
+DAILY_PAYLOAD_TYPES_26 = DAILY_PAYLOAD_TYPES_25 + ("paragraph",)
+DAILY_PAYLOAD_TYPES_BY_SLOT = {
+    "morning": DAILY_PAYLOAD_TYPES_25,
+    "midday": DAILY_PAYLOAD_TYPES_25,
+    "evening": DAILY_PAYLOAD_TYPES_26,
+}
 DAILY_PAYLOAD_TEXT_PREFIXES = {
-    1: "不能做",
+    1: "不能做：",
     2: "基本面",
     3: "技术面",
     6: "解读",
@@ -109,6 +116,25 @@ DAILY_PAYLOAD_TEXT_PREFIXES = {
     15: "BTC",
     19: "防守计划",
 }
+CRITICAL_REPORT_TEXT_PREFIXES = (
+    "不能做：",
+    "BTC（策略）：",
+    "反弹空：",
+    "高空：",
+    "低空：",
+    "做空：",
+    "低多：",
+    "反弹多：",
+    "高多：",
+    "做多：",
+    "止盈：",
+    "止损：",
+    "第一层：",
+    "第二层：",
+    "注意事项：",
+    "核心：",
+)
+FINAL_TEXT_PREFIXES = ("独立边界", "持仓校准")
 
 
 def _rich_text_plain(block: dict) -> str:
@@ -129,10 +155,19 @@ def _rich_text_plain(block: dict) -> str:
     return "".join(parts).strip()
 
 
+def _report_plain(text: str) -> str:
+    return re.sub(r"\s+", "", text)
+
+
+def _must_exist_in_report(payload_text: str, report_text: str) -> bool:
+    return _report_plain(payload_text) in _report_plain(report_text)
+
+
 def validate_daily_payload_shape(
     payload: dict,
     trading_date: str,
     report_slot: str,
+    report_text: str | None = None,
 ) -> dict:
     """Hard-stop new daily payloads before Notion writes if they drift from gold shape."""
     if payload.get("verifier_mode") not in {"morning", "midday", "evening"}:
@@ -142,15 +177,29 @@ def validate_daily_payload_shape(
     children = payload.get("children")
     if not isinstance(children, list):
         raise ValueError("daily payload shape gate requires children array")
+    expected_types = DAILY_PAYLOAD_TYPES_BY_SLOT[report_slot]
     actual_types = tuple(
         block.get("type") if isinstance(block, dict) else None
         for block in children
     )
-    if actual_types != DAILY_PAYLOAD_TYPES:
+    if actual_types != expected_types:
         raise ValueError(
             "daily Notion payload block type sequence does not match frozen gold shape: "
-            f"expected={list(DAILY_PAYLOAD_TYPES)}, actual={list(actual_types)}"
+            f"expected={list(expected_types)}, actual={list(actual_types)}"
         )
+    text_values = []
+    for index, block in enumerate(children):
+        block_type = block.get("type") if isinstance(block, dict) else None
+        if block_type == "divider":
+            continue
+        text = _rich_text_plain(block)
+        text_values.append((index, text))
+        if not text:
+            raise ValueError(f"daily Notion payload text block {index + 1} is empty")
+        if "??" in text:
+            raise ValueError(
+                f"daily Notion payload text block {index + 1} looks encoding-corrupted: {text!r}"
+            )
     if len(payload.get("image_paths", [])) != 3:
         raise ValueError("daily Notion payload must publish exactly 3 fundamental images")
     if payload.get("image_after_heading") != "基本面":
@@ -174,9 +223,27 @@ def validate_daily_payload_shape(
                 "daily Notion payload text slot drift: "
                 f"block {index + 1} expected prefix {expected_prefix!r}, got {text!r}"
             )
+    final_text = _rich_text_plain(children[-1])
+    if not final_text.startswith(FINAL_TEXT_PREFIXES):
+        raise ValueError(
+            "daily Notion payload final boundary block drift: "
+            f"expected one of {FINAL_TEXT_PREFIXES!r}, got {final_text!r}"
+        )
+    if report_text is not None:
+        for index, text in text_values:
+            if text.startswith(CRITICAL_REPORT_TEXT_PREFIXES) and not _must_exist_in_report(
+                text, report_text
+            ):
+                raise ValueError(
+                    "daily Notion payload critical text is not present in combined report: "
+                    f"block {index + 1} text={text!r}"
+                )
     return {
         "status": "passed",
-        "gold_shape": "2026-06-02 daily 28-block shape excluding inserted images",
+        "gold_shape": (
+            "2026-06-02 daily frozen shape excluding inserted images "
+            f"({len(expected_types)} text blocks for {report_slot})"
+        ),
         "block_count_before_images": len(children),
         "image_count": len(payload["image_paths"]),
     }
@@ -186,12 +253,22 @@ def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) ->
     if not strict_contract_active(trading_date):
         return True
     shape = manifest.get("notion_payload_shape")
+    colors = manifest.get("notion_payload_colors")
+    expected_count = {
+        "morning": 25,
+        "midday": 25,
+        "evening": 26,
+    }.get(str(manifest.get("slot", "")))
     verifier = manifest.get("frozen_verifier")
     return bool(
         isinstance(shape, dict)
         and shape.get("status") == "passed"
-        and shape.get("block_count_before_images") == 25
+        and expected_count is not None
+        and shape.get("block_count_before_images") == expected_count
         and shape.get("image_count") == 3
+        and isinstance(colors, dict)
+        and colors.get("status") == "passed"
+        and colors.get("template") == "daily-gold-run-colors-v1"
         and isinstance(verifier, dict)
         and verifier.get("returncode") == 0
         and "[PASS]" in str(verifier.get("stdout", ""))
@@ -418,7 +495,18 @@ def publish(
             "publish title must use human display date "
             f"{expected_display_date}, not ISO date {trading_date}"
         )
-    payload_shape = validate_daily_payload_shape(payload, trading_date, report_slot)
+    report_text = report.read_text(encoding="utf-8")
+    payload_shape = validate_daily_payload_shape(
+        payload,
+        trading_date,
+        report_slot,
+        report_text=report_text,
+    )
+    payload_colors = (
+        style_daily_payload_children(payload["children"])
+        if payload_shape.get("status") == "passed"
+        else {"status": "skipped", "reason": payload_shape.get("reason")}
+    )
     payload_hash = sha256_file(payload_path)
     report_hash = sha256_file(report)
     source_binding = validate_publish_source_binding(
@@ -517,6 +605,7 @@ def publish(
             "frozen_verifier_pass": True,
             "frozen_verifier": frozen_verifier_evidence,
             "notion_payload_shape": payload_shape,
+            "notion_payload_colors": payload_colors,
             "unique_page_pass": True,
             "archived_pages": archived_pages,
         }

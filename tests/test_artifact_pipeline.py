@@ -21,6 +21,7 @@ from outputs.report_structure_gate import (
 from outputs import word_qa
 from outputs import publish_report
 from outputs import notion_push_lib
+from outputs import daily_color_template
 from runtime.delivery_evidence import validate_delivery_evidence
 from runtime.session_runner import validate_report_structure
 
@@ -560,7 +561,7 @@ class DeliveryEvidenceTests(unittest.TestCase):
 
 
 class PublishEvidenceTests(unittest.TestCase):
-    def _daily_payload_children(self) -> list[dict]:
+    def _daily_payload_children(self, slot: str = "morning") -> list[dict]:
         texts = {
             0: "北京时间 2026-07-05 08:00 采集；六源有效。",
             1: "不能做：追多",
@@ -587,8 +588,10 @@ class PublishEvidenceTests(unittest.TestCase):
             23: "取消价≠止损。",
             24: "独立边界：分析锁前未读取实际仓位。",
         }
+        if slot == "evening":
+            texts[25] = "独立边界：分析锁前未读取实际仓位。"
         blocks = []
-        for index, block_type in enumerate(publish_report.DAILY_PAYLOAD_TYPES):
+        for index, block_type in enumerate(publish_report.DAILY_PAYLOAD_TYPES_BY_SLOT[slot]):
             if block_type == "divider":
                 blocks.append({"object": "block", "type": "divider", "divider": {}})
                 continue
@@ -691,6 +694,211 @@ class PublishEvidenceTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "block type sequence"):
             publish_report.validate_daily_payload_shape(bad, "2026-07-05", "morning")
+
+    def test_strict_daily_payload_shape_accepts_evening_extra_boundary_block(self):
+        payload = {
+            "verifier_mode": "evening",
+            "title": "🌙 2026.7.5 晚间日报（20:00 评分点）",
+            "children": self._daily_payload_children("evening"),
+            "image_after_heading": "基本面",
+            "image_paths": ["a.png", "b.png", "c.png"],
+        }
+        result = publish_report.validate_daily_payload_shape(
+            payload,
+            "2026-07-05",
+            "evening",
+        )
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["block_count_before_images"], 26)
+
+    def test_strict_daily_payload_shape_rejects_incomplete_cannot_do(self):
+        children = self._daily_payload_children("evening")
+        children[1]["heading_2"]["rich_text"][0]["text"]["content"] = "不能做"
+        payload = {
+            "verifier_mode": "evening",
+            "title": "🌙 2026.7.5 晚间日报（20:00 评分点）",
+            "children": children,
+            "image_after_heading": "基本面",
+            "image_paths": ["a.png", "b.png", "c.png"],
+        }
+        with self.assertRaisesRegex(ValueError, "text slot drift"):
+            publish_report.validate_daily_payload_shape(payload, "2026-07-05", "evening")
+
+    def test_strict_daily_payload_shape_rejects_empty_tail_block(self):
+        children = self._daily_payload_children("evening")
+        children[-1] = {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {"rich_text": []},
+        }
+        payload = {
+            "verifier_mode": "evening",
+            "title": "🌙 2026.7.5 晚间日报（20:00 评分点）",
+            "children": children,
+            "image_after_heading": "基本面",
+            "image_paths": ["a.png", "b.png", "c.png"],
+        }
+        with self.assertRaisesRegex(ValueError, "is empty"):
+            publish_report.validate_daily_payload_shape(payload, "2026-07-05", "evening")
+
+    def test_strict_daily_payload_shape_rejects_critical_text_not_in_report(self):
+        children = self._daily_payload_children("evening")
+        children[17]["paragraph"]["rich_text"][0]["text"]["content"] = (
+            "止盈：99,999（TP1）减仓50%。"
+        )
+        payload = {
+            "verifier_mode": "evening",
+            "title": "🌙 2026.7.5 晚间日报（20:00 评分点）",
+            "children": children,
+            "image_after_heading": "基本面",
+            "image_paths": ["a.png", "b.png", "c.png"],
+        }
+        report_text = "\n".join(
+            [
+                "不能做：追多",
+                "BTC（策略）：观望·不挂单",
+                "止盈：今日无新挂单。",
+                "止损：今日无新挂单。",
+                "第一层：无。",
+                "第二层：无。",
+                "注意事项：无。",
+            ]
+        )
+        with self.assertRaisesRegex(ValueError, "critical text"):
+            publish_report.validate_daily_payload_shape(
+                payload,
+                "2026-07-05",
+                "evening",
+                report_text=report_text,
+            )
+
+    def test_daily_color_template_normalizes_gold_run_distribution(self):
+        children = self._daily_payload_children()
+        children[16]["paragraph"]["rich_text"][0]["text"]["content"] = (
+            "低多：入场区间 62,560-62,650，挂单价 62,600"
+        )
+        for index in (2, 3, 6, 10, 15, 16):
+            block = children[index]
+            body = block[block["type"]]
+            body["rich_text"][0]["annotations"] = {"bold": True, "color": "green"}
+        children[17]["paragraph"]["rich_text"][0]["annotations"] = {"color": "green"}
+        children[18]["paragraph"]["rich_text"][0]["annotations"] = {"color": "red"}
+
+        violations, before = daily_color_template.audit_daily_blocks(children)
+        self.assertEqual(before["status"], "failed")
+        self.assertTrue(violations)
+
+        result = daily_color_template.style_daily_payload_children(children)
+        self.assertEqual(result["status"], "passed")
+        self.assertGreater(result["changed_blocks"], 0)
+        violations, after = daily_color_template.audit_daily_blocks(children)
+        self.assertEqual(after["status"], "passed")
+        self.assertEqual(violations, [])
+        self.assertEqual(
+            daily_color_template.actual_signature_for_block(children[15]),
+            [("BTC（策略）：观望·不挂单", "default", False)],
+        )
+        self.assertEqual(
+            daily_color_template.actual_signature_for_block(children[16]),
+            [
+                ("低多：", "green", True),
+                ("入场区间 62,560-62,650，挂单价 62,600", "default", True),
+            ],
+        )
+        self.assertEqual(
+            daily_color_template.actual_signature_for_block(children[17]),
+            [("止盈：今日无新挂单。", "green", True)],
+        )
+        self.assertEqual(
+            daily_color_template.actual_signature_for_block(children[18]),
+            [("止损：今日无新挂单。", "red", True)],
+        )
+
+    def test_daily_color_template_keeps_fundamental_pressure_reason_yellow(self):
+        children = self._daily_payload_children()
+        children[2]["heading_3"]["rich_text"][0]["text"]["content"] = (
+            "基本面：中性偏多（Farside 最新 Bitcoin ETF Flow 为 +223.5 US$m，"
+            "和 7/1 以来价格修复方向一致；但 BlockBeats 的周度 ETF 流出与 "
+            "FedWatch 加息尾部仍压制右侧追涨）价格已兑现部分"
+        )
+        children[10]["heading_3"]["rich_text"][0]["text"]["content"] = (
+            "趋势确认：多头趋势（短线）+ 震荡结构（中短线压力下）"
+        )
+
+        result = daily_color_template.style_daily_payload_children(children)
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(
+            daily_color_template.actual_signature_for_block(children[2]),
+            [
+                ("基本面：", "default", False),
+                ("中性偏多", "green", True),
+                (
+                    "（Farside 最新 Bitcoin ETF Flow 为 +223.5 US$m，"
+                    "和 7/1 以来价格修复方向一致；但 BlockBeats 的周度 ETF 流出与 "
+                    "FedWatch 加息尾部仍压制右侧追涨）",
+                    "yellow",
+                    True,
+                ),
+                ("价格已兑现部分", "green", True),
+            ],
+        )
+        self.assertEqual(
+            daily_color_template.actual_signature_for_block(children[10]),
+            [
+                ("趋势确认：", "default", False),
+                ("多头趋势（短线）+ 震荡结构（中短线压力下）", "green", True),
+            ],
+        )
+
+    def test_daily_color_template_colors_technical_signal_clause(self):
+        children = self._daily_payload_children()
+        children[8]["paragraph"]["rich_text"][0]["text"]["content"] = (
+            "日线级别：价格收在 62,948.90，重新站上日线 SMA20 的 62,038.56，"
+            "但仍远低于 SMA200 的 74,755.74，且上方 63,600 一带尚未有效突破；"
+            "日线属于反弹修复，不是中线反转确认。中性偏多"
+        )
+        children[9]["paragraph"]["rich_text"][0]["text"]["content"] = (
+            "小时级别：4H 收 62,966.15，高 63,104.00，低 62,948.89；"
+            "1H 收 63,021.41，重新站上 1H SMA20 的 62,974.20，"
+            "但 63,180-63,520 仍是近端成交密集压力，"
+            "短线多头结构未破但追涨空间不足。中性偏多"
+        )
+
+        daily_color_template.style_daily_payload_children(children)
+
+        self.assertEqual(
+            daily_color_template.actual_signature_for_block(children[8]),
+            [
+                ("日线级别：价格收在 62,948.90，", "default", False),
+                ("重新站上日线 SMA20 的 62,038.56", "green", True),
+                (
+                    "，但仍远低于 SMA200 的 74,755.74，且上方 63,600 一带尚未有效突破；"
+                    "日线属于反弹修复，不是中线反转确认。",
+                    "default",
+                    False,
+                ),
+                ("中性偏多", "green", True),
+            ],
+        )
+        self.assertEqual(
+            daily_color_template.actual_signature_for_block(children[9]),
+            [
+                (
+                    "小时级别：4H 收 62,966.15，高 63,104.00，低 62,948.89；"
+                    "1H 收 63,021.41，",
+                    "default",
+                    False,
+                ),
+                ("重新站上 1H SMA20 的 62,974.20", "green", True),
+                (
+                    "，但 63,180-63,520 仍是近端成交密集压力，"
+                    "短线多头结构未破但追涨空间不足。",
+                    "default",
+                    False,
+                ),
+                ("中性偏多", "green", True),
+            ],
+        )
 
     def test_publish_manifest_makes_identical_retry_idempotent(self):
         with tempfile.TemporaryDirectory() as td:
