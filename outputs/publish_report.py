@@ -44,6 +44,14 @@ from report_structure_gate import (
     display_date,
     strict_contract_active,
 )
+from review_contract import (
+    CONTRACT_VERSION as REVIEW_CONTRACT_VERSION,
+    REVIEW_FONT_TEMPLATE,
+    SOURCE_KIND as REVIEW_SOURCE_KIND,
+    validate_review_payload_colors,
+    validate_review_payload_shape,
+    validate_review_payload_source,
+)
 from runtime.reasoning_readiness import validate_locked_report_for_output
 from runtime.state_store import atomic_json_write
 from runtime.usage_logger import append_usage
@@ -55,11 +63,11 @@ REQUIRED = {
     "title_prefix",
     "verifier_mode",
     "report_path",
-    "source_specs",
     "children",
     "image_after_heading",
     "image_paths",
 }
+DAILY_REQUIRED = REQUIRED | {"source_specs"}
 def _rich_text_plain(block: dict) -> str:
     block_type = block.get("type")
     body = block.get(block_type)
@@ -178,12 +186,30 @@ def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) ->
     shape = manifest.get("notion_payload_shape")
     colors = manifest.get("notion_payload_colors")
     source = manifest.get("notion_payload_source")
+    verifier = manifest.get("frozen_verifier")
+    if manifest.get("verifier_mode") == "review":
+        return bool(
+            isinstance(shape, dict)
+            and shape.get("status") == "passed"
+            and shape.get("template") == REVIEW_CONTRACT_VERSION
+            and shape.get("block_count_before_images") == 15
+            and shape.get("image_count") == 0
+            and isinstance(colors, dict)
+            and colors.get("status") == "passed"
+            and colors.get("template") == REVIEW_FONT_TEMPLATE
+            and isinstance(source, dict)
+            and source.get("status") == "passed"
+            and source.get("kind") == REVIEW_SOURCE_KIND
+            and source.get("template") == REVIEW_CONTRACT_VERSION
+            and isinstance(verifier, dict)
+            and verifier.get("returncode") == 0
+            and "[PASS]" in str(verifier.get("stdout", ""))
+        )
     expected_count = {
         "morning": 25,
         "midday": 25,
         "evening": 26,
     }.get(str(manifest.get("slot", "")))
-    verifier = manifest.get("frozen_verifier")
     return bool(
         isinstance(shape, dict)
         and shape.get("status") == "passed"
@@ -372,32 +398,37 @@ def publish(
 ) -> dict:
     started = time.perf_counter()
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
-    missing = sorted(REQUIRED - set(payload))
+    mode = payload.get("verifier_mode")
+    required_fields = DAILY_REQUIRED if mode in {"morning", "midday", "evening"} else REQUIRED
+    missing = sorted(required_fields - set(payload))
     if missing:
         raise ValueError(f"publish payload missing fields: {missing}")
-    if payload["verifier_mode"] not in {"morning", "midday", "evening", "review"}:
+    if mode not in {"morning", "midday", "evening", "review"}:
         raise ValueError("unsupported verifier_mode")
     if not isinstance(payload["children"], list):
         raise ValueError("children must be an array of Notion blocks")
-    if not isinstance(payload["source_specs"], dict):
-        raise ValueError("source_specs must be an object")
     if not isinstance(payload["image_paths"], list):
         raise ValueError("image_paths must be an array")
-    missing_sources = sorted(REQUIRED_SOURCE_LABELS - set(payload["source_specs"]))
-    if missing_sources:
-        raise ValueError(
-            "publish payload missing required source specs: " + ", ".join(missing_sources)
-        )
+    if mode != "review":
+        if not isinstance(payload["source_specs"], dict):
+            raise ValueError("source_specs must be an object")
+        missing_sources = sorted(REQUIRED_SOURCE_LABELS - set(payload["source_specs"]))
+        if missing_sources:
+            raise ValueError(
+                "publish payload missing required source specs: "
+                + ", ".join(missing_sources)
+            )
 
     def resolve(path: str) -> str:
         candidate = Path(path)
         return str(candidate if candidate.is_absolute() else (ROOT / candidate).resolve())
 
     source_specs = {}
-    for label, raw in payload["source_specs"].items():
-        spec = {"path": raw} if isinstance(raw, str) else dict(raw)
-        spec["path"] = resolve(spec["path"])
-        source_specs[label] = spec
+    if mode != "review":
+        for label, raw in payload["source_specs"].items():
+            spec = {"path": raw} if isinstance(raw, str) else dict(raw)
+            spec["path"] = resolve(spec["path"])
+            source_specs[label] = spec
 
     report_path = resolve(payload["report_path"])
     image_paths = [resolve(path) for path in payload["image_paths"]]
@@ -410,51 +441,72 @@ def publish(
     if not report_match:
         raise ValueError("report_path must use canonical date/slot naming")
     trading_date, report_slot = report_match.groups()
-    mode = payload["verifier_mode"]
     if mode != "review" and mode != report_slot:
         raise ValueError("verifier_mode does not match report filename slot")
+    if mode == "review" and report_slot != "evening":
+        raise ValueError("review verifier_mode must reference the evening report")
     telemetry_slot = report_slot
-    report_lines = report.read_text(encoding="utf-8").splitlines()
-    assert_combined_structure(report_lines, trading_date, report_slot)
-    validate_locked_report_for_output(
-        trading_date,
-        report_slot,
-        report,
-        root=ROOT,
-    )
+    if mode != "review":
+        report_lines = report.read_text(encoding="utf-8").splitlines()
+        assert_combined_structure(report_lines, trading_date, report_slot)
+        validate_locked_report_for_output(
+            trading_date,
+            report_slot,
+            report,
+            root=ROOT,
+        )
     expected_display_date = display_date(trading_date)
     if expected_display_date not in payload["title"] or trading_date in payload["title"]:
         raise ValueError(
             "publish title must use human display date "
             f"{expected_display_date}, not ISO date {trading_date}"
         )
-    report_text = report.read_text(encoding="utf-8")
-    payload_source = validate_payload_derivation(
-        payload,
-        report,
-        trading_date,
-        report_slot,
-        root=ROOT,
-    )
-    payload_shape = validate_daily_payload_shape(
-        payload,
-        trading_date,
-        report_slot,
-        report_text=report_text,
-    )
-    payload_colors = (
-        style_daily_payload_children(payload["children"])
-        if payload_shape.get("status") == "passed"
-        else {"status": "skipped", "reason": payload_shape.get("reason")}
-    )
+    if mode == "review":
+        payload_source = validate_review_payload_source(
+            payload,
+            report,
+            trading_date,
+            report_slot,
+            root=ROOT,
+        )
+        payload_shape = validate_review_payload_shape(payload, trading_date)
+        payload_colors = validate_review_payload_colors(payload)
+    else:
+        report_text = report.read_text(encoding="utf-8")
+        payload_source = validate_payload_derivation(
+            payload,
+            report,
+            trading_date,
+            report_slot,
+            root=ROOT,
+        )
+        payload_shape = validate_daily_payload_shape(
+            payload,
+            trading_date,
+            report_slot,
+            report_text=report_text,
+        )
+        payload_colors = (
+            style_daily_payload_children(payload["children"])
+            if payload_shape.get("status") == "passed"
+            else {"status": "skipped", "reason": payload_shape.get("reason")}
+        )
     payload_hash = sha256_file(payload_path)
     report_hash = sha256_file(report)
-    source_binding = validate_publish_source_binding(
-        trading_date,
-        report_slot,
-        source_specs,
-        root=ROOT,
-    )
+    if mode == "review":
+        source_binding = {
+            "status": "not_applicable",
+            "reason": "independent_review_uses_review_manifest_binding",
+            "review_manifest": payload_source.get("review_manifest"),
+            "review_manifest_sha256": payload_source.get("review_manifest_sha256"),
+        }
+    else:
+        source_binding = validate_publish_source_binding(
+            trading_date,
+            report_slot,
+            source_specs,
+            root=ROOT,
+        )
     manifest_path = (
         ROOT / "runtime_state" / trading_date / f"publish_{mode}.json"
     )
@@ -502,12 +554,15 @@ def publish(
         "block_count": len(payload["children"]),
         "dry_run": dry_run,
         "notion_payload_source": payload_source,
+        "notion_payload_shape": payload_shape,
+        "notion_payload_colors": payload_colors,
         "source_binding": source_binding,
     }
 
     try:
-        assert_source_freshness(source_specs)
-        run_report_lint(report_path)
+        if mode != "review":
+            assert_source_freshness(source_specs)
+            run_report_lint(report_path)
         if dry_run:
             return summary
 

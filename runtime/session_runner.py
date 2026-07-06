@@ -22,6 +22,12 @@ from runtime.golden_reasoning import (
     build_golden_reasoning_manifest,
     validate_golden_reasoning_manifest,
 )
+from runtime.prelock_guard import (
+    activate_prelock_guard,
+    assert_no_active_prelock_guard,
+    restore_all_active_prelock_guards,
+    restore_prelock_guard,
+)
 from runtime.reasoning_readiness import (
     build_reasoning_readiness_manifest,
     validate_reasoning_readiness_manifest,
@@ -303,6 +309,7 @@ def main() -> int:
         print(json.dumps(lease, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     if args.command == "recover-session":
+        restore_all_active_prelock_guards(reason="recover-session")
         lease = recover_lease(
             args.date,
             args.slot,
@@ -313,6 +320,7 @@ def main() -> int:
         return 0
     if args.command == "abandon-session":
         assert_lease(args.date, args.slot, args.lease_token)
+        restore_prelock_guard(args.date, args.slot, reason="abandon-session")
         closed = abandon_lease(args.lease_token, reason=args.reason)
         print(json.dumps(closed, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
@@ -358,6 +366,7 @@ def main() -> int:
             capture_manifest_path=args.capture_manifest,
             transition_path=target,
         )
+        guard_payload, guard_target = activate_prelock_guard(args.date, args.slot)
         event_id = (
             f"{args.date}:{args.slot}:prepare:{transition['state_version']}:"
             f"{hashlib.sha256(json.dumps(transition['sources'], sort_keys=True).encode()).hexdigest()}"
@@ -380,6 +389,10 @@ def main() -> int:
                 "analysis_policy": transition["analysis_policy"],
                 "collection_mode": transition["collection_mode"],
                 "golden_reasoning_manifest": str(golden_target),
+                "prelock_guard_manifest": str(guard_target),
+                "prelock_guard_quarantined_files": len(
+                    guard_payload.get("entries", [])
+                ),
             },
             **usage_values(args),
         )
@@ -522,6 +535,7 @@ def main() -> int:
                 payload = existing
         else:
             atomic_json_write(target, payload)
+        restore_prelock_guard(args.date, args.slot, reason="analysis_lock_success")
         append_usage(
             trading_date=args.date,
             slot=args.slot,
@@ -544,6 +558,7 @@ def main() -> int:
         return 0
 
     if args.command == "finalize-post-lock":
+        assert_no_active_prelock_guard(args.date, args.slot)
         target = directory / f"analysis_lock_{args.slot}.json"
         analysis_lock = load_object(target)
         required_post_lock = set(transition.get("post_lock_nodes", []))
@@ -589,6 +604,7 @@ def main() -> int:
         return 0
 
     if args.command == "commit":
+        assert_no_active_prelock_guard(args.date, args.slot)
         lock_path = (
             args.analysis_lock.resolve()
             if args.analysis_lock
@@ -647,6 +663,7 @@ def main() -> int:
         return 0
 
     try:
+        assert_no_active_prelock_guard(args.date, args.slot)
         if not PAGE_ID.fullmatch(args.page_id):
             raise ValueError("invalid Notion page id")
         current = load_object(directory / "current.json")

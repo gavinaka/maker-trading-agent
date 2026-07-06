@@ -274,9 +274,16 @@ def assert_source_freshness(source_specs, now_ts=None):
     )
     return ages
 
+def _console_safe_text(text, stream):
+    encoding = getattr(stream, "encoding", None) or "utf-8"
+    return str(text).encode(encoding, "replace").decode(encoding, "replace")
+
+
 def run_python_gate(script_path, args, label):
     """Run a Python quality gate and propagate its exit status."""
     command = [sys.executable, os.path.abspath(script_path), *args]
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
     result = subprocess.run(
         command,
         check=False,
@@ -284,15 +291,16 @@ def run_python_gate(script_path, args, label):
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     if result.stdout:
-        print(result.stdout, end="")
+        print(_console_safe_text(result.stdout, sys.stdout), end="")
     if result.stderr:
-        print(result.stderr, end="", file=sys.stderr)
+        print(_console_safe_text(result.stderr, sys.stderr), end="", file=sys.stderr)
     if result.returncode != 0:
         detail = f"{label} FAILED: exit={result.returncode}"
-        stdout_tail = result.stdout.strip()[-600:]
-        stderr_tail = result.stderr.strip()[-600:]
+        stdout_tail = _console_safe_text(result.stdout.strip()[-600:], sys.stderr)
+        stderr_tail = _console_safe_text(result.stderr.strip()[-600:], sys.stderr)
         if stdout_tail:
             detail += f"; stdout_tail={stdout_tail}"
         if stderr_tail:

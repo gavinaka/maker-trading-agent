@@ -23,6 +23,8 @@ from outputs import publish_report
 from outputs import notion_push_lib
 from outputs import daily_color_template
 from outputs import daily_payload_builder
+from outputs import review_contract
+from outputs import review_payload_builder
 from runtime.delivery_evidence import validate_delivery_evidence
 from runtime.session_runner import validate_report_structure
 
@@ -579,6 +581,147 @@ class DeliveryEvidenceTests(unittest.TestCase):
 
 
 class PublishEvidenceTests(unittest.TestCase):
+    def _text_block(self, block_type: str, text: str) -> dict:
+        return {
+            "object": "block",
+            "type": block_type,
+            block_type: {"rich_text": [{"type": "text", "text": {"content": text}}]},
+        }
+
+    def _table_row(self, cells: list[str]) -> dict:
+        return {
+            "type": "table_row",
+            "table_row": {
+                "cells": [
+                    [{"type": "text", "text": {"content": cell}}]
+                    for cell in cells
+                ]
+            },
+        }
+
+    def _table_block(self, rows: list[list[str]]) -> dict:
+        return {
+            "object": "block",
+            "type": "table",
+            "table": {
+                "table_width": len(rows[0]),
+                "has_column_header": True,
+                "has_row_header": False,
+                "children": [self._table_row(row) for row in rows],
+            },
+        }
+
+    def _review_payload_children(self) -> list[dict]:
+        score_rows = [
+            ["维度", "前一晚报", "当天早报", "当天午报", "综合"],
+            ["方向判断", "72", "66", "88", "75"],
+            ["入场结构", "68", "64", "86", "73"],
+            ["风险框架", "70", "76", "84", "77"],
+            ["数据精度", "74", "67", "82", "74"],
+            ["内在一致性", "71", "69", "85", "75"],
+            ["综合", "71", "68", "85", "75"],
+        ]
+        price_rows = [
+            ["区域", "前序段", "当晚含义", "当前计划处理", "审查意见"],
+            ["63,650-63,850", "当天午报", "反弹空验证区", "等待反抽确认", "午报节奏最接近后续走势"],
+            ["62,940-63,120", "前一晚报", "旧压力带被上刺后失效", "不沿用旧止损", "压力识别有用但宽度不足"],
+            ["62,400-62,760", "当天早报", "低多防守区被跌破", "不追随早报方向", "止损框架有效但方向失效"],
+        ]
+        return [
+            self._text_block(
+                "callout",
+                "审查结论：通过。三段前序计划均已按价格行为倒推评分，当前晚报未复用旧方向。",
+            ),
+            self._text_block("heading_2", "一、综合评分（去系统逻辑 · 独立打分）"),
+            self._table_block(score_rows),
+            self._text_block("heading_2", "二、价格阶梯与三段倒推落点"),
+            self._table_block(price_rows),
+            self._text_block(
+                "callout",
+                "核心矛盾：价格跌破午报支撑，但基本面没有给出同等强度的新增空头证据。",
+            ),
+            self._text_block("heading_2", "三、关键发现"),
+            self._text_block("paragraph", "发现一：前一晚报识别了压力区，但止损宽度不足。"),
+            self._text_block("paragraph", "发现二：当天早报低多方向失效，防守规则仍限制了错误。"),
+            self._text_block("paragraph", "发现三：当天午报反弹空与后续回落最一致。"),
+            self._text_block("paragraph", "发现四：当前晚报应等待反抽质量，不应在低位追空。"),
+            self._text_block("paragraph", "发现五：三段差异来自新价格结构，而不是沿用旧判断。"),
+            self._text_block("paragraph", "发现六：当前计划的有效性取决于反抽区的成交反应。"),
+            self._text_block(
+                "paragraph",
+                "审查边界：本审查仅对前一晚报、当天早报、当天午报与当前晚报做价格行为倒推，不判断账户成交或持仓。",
+            ),
+            self._text_block(
+                "paragraph",
+                "复盘结论：当前晚报可以作为独立计划进入交付，但后续需记录前两段误差来源。",
+            ),
+        ]
+
+    def _review_manifest(self, date: str, report_rel: str, report_sha: str) -> dict:
+        scores = {
+            "方向判断": 70,
+            "入场结构": 71,
+            "风险框架": 72,
+            "数据精度": 73,
+            "内在一致性": 74,
+            "综合": 72,
+        }
+        return {
+            "schema_version": "evening-independent-review-v2",
+            "trading_date": date,
+            "slot": "evening",
+            "report_path": report_rel,
+            "report_sha256": report_sha,
+            "inputs": [
+                {"label": "前一晚报", "path": "outputs/previous_evening.md"},
+                {"label": "当天早报", "path": "outputs/morning.md"},
+                {"label": "当天午报", "path": "outputs/midday.md"},
+                {"label": "当前晚报", "path": report_rel},
+            ],
+            "segments": [
+                {"label": "前一晚报", "scores": dict(scores), "conclusion": "压力识别有用。"},
+                {"label": "当天早报", "scores": dict(scores), "conclusion": "方向失效。"},
+                {"label": "当天午报", "scores": dict(scores), "conclusion": "验证最强。"},
+            ],
+            "page": {
+                "intro": "审查结论：通过。三段前序计划均已按价格行为倒推评分，当前晚报未复用旧方向。",
+                "core_conflict": "核心矛盾：价格跌破午报支撑，但基本面没有给出同等强度的新增空头证据。",
+                "price_ladder": [
+                    {
+                        "zone": "63,650-63,850",
+                        "segment": "当天午报",
+                        "meaning": "反弹空验证区",
+                        "current_plan": "等待反抽确认",
+                        "review": "午报节奏最接近后续走势",
+                    },
+                    {
+                        "zone": "62,940-63,120",
+                        "segment": "前一晚报",
+                        "meaning": "旧压力带被上刺后失效",
+                        "current_plan": "不沿用旧止损",
+                        "review": "压力识别有用但宽度不足",
+                    },
+                    {
+                        "zone": "62,400-62,760",
+                        "segment": "当天早报",
+                        "meaning": "低多防守区被跌破",
+                        "current_plan": "不追随早报方向",
+                        "review": "止损框架有效但方向失效",
+                    },
+                ],
+                "findings": [
+                    "发现一：前一晚报识别了压力区，但止损宽度不足。",
+                    "发现二：当天早报低多方向失效，防守规则仍限制了错误。",
+                    "发现三：当天午报反弹空与后续回落最一致。",
+                    "发现四：当前晚报应等待反抽质量，不应在低位追空。",
+                    "发现五：三段差异来自新价格结构，而不是沿用旧判断。",
+                    "发现六：当前计划的有效性取决于反抽区的成交反应。",
+                ],
+                "boundary": "审查边界：本审查仅对前一晚报、当天早报、当天午报与当前晚报做价格行为倒推，不判断账户成交或持仓。",
+                "final_conclusion": "复盘结论：当前晚报可以作为独立计划进入交付，但后续需记录前两段误差来源。",
+            },
+        }
+
     def _daily_payload_children(self, slot: str = "morning") -> list[dict]:
         texts = {
             0: "北京时间 2026-07-05 08:00 采集；六源有效。",
@@ -916,6 +1059,202 @@ class PublishEvidenceTests(unittest.TestCase):
                 "evening",
                 report_text=report_text,
             )
+
+    def test_review_payload_contract_accepts_dimension_three_segment_shape(self):
+        payload = {
+            "date": "2026-07-05",
+            "title": "🔍 2026.7.5 晚间独立审查（倒推）",
+            "title_prefix": "🔍",
+            "verifier_mode": "review",
+            "children": self._review_payload_children(),
+            "image_after_heading": "",
+            "image_paths": [],
+        }
+        result = review_contract.validate_review_payload_shape(payload, "2026-07-05")
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["template"], review_contract.CONTRACT_VERSION)
+        self.assertEqual(result["segments"], ["前一晚报", "当天早报", "当天午报"])
+
+    def test_review_payload_color_contract_rejects_unstyled_review_payload(self):
+        payload = {
+            "date": "2026-07-05",
+            "title": "🔍 2026.7.5 晚间独立审查（倒推）",
+            "title_prefix": "🔍",
+            "verifier_mode": "review",
+            "children": self._review_payload_children(),
+            "image_after_heading": "",
+            "image_paths": [],
+        }
+        with self.assertRaisesRegex(ValueError, "must render"):
+            review_contract.validate_review_payload_colors(payload)
+
+    def test_review_payload_contract_rejects_single_score_table_drift(self):
+        children = self._review_payload_children()
+        children[1] = self._text_block("heading_2", "一、三段倒推评分")
+        children[2] = self._table_block(
+            [
+                ["审查段落", "原计划核心", "后续验证", "评分", "结论"],
+                ["前一晚报", "反弹空", "上刺失效", "62", "压力识别有用"],
+                ["当天早报", "低多", "方向失效", "58", "止损有保护"],
+                ["当天午报", "反弹空", "回落验证", "87", "节奏最强"],
+            ]
+        )
+        payload = {
+            "date": "2026-07-05",
+            "title": "🔍 2026.7.5 晚间独立审查（倒推）",
+            "title_prefix": "🔍",
+            "verifier_mode": "review",
+            "children": children,
+            "image_after_heading": "",
+            "image_paths": [],
+        }
+        with self.assertRaisesRegex(ValueError, "综合评分"):
+            review_contract.validate_review_payload_shape(payload, "2026-07-05")
+
+    def test_review_payload_contract_rejects_visible_system_terms(self):
+        children = self._review_payload_children()
+        children[7] = self._text_block(
+            "paragraph",
+            "发现一：analysis_lock 后没有回写 combined。",
+        )
+        payload = {
+            "date": "2026-07-05",
+            "title": "🔍 2026.7.5 晚间独立审查（倒推）",
+            "title_prefix": "🔍",
+            "verifier_mode": "review",
+            "children": children,
+            "image_after_heading": "",
+            "image_paths": [],
+        }
+        with self.assertRaisesRegex(ValueError, "system/process"):
+            review_contract.validate_review_payload_shape(payload, "2026-07-05")
+
+    def test_review_payload_source_rejects_old_single_score_manifest(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_evening_combined.md"
+            report.write_text(
+                self._strict_daily_combined_text(date, "evening"),
+                encoding="utf-8",
+            )
+            report_rel = "outputs/2026-07-05_evening_combined.md"
+            report_sha = sha256_file(report)
+            manifest_dir = root / "runtime_state" / date
+            manifest_dir.mkdir(parents=True)
+            manifest = manifest_dir / "evening_independent_review.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "evening-independent-review-v1",
+                        "trading_date": date,
+                        "slot": "evening",
+                        "report_path": report_rel,
+                        "report_sha256": report_sha,
+                        "inputs": [
+                            {"label": "前一晚报"},
+                            {"label": "当天早报"},
+                            {"label": "当天午报"},
+                        ],
+                        "segments": [
+                            {"segment": "前一晚报 -> 今日盘中", "score": 62},
+                            {"segment": "当天早报 -> 午后/晚间", "score": 58},
+                            {"segment": "当天午报 -> 晚间", "score": 87},
+                        ],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            children = self._review_payload_children()
+            payload = {
+                "verifier_mode": "review",
+                "children": children,
+                "payload_source": {
+                    "schema_version": review_contract.SOURCE_SCHEMA_VERSION,
+                    "kind": review_contract.SOURCE_KIND,
+                    "contract_version": review_contract.CONTRACT_VERSION,
+                    "review_manifest": "runtime_state/2026-07-05/evening_independent_review.json",
+                    "review_manifest_sha256": sha256_file(manifest),
+                    "report_path": report_rel,
+                    "report_sha256": report_sha,
+                    "children_signature_sha256": review_contract.review_children_signature(children),
+                },
+            }
+            with self.assertRaisesRegex(ValueError, "schema_version"):
+                review_contract.validate_review_payload_source(
+                    payload,
+                    report,
+                    date,
+                    "evening",
+                    root=root,
+                )
+
+    def test_publish_review_dry_run_records_review_contract_evidence_without_daily_sources(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_evening_combined.md"
+            report.write_text(
+                self._strict_daily_combined_text(date, "evening"),
+                encoding="utf-8",
+            )
+            report_rel = "outputs/2026-07-05_evening_combined.md"
+            report_sha = sha256_file(report)
+            manifest_dir = root / "runtime_state" / date
+            manifest_dir.mkdir(parents=True)
+            manifest = manifest_dir / "evening_independent_review.json"
+            manifest.write_text(
+                json.dumps(
+                    self._review_manifest(date, report_rel, report_sha),
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            payload_obj = review_payload_builder.build_review_payload(
+                manifest,
+                root=root,
+            )
+            color_evidence = review_contract.validate_review_payload_colors(payload_obj)
+            self.assertEqual(color_evidence["status"], "passed")
+            self.assertEqual(color_evidence["template"], review_contract.REVIEW_FONT_TEMPLATE)
+            payload = outputs / "review_payload.json"
+            payload.write_text(
+                json.dumps(payload_obj, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            with patch.object(publish_report, "ROOT", root), patch.object(
+                publish_report,
+                "assert_source_freshness",
+                side_effect=AssertionError("daily source freshness must not run for review"),
+            ), patch.object(
+                publish_report,
+                "run_report_lint",
+                side_effect=AssertionError("daily report lint must not run for review"),
+            ):
+                result = publish_report.publish(payload, dry_run=True)
+            self.assertEqual(result["notion_payload_shape"]["status"], "passed")
+            self.assertEqual(
+                result["notion_payload_source"]["kind"],
+                review_contract.SOURCE_KIND,
+            )
+            self.assertEqual(
+                result["notion_payload_source"]["template"],
+                review_contract.CONTRACT_VERSION,
+            )
+            self.assertEqual(result["notion_payload_colors"]["status"], "passed")
+            self.assertEqual(
+                result["notion_payload_colors"]["template"],
+                review_contract.REVIEW_FONT_TEMPLATE,
+            )
+            self.assertEqual(result["source_binding"]["status"], "not_applicable")
+            self.assertNotIn("source_specs", payload_obj)
+            self.assertEqual(payload_obj["image_paths"], [])
 
     def test_daily_payload_builder_derives_payload_from_combined_and_snapshot(self):
         with tempfile.TemporaryDirectory() as td:

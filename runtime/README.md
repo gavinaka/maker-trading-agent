@@ -37,6 +37,9 @@ py runtime/session_runner.py prepare `
   --lease-token $token `
   --max-reasoning-confirmed
 
+# prepare 会启用 pre-lock guard：临时隐藏 context_log、前序 analysis/decision
+# 和前序报告输出，直到 lock-analysis 成功或 session 被 abandon/recover。
+
 # 5. 完成 MAX 独立分析、combined.md 与 lint 后锁定
 py runtime/session_runner.py lock-analysis `
   --date 2026-06-29 `
@@ -91,6 +94,7 @@ py runtime/session_runner.py deliver `
 - `report_state_extract.py`：锁定后归档报告分析，禁止下时段复用。
 - `intent_router.py`：本工作区早／午／晚日报的隔离意图分类。
 - `usage_logger.py`：记录耗时、重试、回退和真实 Token。
+- `prelock_guard.py`：在分析锁前临时隔离前序判断材料，锁后或中断时恢复。
 - `session_runner.py`：prepare／lock-analysis／finalize-post-lock／commit／deliver 统一入口。
 
 运行产物位于 `runtime_state/<YYYY-MM-DD>/`，已加入 `.gitignore`。

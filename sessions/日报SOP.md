@@ -70,6 +70,7 @@
 3. 数据源 SHA-256 与依赖图只解释“哪里发生变化”，绝不授权复用分析。三节点每次固定重算完整分析图。
 4. 分析结论与决策分别归档为 `analysis_<slot>.json`／`decision_<slot>.json`，均为 post-lock only，禁止进入下一节点分析前上下文。
 5. 采集完成后、进入源验真前必须确认宿主为最高可用模型且 Effort=`Max`，并以 `session_runner.py prepare ... --capture-manifest <精确路径> --lease-token <token> --max-reasoning-confirmed` 留下机械确认；缺任一项硬停。从源验真至审查结束全部使用 MAX 思考预算。
+   `prepare` 会同步启用 `runtime/prelock_guard.py`：在分析锁建立前，`sessions/context_log.md`、前序 `analysis_*.json`／`decision_*.json`、前序 combined/payload/render 输出会被临时移入 `runtime_state/<date>/.prelock_quarantine/<slot>/`，并记录 `runtime_state/<date>/prelock_guard_<slot>.json`。任何人工或自动化不得绕过、手动恢复或读取隔离区内容。`lock-analysis` 成功后自动恢复给锁后连续性/独立审查使用；`abandon-session`／`recover-session` 必须恢复后退出。
 6. 🟥 **pre-MD 推理就绪门（2026-07-06 午报起）**：正式 `outputs/<date>_<slot>_combined.md` 生成前，必须先完成内部推理工作稿 `runtime_state/<date>/reasoning_work_<slot>.md`，覆盖六源准确性、pivot/CVD/SMA20/VRVP 承重点、盘口/盘面/总分合成链、胜率 rubric 链、方向反证/失效路径、风险验算。随后运行 `session_runner.py certify-reasoning --date <date> --slot <slot> --work-file runtime_state/<date>/reasoning_work_<slot>.md --capture-manifest <精确路径> --lease-token <token> --confirm-six-source-accuracy --confirm-critical-data-calibrated --confirm-score-winrate-risk-refutation --confirm-no-formal-md-written --confirm-no-posthoc-reasoning --confirm-max-reasoning`。缺 readiness 或 readiness 晚于 MD，`lock-analysis`、Word render、Notion publish 全部硬停。
 7. 完整独立分析和 combined.md 通过 lint 后，必须先运行 `session_runner.py lock-analysis` 建立与报告哈希绑定的分析锁，再允许读取前序计划。
 8. 锁后完成撤旧挂新／漂移对照；晚报同时完成三段独立审查。运行 `session_runner.py finalize-post-lock` 后才可 commit；缺分析锁、post-lock 门、六源覆盖或任一完整分析节点时硬停。
@@ -181,7 +182,7 @@
 - 🟢 早报直接建 `🌅` 子页写入（不平铺到日期页）→ 午报新增 `🌇` 子页 → 晚报只新增 `🌙`+`🔍`，四子页同级共存、永不迁移（2026-06-20 三节点）。午报用 `push_subpage(date_str, "🌇 2026.M.D 午间", ...)`，去重前缀 `🌇`。
 - 🟥 正文发布结构＝字段含义/块序/快讯卡/配色机械门通过；旧 Word/冻结金标版式只要求接近 100%（见 `memory/basemian-needs-news-cards.md`）：早报/午报对早间骨架、晚报对晚间骨架；「基本面」后 3 张快讯卡；块型与逐 run 配色沿用既定唯一规则。2026-07-05 起参数化发布必须在写入 Notion 前套 `daily-gold-run-colors-v1`：标签默认色；基本面括号内理由整段 yellow，只有独立的「价格已兑现/价格已部分兑现」短语 green；日线/小时级别的关键技术判断句（如重新站上/跌破 SMA、趋势线压制）单独上色；趋势确认整段结论按主方向上色；支撑/压力/止盈/止损/策略/注意事项按 6/2 手写金标 run 级分布上色；禁止把整段 heading 或 Maker 行粗暴染成同一种颜色。
 - 🟥🟥 **同名页事务式替换（2026-06-27 根因修复）**：统一调用 `replace_page_transactional(...)`，严格按「snapshot 全部旧页 → 唯一 staging 标题建新页 → 上传三图 → `verify_published` → 改最终标题 → frozen verifier → 归档全部旧页 → 同前缀唯一存活检查」执行。**禁止先归档旧页再 create_page**。准备阶段失败只回滚 staging 页并保留旧页；提交阶段清旧失败则保留已验证新页并硬停，宁可短暂重复、不可全失。
-- 🟥 **任何 Notion 写入前硬门**：`assert_source_freshness(...)`（核心评分源≤4h；BlockBeats/FedWatch至少当日）→ `run_report_lint(...)`。任一失败立即退出，不允许静默跳过或以“仅推送”名义发布过期可执行计划。
+- 🟥 **日报正文 Notion 写入前硬门**：`assert_source_freshness(...)`（核心评分源≤4h；BlockBeats/FedWatch至少当日）→ `run_report_lint(...)`。任一失败立即退出，不允许静默跳过或以“仅推送”名义发布过期可执行计划。晚间独立审查页走 §5.3 的 review contract，禁止套用日报 freshness/lint/source-binding 门。
 
 ### 5.2 机械三门＝完成判据（宪法级·全 PASS 才算完成、才回复用户·见 `memory/stability-contract.md` 与 `memory/notion-publish-checklist.md`）
 - **门②反幻觉 lint（push 前硬门）**：`py outputs/report_lint.py outputs/{date}_{morning|midday|evening}_combined.md` → `[PASS]`（0 HARD）才能 push；WARN 逐条人工确认。**含 Maker 仓位帐门（2026-06-11 加）**：防守层出现减仓/平仓百分比、或 TP1 部分止盈而无 TP2 清仓档（帐不闭合）＝HARD。
@@ -192,8 +193,9 @@
 - ⚠️ verifier 与 lint 脚本禁 print emoji（PS 控制台 GBK 崩）。
 
 ### 5.3 晚报链 B 专属·必做（见 `memory/evening-review-visual-to-notion.md`）
-- 晚报收工额外产《可视化独立审查报告》：去系统逻辑；出 HTML 仪表盘 `outputs/{date}_独立审查报告.html`，并记入当日日期页子页 `🔍 ...晚间独立审查（倒推）`（与🌅/🌇/🌙同级）。早报/午报不出审查。
+- 晚报收工额外产《Notion 原生块独立审查报告》：去系统逻辑；不再生成 HTML/截图/Word/PDF 审查产物；只记入当日日期页子页 `🔍 ...晚间独立审查（倒推）`（与🌅/🌇/🌙同级）。早报/午报不出审查。
 - 🟥🟥 **倒推范围＝三段·缺一即口径违规（2026-06-20 随午报新增节点·由双段扩为三段；原双段铁律见 2026-06-12 锁死缘由）**：**段一＝前一天晚报**（隔夜→今日走势检验）＋**段二＝当天早报**（早→午走势检验）＋**段三＝当天午报**（午→晚走势检验）；缺某一节点稿时按实际存在的相邻报告顺次单/双段（如午报缺则退回双段·6/10 单段先例同理）。评分表/价格阶梯/关键发现三段都须覆盖。
+- 🟥 **独立审查发布硬门（2026-07-06 根因修复）**：`review` 不再走 non-daily skip。先写 `runtime_state/<date>/evening_independent_review.json`（`evening-independent-review-v2`），再用 `py outputs/review_payload_builder.py runtime_state/<date>/evening_independent_review.json` 生成 payload。发布前 `outputs/review_contract.py` 必须通过：首表为五维×三段评分，价格阶梯表覆盖三段，`review-font-rendering-v1` 必须逐项校验 `rich_text.annotations.color/bold`（评分表分数、价格阶梯三段标签/审查意见、六条发现、边界、结论均不得默认无样式），用户可见内容不得出现 runner/锁/commit/payload/verifier/Word-QA/context_log 等系统执行词；`payload_source` 必须绑定 manifest、report hash 与 children signature。review 发布不得要求或验证日报 `source_specs`、不得触发日报 freshness/lint/source-binding 门、不得改动早/午/晚任何报告产物。发布后 `py outputs/notion_verify_against_yesterday.py <page_id> review` 必须用同一 contract 拉取 table 子行并校验字体颜色到 `[PASS]`，否则归档重建。
 
 ### 5.4 收尾杂项
 - render manifest、Word QA manifest（`status=passed`）、publish manifest、线上 verifier＋唯一存活页全部形成后才写 `context_log.md`（倒序，新日期块在顶）；必须写最终 page id、发布时间与 PASS。`context_log` 与 delivery 的时间必须晚于真实 DOCX／PDF／PNG／视觉审核证据，禁止在证据出现前声明 PASS。
@@ -205,6 +207,6 @@
 
 ### 5.5 收工触发器（Claude Code 旧机制平移到 Codex）
 - 用户说「收工」「如无问题即收工」「完成后收工」，或助手准备回复“完成/已交付”时，必须触发本节；不得把“我认为差不多了”当完成。
-- **日报交付型收工**：必须同时满足 `report_lint`/时效门、canonical render manifest、Word-QA `status=passed`、publish manifest、线上 verifier `[PASS]` 且退出码 0、同前缀唯一存活页、最终 `context_log.md`、`session_runner.py deliver` 成功、`retention_cleanup_<slot>.json` 形成、`sessions/_*.txt` 清理完成；晚报还必须完成 §5.3 独立审查 artifact 与 Notion 子页。缺任一项＝未收工，只能报告阻塞点。
+- **日报交付型收工**：必须同时满足 `report_lint`/时效门、canonical render manifest、Word-QA `status=passed`、publish manifest、线上 verifier `[PASS]` 且退出码 0、同前缀唯一存活页、最终 `context_log.md`、`session_runner.py deliver` 成功、`retention_cleanup_<slot>.json` 形成、`sessions/_*.txt` 清理完成；晚报还必须完成 §5.3 独立审查 manifest/payload 与 Notion 子页，不生成 HTML/截图/Word/PDF 审查产物。缺任一项＝未收工，只能报告阻塞点。
 - **工作流维护/审计型收工**（不发布日报时适用）：必须完成本次范围内的权威文件/测试/审计更新，跑相关回归检查，若用户明确要求 commit 则只 stage 本次范围文件并提交；最终回复必须列出验证结果、commit hash（如有）和仍存在的无关脏文件边界。
 - 完成回复只允许基于真实工具输出和 manifest；禁止用布尔自证、口头 PASS、未验证截图或未核 exit code 代替证据。

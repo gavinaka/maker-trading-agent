@@ -77,6 +77,20 @@ def children(pid):
     return out
 
 
+def _with_table_children(blocks):
+    enriched = []
+    for block in blocks:
+        if block.get("type") != "table" or not block.get("id"):
+            enriched.append(block)
+            continue
+        copy = dict(block)
+        table = dict(copy.get("table") or {})
+        table["children"] = children(block["id"])
+        copy["table"] = table
+        enriched.append(copy)
+    return enriched
+
+
 def _plain_block(block):
     t = block.get("type")
     body = block.get(t)
@@ -140,6 +154,19 @@ def meta_narrative_scan(pid):
             if m:
                 hits.append((bi, desc, m.group(0), txt[:48]))
     return hits
+
+
+def review_semantic_scan(pid, title):
+    """Review-specific semantic contract gate for the actual published page."""
+    try:
+        from review_contract import validate_review_blocks, validate_review_payload_colors
+
+        blocks = _with_table_children(children(pid))
+        validate_review_blocks(blocks, title=title)
+        validate_review_payload_colors({"verifier_mode": "review", "children": blocks})
+        return []
+    except Exception as exc:
+        return [str(exc)]
 
 
 def profile(pid):
@@ -216,6 +243,18 @@ def main():
                 print(f"   ... 另 {len(semantic_issues) - 8} 处")
         else:
             print("  OK")
+    elif ref == "review":
+        review_issues = review_semantic_scan(today, ta)
+        print("\nReview contract gate: independent dimensions / three segments / no system terms", end="")
+        if review_issues:
+            semantic_ok = False
+            print("  <<< REVIEW CONTRACT DRIFT")
+            for issue in review_issues[:8]:
+                print(f"   {_disp(issue[:180])}")
+            if len(review_issues) > 8:
+                print(f"   ... plus {len(review_issues) - 8} more")
+        else:
+            print("  OK")
 
     # ① b 配色门：morning/midday/evening 按情绪词唯一规则逐 run 校验语义配色（review 用分析配色·跳过）
     color_ok = True
@@ -281,7 +320,11 @@ def main():
         msg = []
         if not title_ok: msg.append("标题格式不对齐金标")
         if not struct_ok: msg.append(f"{bad} 块类型不一致" + ("" if img_ok else "+图片数不符") + ("" if len(A)==len(B) else "+块数不符"))
-        if not semantic_ok: msg.append("语义槽位漂移（不能做/空文本/尾部边界/编码）")
+        if not semantic_ok:
+            if ref == "review":
+                msg.append("review contract drift (dimensions/segments/system terms)")
+            else:
+                msg.append("语义槽位漂移（不能做/空文本/尾部边界/编码）")
         if not color_ok: msg.append("语义配色错配")
         if not meta_ok: msg.append("正文含元叙事（代号/方法论/分数/门槛→改自然语言·移③后附）")
         print(f"\n[FAIL] " + " / ".join(msg) + " —— 必须修复后重跑")
