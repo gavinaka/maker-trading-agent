@@ -74,6 +74,12 @@ py runtime/session_runner.py deliver `
   --lease-token $token
 ```
 
+`deliver` 成功后会自动执行保留期清理，并写入
+`runtime_state/<date>/retention_cleanup_<slot>.json`。默认保留最近
+`REPORT_RETENTION_KEEP_DAYS=2` 天的可回查证据，超过保留期后长期只保留
+本地 Word 底稿、Notion 页面和最小交付状态；排障时才使用
+`--skip-retention-cleanup` 临时跳过。
+
 禁止使用不能携带整链租约的旧 `npm run all` / `npm run delta` 快捷入口。
 
 ## 文件职责

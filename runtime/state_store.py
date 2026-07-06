@@ -24,6 +24,8 @@ from runtime.dependency_graph import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+_REASONING_READINESS_FROM = "2026-07-06"
+_REASONING_READINESS_EXEMPT = ("2026-07-06", "morning")
 LOGIC_FILES = {
     "daily_skill": ".agents/skills/daily-report/SKILL.md",
     "daily_sop": "sessions/日报SOP.md",
@@ -76,6 +78,10 @@ LOGIC_FILES = {
     "footprint_agent": "agents/footprint_agent.md",
     "penalty_agent": "agents/penalty_agent.md",
 }
+
+
+def _reasoning_readiness_required(trading_date: str, slot: str) -> bool:
+    return (trading_date, slot) != _REASONING_READINESS_EXEMPT and trading_date >= _REASONING_READINESS_FROM
 SLOT_ORDER = {"morning": 1, "midday": 2, "evening": 3}
 PRIOR_SLOT = {"midday": "morning", "evening": "midday"}
 RESOLVED_STATE_KEYS = {
@@ -592,6 +598,15 @@ def commit_transition(
         ),
     }
     validation = analysis_lock.get("analysis_validation", {})
+    reasoning_ready = (
+        not _reasoning_readiness_required(trading_date, slot)
+        or (
+            isinstance(validation, dict)
+            and validation.get("reasoning_readiness_pre_md") is True
+            and validation.get("reasoning_readiness_policy")
+            == "pre_md_reasoning_depth_certified_no_posthoc_rationale"
+        )
+    )
     lock_checks["analysis_validation"] = (
         isinstance(validation, dict)
         and validation.get("lint_passed") is True
@@ -599,6 +614,7 @@ def commit_transition(
         and validation.get("report_state_omissions") == []
         and validation.get("source_coverage_validated") is True
         and validation.get("position_coupling_absent") is True
+        and reasoning_ready
     )
     failed_checks = sorted(name for name, passed in lock_checks.items() if not passed)
     if failed_checks:

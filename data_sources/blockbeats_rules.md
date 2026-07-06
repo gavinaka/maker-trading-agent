@@ -20,6 +20,25 @@ https://www.theblockbeats.info/newsflash
 - 合成基本面方向时 **Tier 1 主导，Tier 2 不得翻转 Tier 1 方向**（详见 `agents/news_agent.md` Step 3）。
 - 该基本面方向主要服务**中线（基本面>盘面>盘口）**；对**日内 Maker（盘口>盘面>基本面）**仅作风险否决/降频。
 
+## 机械排序优先级：分桶先于关键词加分（2026-07-06 午报起）
+
+采集器必须先判断事件与 BTC 交易系统的直接相关性，再打分。排序顺序为：
+
+1. `macro_policy`：Fed/FOMC/利率/CPI/PCE/非农/美元指数或美元走势/美债等直接宏观政策，或宏观语境中的流动性变化。
+2. `regulatory_policy`：SEC/CFTC/ETF 批准拒绝/数字资产政策/稳定币法案等加密监管事件。
+3. `btc_etf_flow`：BTC 现货 ETF、IBIT/GBTC/FBTC/ARKB、Farside、BTC 资金净流入/净流出。
+4. `crypto_market_structure`：BTC/ETH/链上/清算/供应/行情结构等会影响盘面解释的加密市场结构。
+5. `exchange_security_whale`：交易所、安全、黑客、链上鲸鱼等事件。
+6. `eth_sector`：ETH 或项目技术事件。
+7. `secondary_sector`：AI、美股、芯片、存储、电池等非 BTC 二级行业叙事。
+8. `meme_other`：Meme 或其他弱 BTC 相关内容。
+
+关键约束：
+- `流动性`只有和 Fed/FOMC/美元指数或美元走势/美债/央行/利率/QT/QE/通胀等宏观语境共现时，才能进入宏观政策桶；单纯“万美元/亿美元”金额单位不得触发宏观桶。
+- `需求`不能单独触发 ETF/资金流加分；必须与 BTC ETF、IBIT、GBTC、Farside、净流入/净流出等共现。
+- Meme、个人投资复盘、AI/存储/芯片等非 BTC 叙事可以保留在 `candidate_rows`，但没有 BTC/ETF/宏观/监管直接语境时，不能挤进 top3。
+- `analysis_priority` 必须保留 `tier/category/score/reasons` 兼容字段，并新增 `priority_bucket/bucket_rank/directness/directness_label` 供审计。
+
 ---
 
 # 硬性规则

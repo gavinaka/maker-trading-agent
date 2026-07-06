@@ -22,6 +22,11 @@ from runtime.golden_reasoning import (
     build_golden_reasoning_manifest,
     validate_golden_reasoning_manifest,
 )
+from runtime.reasoning_readiness import (
+    build_reasoning_readiness_manifest,
+    validate_reasoning_readiness_manifest,
+)
+from runtime.report_retention import configured_keep_days, run_retention_cleanup
 from runtime.report_state_extract import extract_report_state, validate_report_state
 from runtime.state_store import (
     atomic_json_write,
@@ -196,6 +201,46 @@ def main() -> int:
     add_lease_argument(lock_analysis)
     add_usage_arguments(lock_analysis)
 
+    certify = sub.add_parser("certify-reasoning")
+    certify.add_argument("--date", required=True)
+    certify.add_argument(
+        "--slot", required=True, choices=("morning", "midday", "evening")
+    )
+    certify.add_argument("--work-file", required=True, type=Path)
+    certify.add_argument("--capture-manifest", required=True, type=Path)
+    certify.add_argument(
+        "--confirm-six-source-accuracy",
+        action="store_true",
+        required=True,
+    )
+    certify.add_argument(
+        "--confirm-critical-data-calibrated",
+        action="store_true",
+        required=True,
+    )
+    certify.add_argument(
+        "--confirm-score-winrate-risk-refutation",
+        action="store_true",
+        required=True,
+    )
+    certify.add_argument(
+        "--confirm-no-formal-md-written",
+        action="store_true",
+        required=True,
+    )
+    certify.add_argument(
+        "--confirm-no-posthoc-reasoning",
+        action="store_true",
+        required=True,
+    )
+    certify.add_argument(
+        "--confirm-max-reasoning",
+        action="store_true",
+        required=True,
+    )
+    add_lease_argument(certify)
+    add_usage_arguments(certify)
+
     finalize = sub.add_parser("finalize-post-lock")
     finalize.add_argument("--date", required=True)
     finalize.add_argument(
@@ -241,6 +286,8 @@ def main() -> int:
     deliver.add_argument("--frozen-verifier-pass", action="store_true")
     deliver.add_argument("--word-visual-qa-pass", action="store_true")
     deliver.add_argument("--unique-page-pass", action="store_true")
+    deliver.add_argument("--skip-retention-cleanup", action="store_true")
+    deliver.add_argument("--retention-keep-days", type=int, default=configured_keep_days())
     add_lease_argument(deliver)
     add_usage_arguments(deliver)
 
@@ -342,8 +389,50 @@ def main() -> int:
     transition_path = directory / f"transition_{args.slot}.json"
     transition = load_object(transition_path)
 
+    if args.command == "certify-reasoning":
+        if not (
+            args.confirm_six_source_accuracy
+            and args.confirm_critical_data_calibrated
+            and args.confirm_score_winrate_risk_refutation
+            and args.confirm_no_formal_md_written
+            and args.confirm_no_posthoc_reasoning
+            and args.confirm_max_reasoning
+        ):
+            raise ValueError("reasoning readiness requires all confirmations")
+        payload, target = build_reasoning_readiness_manifest(
+            args.date,
+            args.slot,
+            work_file=args.work_file,
+            capture_manifest_path=args.capture_manifest,
+            transition_path=transition_path,
+        )
+        append_usage(
+            trading_date=args.date,
+            slot=args.slot,
+            phase="reasoning_readiness",
+            status="success",
+            event_id=(
+                f"{args.date}:{args.slot}:reasoning_readiness:"
+                f"{payload['work_file']['sha256']}"
+            ),
+            duration_ms=round((time.perf_counter() - started) * 1000),
+            details={
+                "reasoning_readiness": str(target),
+                "work_file": payload["work_file"]["path"],
+                "policy": payload["policy"],
+            },
+            **usage_values(args),
+        )
+        print(json.dumps({"reasoning_readiness": str(target)}, ensure_ascii=False))
+        return 0
+
     if args.command == "lock-analysis":
         report = args.report.resolve()
+        _, readiness_target = validate_reasoning_readiness_manifest(
+            args.date,
+            args.slot,
+            report,
+        )
         _, golden_target = validate_golden_reasoning_manifest(
             args.date,
             args.slot,
@@ -391,6 +480,15 @@ def main() -> int:
                 "golden_reasoning_policy": (
                     "pre_write_reasoning_alignment_not_posthoc_output_padding"
                 ),
+                "reasoning_readiness_pre_md": readiness_target is not None,
+                "reasoning_readiness_manifest": (
+                    str(readiness_target) if readiness_target is not None else None
+                ),
+                "reasoning_readiness_policy": (
+                    "pre_md_reasoning_depth_certified_no_posthoc_rationale"
+                    if readiness_target is not None
+                    else None
+                ),
             },
             "operator_confirmations": {
                 "five_source_validation": args.confirm_five_source_validation,
@@ -436,6 +534,9 @@ def main() -> int:
                 "report_sha256": report_sha256,
                 "completed_node_count": len(payload["completed_nodes"]),
                 "golden_reasoning_manifest": str(golden_target),
+                "reasoning_readiness_manifest": (
+                    str(readiness_target) if readiness_target is not None else None
+                ),
             },
             **usage_values(args),
         )
@@ -624,8 +725,68 @@ def main() -> int:
         },
         **usage_values(args),
     )
+    cleanup_result = {"mode": "skipped"}
+    if not args.skip_retention_cleanup:
+        cleanup_started = time.perf_counter()
+        cleanup_manifest = directory / f"retention_cleanup_{args.slot}.json"
+        try:
+            cleanup_payload = run_retention_cleanup(
+                root=ROOT,
+                today=datetime.now().astimezone().date(),
+                keep_days=args.retention_keep_days,
+                execute=True,
+                manifest_path=cleanup_manifest,
+                reason=f"post_delivery:{args.date}:{args.slot}",
+            )
+        except BaseException as exc:
+            reason_hash = hashlib.sha256(str(exc).encode("utf-8")).hexdigest()[:16]
+            append_usage(
+                trading_date=args.date,
+                slot=args.slot,
+                phase="retention_cleanup",
+                status="failed",
+                event_id=(
+                    f"{current['commit_id']}:retention_cleanup:failed:{reason_hash}"
+                ),
+                duration_ms=round((time.perf_counter() - cleanup_started) * 1000),
+                details={"failure_reason": str(exc)},
+                **usage_values(args),
+            )
+            raise
+        append_usage(
+            trading_date=args.date,
+            slot=args.slot,
+            phase="retention_cleanup",
+            status="success",
+            event_id=f"{current['commit_id']}:retention_cleanup:{args.page_id}",
+            duration_ms=round((time.perf_counter() - cleanup_started) * 1000),
+            details={
+                "retention_cleanup_manifest": str(cleanup_manifest),
+                "mode": cleanup_payload["mode"],
+                "count": cleanup_payload["count"],
+                "bytes": cleanup_payload["bytes"],
+                "cutoff": cleanup_payload["cutoff"],
+                "keep_days": cleanup_payload["keep_days"],
+            },
+            **usage_values(args),
+        )
+        cleanup_result = {
+            "manifest": str(cleanup_manifest),
+            "mode": cleanup_payload["mode"],
+            "count": cleanup_payload["count"],
+            "bytes": cleanup_payload["bytes"],
+            "cutoff": cleanup_payload["cutoff"],
+        }
     complete_lease(args.lease_token, artifact=str(target))
-    print(json.dumps({"delivery_manifest": str(target)}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "delivery_manifest": str(target),
+                "retention_cleanup": cleanup_result,
+            },
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 

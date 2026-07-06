@@ -1,16 +1,28 @@
 from __future__ import annotations
 
-from pathlib import Path
 import unittest
 
 from outputs import report_lint
 
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def _output_lines(name: str) -> list[str]:
-    return (ROOT / "outputs" / name).read_text(encoding="utf-8").splitlines()
+def _golden_quality_sample(*, thick: bool) -> list[str]:
+    if not thick:
+        return """
+# 2026.6.27 早间日报
+## ③ 后附
+BlockBeats 给出事件，rubric 只写一次，60,000。
+""".splitlines()
+    price_refs = " ".join(f"{60000 + index:,}" for index in range(130))
+    filler = "承重推理链条" * 1800
+    return f"""
+# 2026.6.25 早间日报
+## ③ 后附
+BlockBeats Exocharts Coinglass FedWatch TradingView
+胜率 rubric 锚点从 60 出发，盘口次因 +2，盘面次因 -1，真实落值 61，高于 60 门槛。
+总分 rubric 由 Coinglass CVD/OI、Exocharts Delta、TradingView VRVP/VAH/VAL/POC 和 SMA20 合成。
+{price_refs}
+{filler}
+""".splitlines()
 
 
 class ReportQualityGuardrailTests(unittest.TestCase):
@@ -39,12 +51,24 @@ BTC（策略）：执行概率55%（已执行0%）　胜率64%
 TP1：61,850，减仓50%。
 TP2：60,920，清理剩余仓位。
 撤单：若未成交前价格先跌破62,120，则取消此策略，不追空。
-浮盈防守：成交后以62,700为风险基准。价格下行至62,190后，触发第一层防守，止损下移至4小时级别K线极点高点62,674.47，并取消所有加仓。价格触及61,850后，触发第二层防守，止损维持在不高于62,700的保本损，不允许回退第一层保护。
+浮盈防守：成交后以62,700为风险基准。价格下行至62,190后，触发第一层防守，止损下移至成交后新形成并确认的4小时级别K线结构性极点高点，并取消所有加仓。价格触及61,850后，触发第二层防守，止损维持在不高于62,700的保本损，不允许回退第一层保护。
 """.splitlines()
         ledger_issues, ledger_skip = report_lint.ledger_check(lines)
         self.assertIsNone(ledger_skip)
         self.assertEqual(ledger_issues, [])
         self.assertEqual(report_lint.maker_defense_check(lines), [])
+
+    def test_first_defense_layer_must_not_prefill_future_4h_extreme_price(self):
+        lines = """
+## ② Maker 计划
+### BTC（反弹空）：执行概率58%（已执行0%）　胜率64%
+TP1：61,850，减仓50%。
+TP2：60,920，清理剩余仓位。
+浮盈防守：价格下行至62,190后，触发第一层防守，止损下移至4小时级别K线极点高点62,674.47，并取消所有加仓。价格触及61,850后，触发第二层防守，止损维持保本损。
+""".splitlines()
+        hits = report_lint.maker_defense_check(lines)
+        self.assertTrue(any("预填" in desc for _, desc, _, _ in hits))
+        self.assertTrue(any("后续形成" in desc for _, desc, _, _ in hits))
 
     def test_inline_defense_layer_bad_timeframe_is_rejected(self):
         lines = """
@@ -72,25 +96,63 @@ TP2：60,920，清理剩余仓位。
         hits = report_lint.exocharts_ohlc_check(lines)
         self.assertTrue(hits)
 
-    def test_golden_quality_floor_accepts_local_pre_626_benchmarks(self):
-        for name in [
-            "2026-06-25_morning_combined.md",
-            "2026-06-25_midday_combined.md",
-            "2026-06-26_morning_combined.md",
-            "2026-06-26_midday_combined.md",
-        ]:
-            with self.subTest(name=name):
-                self.assertEqual(report_lint.golden_quality_check(_output_lines(name)), [])
+    def test_golden_quality_floor_accepts_synthetic_thick_benchmark(self):
+        self.assertEqual(report_lint.golden_quality_check(_golden_quality_sample(thick=True)), [])
 
-    def test_golden_quality_floor_rejects_post_626_quality_cliff(self):
-        for name in [
-            "2026-06-27_morning_combined.md",
-            "2026-07-03_morning_combined.md",
-        ]:
-            with self.subTest(name=name):
-                hits = report_lint.golden_quality_check(_output_lines(name))
-                self.assertTrue(hits)
-                self.assertTrue(any("golden-quality" in desc for _, desc, _, _ in hits))
+    def test_golden_quality_floor_rejects_synthetic_quality_cliff(self):
+        hits = report_lint.golden_quality_check(_golden_quality_sample(thick=False))
+        self.assertTrue(hits)
+        self.assertTrue(any("golden-quality" in desc for _, desc, _, _ in hits))
+
+    def test_strict_reasoning_trace_gate_exempts_only_20260706_morning(self):
+        thin_0706 = """
+# 2026.7.6 早间日报
+## ③ 后附
+胜率 58。
+""".splitlines()
+        self.assertEqual(
+            report_lint.strict_reasoning_trace_check(
+                thin_0706,
+                "outputs/2026-07-06_morning_combined.md",
+            ),
+            [],
+        )
+
+        thin_0706_midday = """
+# 2026.7.6 午间日报
+## ③ 后附
+胜率 58。
+""".splitlines()
+        midday_hits = report_lint.strict_reasoning_trace_check(
+            thin_0706_midday,
+            "outputs/2026-07-06_midday_combined.md",
+        )
+        self.assertTrue(midday_hits)
+
+        no_title_date_hits = report_lint.strict_reasoning_trace_check(
+            ["## ③ 后附", "胜率 58。"],
+            "outputs/2026-07-06_evening_combined.md",
+        )
+        self.assertTrue(no_title_date_hits)
+
+        thin_0707 = """
+# 2026.7.7 早间日报
+## ③ 后附
+胜率 58。
+""".splitlines()
+        hits = report_lint.strict_reasoning_trace_check(thin_0707)
+        self.assertTrue(hits)
+        self.assertTrue(any("胜率" in desc for _, desc, _, _ in hits))
+
+    def test_strict_reasoning_trace_accepts_explicit_chains(self):
+        lines = """
+# 2026.7.7 早间日报
+## ③ 后附
+评分明细：盘口 45、盘面 18，总分 63；合成来自 Coinglass 的 CVD/OI/资金费率、Exocharts Delta 与 TradingView 的 VRVP/VAH/VAL/POC，分项落值后再推导总分。
+胜率 rubric 锚=60 → 次因 -2 → 落值 58 → 比 60 门槛不达标，因此不把临界胜率倒推到可开单。
+方向主判：CVD 与 OI 给出空头占优，SMA20 与 pivot 摆动结构确认未破；最强反证是价格重新站回 VAH，失效路径是放量上破后情景改为观望。
+""".splitlines()
+        self.assertEqual(report_lint.strict_reasoning_trace_check(lines), [])
 
 
 if __name__ == "__main__":

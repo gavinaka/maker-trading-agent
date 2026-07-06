@@ -450,12 +450,16 @@ def ledger_check(lines):
 
 _FOUR_H = re.compile(r"4\s*[Hh]|4\s*小时|四小时")
 _BAD_FIRST_LAYER_TF = re.compile(r"15\s*[mM]|15\s*分钟|十五分钟|1\s*[Hh]|1\s*小时|一小时")
+_DYNAMIC_FIRST_LAYER_EXTREME = re.compile(r"(?:成交|入场|开仓)后|后续|新形成|未来")
+_CONFIRMED_FIRST_LAYER_EXTREME = re.compile(r"确认|形成")
 
 
 def maker_defense_check(lines):
     """Maker 浮盈防守硬门。
 
-    第一层必须是 4H K线极点，禁止 1H/15m/笼统小时级别；第二层只设保本损。
+    第一层必须写具体触发价；移动止损目标只能是成交后后续形成并确认的
+    4H K线结构性极点，禁止在报告阶段预填历史极点价格。
+    第二层只设保本损。
     返回 [(行号, 描述, 命中文本, 行摘要)]。
     """
     sec = _maker_section(lines)
@@ -473,12 +477,28 @@ def maker_defense_check(lines):
         if re.search(r"(?:第二层[：:]|第二层防守|触发第二层)", ln)
     ]
     for lineno, ln in first:
-        if not re.search(r"(?:触及|(?:上行|下行)?至)\s*" + _PRICE, ln):
+        trigger = re.search(r"(?:触及|(?:上行|下行)?至)\s*" + _PRICE, ln)
+        if not trigger:
             issues.append((lineno, "Maker第一层缺具体触发价格", "第一层", ln[:70]))
+            operation_text = ln
+        else:
+            operation_text = ln[trigger.end():]
         if "极点" not in ln:
             issues.append((lineno, "Maker第一层缺“极点”", "第一层", ln[:70]))
         if not _FOUR_H.search(ln):
             issues.append((lineno, "Maker第一层必须使用4H级别K线极点", "第一层", ln[:70]))
+        if not _DYNAMIC_FIRST_LAYER_EXTREME.search(ln):
+            issues.append((lineno, "Maker第一层必须声明极点来自成交后后续形成", "第一层", ln[:70]))
+        if not _CONFIRMED_FIRST_LAYER_EXTREME.search(ln):
+            issues.append((lineno, "Maker第一层必须声明4H极点需形成/确认后使用", "第一层", ln[:70]))
+        first_operation_text = re.split(
+            rf"(?:第二层[：:]|第二层防守|触发第二层|(?:触及|(?:上行|下行)?至)\s*{_PRICE}\s*后[，,]?\s*触发第二层)",
+            operation_text,
+            maxsplit=1,
+        )[0]
+        preset = _HAS_PRICE5.search(first_operation_text)
+        if preset:
+            issues.append((lineno, "Maker第一层禁止预填4H极点止损价", preset.group(0), ln[:70]))
         bad = _BAD_FIRST_LAYER_TF.search(ln)
         if bad:
             issues.append((lineno, "Maker第一层禁止使用1H/15m级别", bad.group(0), ln[:70]))
@@ -589,6 +609,8 @@ def numeric_anchor_dump_check(lines):
 
 _GOLDEN_PRICE_REF = re.compile(r"\d{2},\d{3}|\d{5}(?:\.\d+)?")
 _STRICT_SIX_SOURCE_FROM = date(2026, 7, 5)
+_STRICT_REASONING_TRACE_FROM = date(2026, 7, 6)
+_STRICT_REASONING_TRACE_EXEMPT_FILE = "2026-07-06_morning_"
 _BASE_GOLDEN_SOURCES = ("BlockBeats", "Exocharts", "Coinglass", "FedWatch", "TradingView")
 _SIXTH_SOURCE = "Farside"
 
@@ -605,15 +627,113 @@ def _report_date(lines):
     return date(year, month, day)
 
 
+def _report_date_from_path(report_path):
+    if report_path is None:
+        return None
+    match = re.match(r"^(20\d{2})-(\d{2})-(\d{2})_", Path(report_path).name)
+    if not match:
+        return None
+    year, month, day = (int(part) for part in match.groups())
+    return date(year, month, day)
+
+
 def _requires_six_sources(lines):
     report_date = _report_date(lines)
     return report_date is not None and report_date >= _STRICT_SIX_SOURCE_FROM
+
+
+def _requires_strict_reasoning_trace(lines, report_path=None):
+    report_date = _report_date(lines) or _report_date_from_path(report_path)
+    if report_date is None or report_date < _STRICT_REASONING_TRACE_FROM:
+        return False
+    if report_path is not None and Path(report_path).name.startswith(_STRICT_REASONING_TRACE_EXEMPT_FILE):
+        return False
+    return True
 
 
 def _required_source_markers(lines):
     if _requires_six_sources(lines):
         return _BASE_GOLDEN_SOURCES[:4] + (_SIXTH_SOURCE,) + _BASE_GOLDEN_SOURCES[4:]
     return _BASE_GOLDEN_SOURCES
+
+
+def _has_all_patterns(text, patterns):
+    return all(re.search(pattern, text, re.I) for pattern in patterns)
+
+
+def strict_reasoning_trace_check(lines, report_path=None):
+    """Date-gated hard gate for thick reasoning traces.
+
+    Effective from reports after 2026-07-06 morning. It checks causality
+    chains, not raw length, so the report cannot pass by padding words or
+    price anchors.
+    """
+    if not _requires_strict_reasoning_trace(lines, report_path):
+        return []
+    section = _third_section_text(lines)
+    if not section:
+        return []
+    issues = []
+
+    winrate_chain = _has_all_patterns(section, [
+        r"胜率",
+        r"rubric|winrate_methodology|胜率方法论",
+        r"锚|anchor",
+        r"次因|微调|上调|下调|[+\-]\s*\d|±",
+        r"落值|落点|落到|真实值|估值",
+        r"60|门槛|阈值",
+    ])
+    if not winrate_chain:
+        issues.append((
+            0,
+            "严格推理留痕：缺胜率 rubric 全链",
+            "胜率 rubric 锚→次因±n→落值→比60",
+            "从 2026-07-06 午报起必须写清胜率锚、调整因子、真实落值与 60 门槛比较；禁止只给胜率结论",
+        ))
+
+    score_chain = _has_all_patterns(section, [
+        r"总分|总评|盘口|盘面",
+        r"盘口.{0,40}\d{1,2}|盘面.{0,40}\d{1,2}|总分.{0,40}\d{2}|总评.{0,40}\d{2}",
+        r"CVD|OI|资金费率|Delta|VRVP|VAH|VAL|POC|SMA20|Coinglass|Exocharts|TradingView",
+        r"合成|推导|落值|扣分|加分|下调|上调|因为|来自|证据",
+    ])
+    if not score_chain:
+        issues.append((
+            0,
+            "严格推理留痕：缺总分/盘口/盘面合成链",
+            "盘口/盘面读数→分项落值→总分",
+            "必须说明分数来自哪些盘口/盘面证据，以及如何合成为总分；禁止只贴最终分",
+        ))
+
+    direction_chain = _has_all_patterns(section, [
+        r"方向|多空|主判|倾向|路径",
+        r"反证|失效|情景|情形",
+        r"CVD|OI|资金费率|Delta|VRVP|VAH|VAL|POC|SMA20",
+    ])
+    if not direction_chain:
+        issues.append((
+            0,
+            "严格推理留痕：缺方向主判与反证链",
+            "方向主判→最强反证→失效/情景路径",
+            "必须把多空主判、反方证据和失效条件写在③后附；禁止只给单边结论",
+        ))
+
+    critical_markers = [
+        r"pivot|枢轴|摆动|趋势线|突破|未破",
+        r"CVD",
+        r"SMA20",
+        r"VRVP|VAH|VAL|POC",
+    ]
+    critical_count = sum(1 for pattern in critical_markers if re.search(pattern, section, re.I))
+    if critical_count < 3:
+        issues.append((
+            0,
+            "严格推理留痕：承重点证据颗粒度不足",
+            f"{critical_count}/4 markers",
+            "③后附至少覆盖 pivot/结构锚、CVD、SMA20、VRVP/VAH/VAL/POC 中 3 类承重点；推理必须聚焦关键数据",
+        ))
+
+    return issues
 
 
 def golden_surface_proxy_check(lines):
@@ -723,6 +843,7 @@ def main():
     exo_hits = exocharts_ohlc_check(lines)
     depth_hits = analysis_depth_check(lines)
     anchor_dump_hits = numeric_anchor_dump_check(lines)
+    strict_trace_hits = strict_reasoning_trace_check(lines, path)
     golden_hits = golden_surface_proxy_check(lines)
     for i, desc, hit, ctx in warn_hits:
         print(f"[WARN] L{i} {desc}: '{hit}'  | {ctx}")
@@ -755,6 +876,9 @@ def main():
     for i, desc, hit, ctx in anchor_dump_hits:
         loc = f"L{i}" if i else "全文"
         print(f"[HARD] {loc} 金标推理门·{desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in strict_trace_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} 严格推理留痕门·{desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in golden_hits:
         loc = f"L{i}" if i else "全文"
         print(f"[WARN] {loc} 旧金标表面代理·{desc}: '{hit}'  | {ctx}")
@@ -782,7 +906,7 @@ def main():
     else:
         print("[OK] 胜率反下偏门: 胜率未落临界带[55,59](无贴门槛下偏嫌疑)")
     print()
-    if structure_hits or hard_hits or ledger_issues or coupling_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or anchor_dump_hits:
+    if structure_hits or hard_hits or ledger_issues or coupling_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or anchor_dump_hits or strict_trace_hits:
         msgs = []
         if structure_hits:
             msgs.append(f"{len(structure_hits)} 处底稿结构/六源契约错误（修正 combined 骨架、日期展示或六源证据）")
@@ -801,13 +925,15 @@ def main():
         if en_hits:
             msgs.append(f"{len(en_hits)} 处正文未中译叙事英文（→中文·保留缩写/模板/专有名词除外·见 report-chinese-only-narrative）")
         if defense_hits:
-            msgs.append(f"{len(defense_hits)} 处 Maker 防守层级别/触发价违规（第一层必须 4H 极点，第二层只保本损）")
+            msgs.append(f"{len(defense_hits)} 处 Maker 防守层违规（第一层只能写触发价+成交后确认4H极点规则，禁预填极点价；第二层只保本损）")
         if exo_hits:
             msgs.append(f"{len(exo_hits)} 处 Exocharts OHLC/当前价不自洽（重读截图或重采）")
         if depth_hits:
             msgs.append(f"{len(depth_hits)} 处分析深度不足（③后附必须承载完整六源/评分/胜率/风险/情景）")
         if anchor_dump_hits:
             msgs.append(f"{len(anchor_dump_hits)} 处数值锚点组堆砌（数字必须嵌入推理链而非列表凑数）")
+        if strict_trace_hits:
+            msgs.append(f"{len(strict_trace_hits)} 处严格推理留痕不足（胜率rubric/总分合成/方向反证/承重点颗粒度必须写清）")
         print(f"[FAIL] " + "；".join(msgs) + " —— 修正后重跑")
         sys.exit(1)
     suffix = "" if ledger_skip else "·仓位帐本一致"

@@ -7,6 +7,101 @@
 
 ---
 
+## 2026-07-06（会话 #75 · 午间日报自动化 · 反弹空 63,650-63,850）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 午报工作流，未触发、串联、读取或输出 `quant-summary`。北京时间 2026-07-06 15:30 单次 automation 经 `automation_gate` 成功取得 key=`daily-2026-07-06-midday`；整链 lease token=`e42ff1b442e14a76889381ba23ce9594`。
+- 午间 begin-session 已通过早报 prior delivery hash-closed evidence 门；六源经 `capture_delta.js --slot midday` 重新采集并绑定不可变快照 `runtime_state/2026-07-06/evidence/midday/20dcbbf2-0531-4f7a-919f-b4ea0423c0a8`；采集 manifest=`runtime_state/2026-07-06/captures/midday/conservative_delta_20dcbbf2-0531-4f7a-919f-b4ea0423c0a8.json`。BlockBeats、Coinglass、Exocharts、FedWatch、Farside BTC ETF Flow、TradingView 全部有效；TradingView 1D/4H/1H/15m 结构图与 `_liq` 图齐，Farside 同时包含 `farside_btc_etf.png` 与 `farside_btc_etf.json`。
+- 2026-07-06 午报新增 pre-MD 硬门已执行：先写 `runtime_state/2026-07-06/reasoning_work_midday.md`，再运行 `certify-reasoning` 生成 `runtime_state/2026-07-06/reasoning_readiness_midday.json`，随后才写正式 `outputs/2026-07-06_midday_combined.md`。
+- 产出 `outputs/2026-07-06_midday_combined.md`、canonical Word `outputs/2026-07-06_midday_render.docx`、发布 payload `outputs/2026-07-06_midday_publish_payload.json` 与三张 BlockBeats 卡片。报告 SHA-256=`74cc4c61934bb881a615d42b1abe7dc242e2a45a9727658ba9198a6c38b8da59`；Word DOCX SHA-256=`b2696f617884069e326fb089e28d98f35e508df9fa52fda2d06b47b4d3e9c2f0`。
+- `report_lint` 0 HARD、2 WARN（旧金标表面代理项，非阻断）；正文元叙事、中文术语、解耦、流动性周期、VRVP 主判、胜率反下偏全部 PASS。分析锁 `runtime_state/2026-07-06/analysis_lock_midday.json` 已建立，post-lock 前序计划连续性 finalize 完成，`commit` 已写入 `runtime_state/2026-07-06/resolved_midday.json`。
+- Word 经隐藏 Word COM 导出 PDF、Poppler 渲染 7 页并逐页检查；无乱码、空白页、重叠、截断或越界，Word 视觉 QA PASS。render manifest=`runtime_state/2026-07-06/render_midday.json`，Word QA manifest=`runtime_state/2026-07-06/word_qa_midday.json`。
+- Notion 午间日报最终唯一存活页 `395fda35-a098-81d9-9f2b-ce06ff87e993`，北京时间 2026-07-06 16:05:02 发布；28 个顶层块（含 3 图），落库验证、语义配色、正文元叙事、冻结 verifier PASS、同前缀唯一页 PASS。publish manifest=`runtime_state/2026-07-06/publish_midday.json`，source binding 指向本午锁定快照。
+
+### B. 独立判断
+- 门禁沿用当日早间结论，但午报从完整有效六源重新分析、评分、估算胜率、验算风险并形成决策，未复用早报派生特征、评分、胜率、风险或 Maker 判断。
+- 基本面中性偏多、价格已部分兑现：BlockBeats 12 小时重要快讯候选 57 条、入选 3 条；13:08 快讯提示比特币反弹中现货成交量快速萎缩、衍生品多头挤压风险累积；FedWatch 2026-07-29 不变概率 75.9%、加息 24.1%、降息 0.0%；Farside 最新可用日 02 Jul 2026 Total 为 +223.5 US$m，前一日 -296.0 US$m。价格从 7 月 1 日低位后的反弹与 ETF 最新流入一致看多，但午间回落说明利好已部分兑现。
+- 盘口：CVD下降、价格下降、资金费率横盘且为正值、持仓上升。Coinglass 1H 当前价格 62,981.20，CVD 2.337K，资金费率 0.0059，OI 59.037K；Exocharts 当前日 Delta -1.5M、POC 62,970。盘口 50/70，盘面 20/30，总分 70，胜率 63%，执行概率 52%。
+- 主账户：不新增追价，等待 63,650-63,850 反弹空；当前 62,900-63,100 附近不追空，未触发前若先跌破 62,650 则取消计划。不能做：追空。
+- Maker：反弹空 63,650-63,850，持仓 500 刀，OKX 左侧，5x；TP1 62,700 减仓 50%，TP2 62,200 清剩余仓位，止损 64,130。第一层浮盈防守为价格下行至 63,180 后，将止损移动至 4H 级别K线极点高点 63,920，并取消所有加仓；第二层为价格下行至 62,700 后，剩余仓位设置 63,750 保本损。
+
+### C. 锁后连续性与交付闭环
+- 锁后读取早报计划：早报为压力区不追多、只等 62,640-62,760 回踩低多；午间价格仅回到 62,890 附近，未触及早报低多入场。午报反弹空来自本时段六源重新分析，不是复用早报判断。
+- Word 视觉 QA PASS；冻结 verifier PASS；unique page PASS；source binding PASS；context_log 已在 render、Word-QA、publish 证据真实存在后写入。
+- 本块写入后运行 `session_runner.py deliver --date 2026-07-06 --slot midday --page-id 395fda35-a098-81d9-9f2b-ce06ff87e993` 形成最终交付状态，并以 `runtime_state/2026-07-06/delivery_midday.json` 关闭 lease 与 automation gate。
+
+---
+
+## 2026-07-06（会话 #74 · 早间日报自动化 · 回踩低多 62,640-62,760）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 早报工作流，未触发、串联、读取或输出 `quant-summary`。北京时间 2026-07-06 08:00 单次 automation 经 `automation_gate` 成功取得 key=`daily-2026-07-06-morning`，整链 lease token=`910cfc60710144f487043ae3885aad57`。
+- 六源完整采集并绑定不可变快照 `runtime_state/2026-07-06/evidence/morning/a25656ba-abba-4d7b-8f41-b5b9386b5f84`；采集 manifest=`runtime_state/2026-07-06/captures/morning/full_base_a25656ba-abba-4d7b-8f41-b5b9386b5f84.json`。BlockBeats、Coinglass、Exocharts、FedWatch、Farside BTC ETF Flow、TradingView 均有效，Farside 标题为 `Bitcoin ETF Flow (US$m)` 且 Total 列可解析。
+- 产出 `outputs/2026-07-06_morning_combined.md`、canonical Word `outputs/2026-07-06_morning_render.docx`、发布 payload 与三张 BlockBeats 卡片。报告 SHA-256=`5d79002f011973d1dcdb5afdf1c7471399df50e4c22ace49396b9839beaea80e`；Word DOCX SHA-256=`e51834b2b0652212195a8024949845430b0fb800b4752b3c8df7319e72bc6a49`。
+- `report_lint` 0 HARD、4 WARN（旧金标表面代理项，非阻断）；正文元叙事、中文术语、解耦、流动性周期、VRVP 主判、胜率反下偏全部 PASS。分析锁 `runtime_state/2026-07-06/analysis_lock_morning.json` 已建立，post-lock 前序计划连续性 finalize 完成，`commit` 已写入 `runtime_state/2026-07-06/base.json`。
+- Word 经隐藏 Word COM 导出 PDF、Poppler 渲染 7 页并逐页检查；无乱码、空白页、重叠、截断或越界，Word 视觉 QA PASS。render manifest=`runtime_state/2026-07-06/render_morning.json`，Word QA manifest=`runtime_state/2026-07-06/word_qa_morning.json`。
+- Notion 早间日报最终唯一存活页 `395fda35-a098-8147-9f73-db75899f4c4e`，北京时间 2026-07-06 08:39:01 发布；28 个顶层块（含 3 图），落库验证、语义配色、正文元叙事、冻结 verifier PASS、同前缀唯一页 PASS。publish manifest=`runtime_state/2026-07-06/publish_morning.json`，source binding 指向本早锁定快照。
+
+### B. 独立判断
+- 基本面中性偏多、价格已兑现部分：BlockBeats 12 小时重要快讯候选 15 条、入选 3 条；FedWatch 2026-07-29 不变概率 78.1%、加息 21.9%、降息 0.0%；Farside 最新可用日 02 Jul 2026 Total 为 +223.5 US$m，前一日 -296.0 US$m，近 5 日合计 -970.6 US$m。价格上涨与 ETF 最新流入一致看多，但因近 5 日仍净流出，健康度未到强确认。
+- 盘口：CVD上升、价格上升、资金费率横盘且为正值、持仓横盘。Coinglass 1H 最新价格 63,528.00，CVD 4.623K，资金费率 0.0049，OI 57.226K；Exocharts 最新日 Delta +264K、POC 63,582，买盘有效但压力区重合。
+- 盘面：1D 63,622 高于 SMA20 61,971 但低于 SMA200 74,650；4H 63,626 高于 SMA20 62,589；1H 63,622 高于 SMA20 62,913；15m 位于 63,500-63,700 压力区。盘口 55/70，盘面 23/30，总分 78，胜率 64%，执行概率 58%。
+- 主账户：不在 63,500-63,700 压力区追高新增；只有回踩 62,640-62,760 后仍守住，或放量站稳 64,200 后，才重新评估下一步动作。Maker 计划为低多：入场 62,640-62,760，挂单价 62,700，持仓 800 刀，OKX，左侧，5x；TP1 63,680 减仓 50%，TP2 64,200 清剩余，止损 62,400；若未成交前优先触及 64,200，则撤单。
+
+### C. 锁后连续性与交付闭环
+- 锁后复核前一晚条件式反弹空计划（62,940-63,120，止损 63,660），本次早报方向切换来自新六源：价格上破、CVD/Delta 同向、Farside 最新流入与价格上涨一致。该复核只用于 post-lock 连续性，不改变已锁定早报分析。
+- Word 视觉 QA PASS；冻结 verifier PASS；unique page PASS；source binding PASS；context_log 已在 render、Word-QA、publish 证据真实存在后写入。
+- 本块写入后运行 `session_runner.py deliver --date 2026-07-06 --slot morning --page-id 395fda35-a098-8147-9f73-db75899f4c4e` 形成最终交付状态，并以 `runtime_state/2026-07-06/delivery_morning.json` 关闭 lease 与 automation gate。
+
+---
+
+## 2026-07-05（会话 #73 · 晚间日报链 B · 用户授权提前 · 条件式反弹空 62,940-63,120）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 晚报工作流，未触发、串联、读取或输出 `quant-summary`。用户明确授权提前写晚报，并要求关闭自动化晚报以避免重复；Codex automation `trading-system-3` / `Trading-System 晚报自动生成` 已核实并暂停为 `PAUSED`。
+- 晚间链于北京时间 2026-07-05 20:00:16 后开始正式采集与分析；整链 lease token=`e0a0e2509ebd468ab55252ff3d660000`。六源重新刷新并绑定不可变快照 `runtime_state/2026-07-05/evidence/evening/90fb3c72-46a1-4491-a8ae-73f7bf6faf98`；采集 manifest=`runtime_state/2026-07-05/captures/evening/conservative_delta_90fb3c72-46a1-4491-a8ae-73f7bf6faf98.json`。
+- 产出 `outputs/2026-07-05_evening_combined.md`、canonical Word `outputs/2026-07-05_evening_render.docx`、`outputs/2026-07-05_独立审查报告.html`、发布 payload、review payload 与三张 BlockBeats 卡片。报告 SHA-256=`ea0d7b1952db242b3e5303852205861228f7e90e4081a6b3bb6412f1baa1a2dd`；Word DOCX SHA-256=`af3483a52ac6be9755eb185bae970ce20ce3ebbf3c58b4a05a9423567d46c500`。
+- `report_lint` 0 HARD、3 WARN（旧金标表面代理项，非阻断）；正文元叙事、中文术语、解耦、流动性周期、VRVP 主判、胜率反下偏全部 PASS。分析锁 `runtime_state/2026-07-05/analysis_lock_evening.json` 已建立，post-lock 前序计划连续性与晚间独立审查均 finalize 完成，`commit` 已写入 `runtime_state/2026-07-05/resolved_evening.json`。
+- Word 经隐藏 Word COM 导出 PDF、Poppler 渲染 6 页并逐页检查；无乱码、空白页、重叠、截断或越界，Word 视觉 QA PASS。render manifest=`runtime_state/2026-07-05/render_evening.json`，Word QA manifest=`runtime_state/2026-07-05/word_qa_evening.json`。
+- Notion 晚间日报最终唯一存活页 `394fda35-a098-8180-8172-c11de90e2ba3`，北京时间 2026-07-05 20:30:56 发布；29 个顶层块（含 3 图），落库验证、语义配色、正文元叙事、冻结 verifier PASS、同前缀唯一页 PASS。publish manifest=`runtime_state/2026-07-05/publish_evening.json`，source binding 指向本晚锁定快照。
+- Notion 晚间独立审查最终唯一存活页 `394fda35-a098-816a-8143-c9ee33f263ab`，北京时间 2026-07-05 20:33:57 发布；15 个顶层块，冻结 review verifier PASS、同前缀唯一页 PASS。review publish manifest=`runtime_state/2026-07-05/publish_review.json`。
+
+### B. 独立判断
+- 基本面中性偏空、价格已兑现部分：BlockBeats 12 小时重要快讯候选 49 条、入选 3 条；Farside 最新可用日 02 Jul 2026 Total 为 +223.5 US$m，但 29 Jun 至 02 Jul 四个交易日合计仍为 -526.1 US$m；FedWatch 2026-07-29 不变概率 78.1%、加息 21.9%、降息 0.0%。
+- 盘口：CVD下降、价格下降、资金费率横盘且为正值、持仓横盘。Coinglass 1H 当前收盘 62,580.30，CVD 1.82K，资金费率 0.0071，OI 57.563K；Exocharts 当日 Delta -5.4M、POC 62,658，短线卖压占优但不是单边空头加速。
+- 盘面：日线 62,615.39 收在 SMA20 62,021.89 上方但低于 SMA200 74,754.08；1H 跌回 SMA20 62,943.95 下方，4H 仍高于 SMA20 62,303.41，当前踩在 62,420-62,660 支撑带。盘口 46/70，盘面 20/30，总分 66，胜率 61%，执行概率 55%。
+- 主账户：中线计划观望；不能在 62,420-62,660 支撑带追空，也不在 63,300 上方追多。Maker 只挂条件式反弹空：入场 62,940-63,120，持仓 500-1000 刀，Binance Maker，左侧，5x；TP1 61,900 减仓 50%，TP2 60,750 清剩余，止损 63,660；若未成交前价格先破 62,300，则撤单。
+
+### C. 锁后连续性与独立审查
+- 7/4 晚报识别 62,700-62,760 压力区方向不差，但止损 63,040 对假期清淡延续反弹偏紧；7/5 早报观望、不挂单、不追多是正确克制；7/5 午报低多到晚间未完成上方目标，且新盘口转弱，允许晚报切换为条件式反弹空。
+- 独立审查结论：晚间报告不是简单延续午报低多，也不是复用 7/4 反弹空；它是在 20:00 后新六源、盘口转弱、上方反抽边缘清楚的情况下独立给出的 62,940-63,120 反弹空计划。审查只用于 post-lock 连续性，不改变已锁定晚报分析。
+- Word 视觉 QA PASS；冻结 verifier PASS；review 冻结 verifier PASS；unique page PASS；source binding PASS；context_log 已在 render、Word-QA、publish 证据真实存在后写入。
+- 本块写入后运行 `session_runner.py deliver --date 2026-07-05 --slot evening --page-id 394fda35-a098-8180-8172-c11de90e2ba3` 形成最终交付状态，并以 `runtime_state/2026-07-05/delivery_evening.json` 关闭 lease 与 automation gate。
+
+---
+
+## 2026-07-05（会话 #72 · 午间日报链 B · same-slot reissue · 回踩低多 62,560-62,650）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 午报工作流，未触发、串联、读取或输出 `quant-summary`。用户已在当前线程明确授权继续，并要求不重新采集；本轮沿用已存在的完整重采证据 `runtime_state/2026-07-05/captures/midday/full_recollection_c259aec5-41eb-4c2e-a4ed-da445e6048a6.json`，通过 same-slot reissue 重新 prepare、lock-analysis、finalize-post-lock、commit、render、Word-QA、publish 与 delivery。
+- 午间六源有效且绑定锁定快照 `runtime_state/2026-07-05/evidence/midday/c259aec5-41eb-4c2e-a4ed-da445e6048a6`；BlockBeats、Coinglass、Exocharts、FedWatch、Farside BTC ETF Flow、TradingView 1D/4H/1H/15m 结构图与 `_liq` 图均在锁定证据中。Farside 同时包含 `farside_btc_etf.png` 与 `farside_btc_etf.json`，JSON 标题为 `Bitcoin ETF Flow (US$m)`。
+- 产出 `outputs/2026-07-05_midday_combined.md`、canonical Word `outputs/2026-07-05_midday_render.docx`、发布 payload `outputs/2026-07-05_midday_publish_payload.json` 与三张 BlockBeats 卡片。报告 SHA-256=`5487d97a2723de91214a730b63c8234f584e44ae4331416bdd0f402e09c5645a`；Word DOCX SHA-256=`583ae209725e1fa4a8e606b44cbe47ef8d6a9892ee09109a04c3669990651f7c`。
+- `report_lint` 0 HARD、4 WARN（旧金标表面代理项，非阻断）；正文元叙事、中文术语、解耦、流动性周期、VRVP 主判、胜率反下偏全部 PASS。分析锁 `runtime_state/2026-07-05/analysis_lock_midday.json` 已重建并绑定新 commit，post-lock finalize 已完成。
+- Word 经隐藏 Word COM 导出 PDF、Poppler 渲染 7 页并逐页检查；无乱码、空白页、重叠、截断或越界，Word 视觉 QA PASS。render manifest=`runtime_state/2026-07-05/render_midday.json`，Word QA manifest=`runtime_state/2026-07-05/word_qa_midday.json`。
+- Notion 午间日报最终唯一存活页 `394fda35-a098-8194-85e6-e76c96cec990`，北京时间 2026-07-05 16:53:16 发布；frozen verifier PASS，unique page PASS，source binding PASS。publish manifest=`runtime_state/2026-07-05/publish_midday.json`，source binding 指向 `runtime_state/2026-07-05/evidence/midday/c259aec5-41eb-4c2e-a4ed-da445e6048a6` 锁定快照。
+
+### B. 独立判断
+- 门禁沿用早间事实：可交易是，身体正常、情绪平静、节奏顺、连续止损 0、结构依赖无；2026-07-05 当日心力监控 0 行。午报 reissue 未使用早报或旧午报派生特征、评分、胜率、风险或 Maker 判断。
+- 基本面中性偏多且部分兑现：Farside 最新 02 Jul 2026 Total 为 +223.5 US$m，前一日为 -296.0 US$m，方向从流出转流入；价格从 58,000 上方修复到 63,000 上方，与 ETF 流入一致看多。但 BlockBeats 周度 ETF 净流出与 FedWatch 2026-07-29 降息概率 0.0%、加息尾部 21.9% 限制右侧追涨。
+- 盘口 49/70：CVD上升、价格上升、资金费率上升且为正、OI 横盘；Exocharts 最新 Delta -2M 说明上方卖压真实存在，因此不加到 50 以上。盘面 18/30：62,540-62,700 为日内支撑，63,180-63,520 为日内压力，现价更接近压力而非支撑。总分 67，胜率自估 61%，执行概率 45%。
+- 主账户不在 63,000 上方追高新增。不能做：追多。Maker 只等 62,560-62,650 回踩低多，挂单价 62,600，持仓 800 刀，OKX 左侧，5x；TP1 63,500 减仓 50%，TP2 63,900 清剩余 50%，止损 62,240。
+- Maker 防守第一层必须且已设为 4H K 线极点：价格首次触及 63,140 后，将止损移至 4H 级别 K 线极点低点 62,596，并取消所有加仓；第二层为 63,500 附近后保本损。
+
+### C. 交付证据
+- Word 视觉 QA PASS；冻结 verifier PASS；unique page PASS；source binding PASS；context_log 已在 render、Word-QA、publish 证据真实存在后写入。
+- 本块写入后运行 `session_runner.py deliver --date 2026-07-05 --slot midday --page-id 394fda35-a098-8194-85e6-e76c96cec990` 形成最终交付状态，并以 `runtime_state/2026-07-05/delivery_midday.json` 关闭 automation gate。
+---
+
 ## 2026-07-05（会话 #71 · 早间日报链 A · 观望不挂单）
 
 ### A. 最终产出与发布

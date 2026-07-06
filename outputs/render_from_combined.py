@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import report_colors as rc  # 单一配色权威
 from report_structure_gate import assert_combined_structure, assert_rendered_docx_structure
+from runtime.reasoning_readiness import validate_locked_report_for_output
 from runtime.state_store import atomic_json_write
 from runtime.usage_logger import append_usage
 
@@ -243,6 +244,7 @@ def render(combined_path, out_path, *, source_title=None):
 def render_canonical(combined_path, trading_date, slot, *, root=ROOT):
     root = Path(root).resolve()
     source = Path(combined_path).resolve()
+    validate_locked_report_for_output(trading_date, slot, source, root=root)
     lines = source.read_text(encoding="utf-8").splitlines()
     title = preflight(lines, trading_date, slot)
     target = canonical_docx_path(trading_date, slot, root).resolve()

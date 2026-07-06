@@ -44,6 +44,7 @@ from report_structure_gate import (
     display_date,
     strict_contract_active,
 )
+from runtime.reasoning_readiness import validate_locked_report_for_output
 from runtime.state_store import atomic_json_write
 from runtime.usage_logger import append_usage
 
@@ -415,6 +416,12 @@ def publish(
     telemetry_slot = report_slot
     report_lines = report.read_text(encoding="utf-8").splitlines()
     assert_combined_structure(report_lines, trading_date, report_slot)
+    validate_locked_report_for_output(
+        trading_date,
+        report_slot,
+        report,
+        root=ROOT,
+    )
     expected_display_date = display_date(trading_date)
     if expected_display_date not in payload["title"] or trading_date in payload["title"]:
         raise ValueError(

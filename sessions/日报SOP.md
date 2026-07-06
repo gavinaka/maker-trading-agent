@@ -63,18 +63,19 @@
    - 🟥 **心力状态按自然日隔离，禁止跨日继承**：仅日期等于报告日期的心力行可干预当日报告；当日查询结果为 0 行时，只记录“今日无心力记录”，不得把前一日或更早的收缩机制、复盘机制、双重异常外推至今日。历史心力只能作为后附事实，不得改变今日主账户/Maker 方向、技术评分、胜率、是否挂单或风控结论。
 
 ### 0.1 原始证据共享与全量分析协议（2026-06-30）
-> 🟥 **2026-06-26 前本地 Word 金标的正确用法（2026-07-04 修正）**：金标只代表已经学习并固化的思考方式、推理逻辑和维度，不是每次报告重新读取旧 Word/旧 combined 的运行输入，也不是 MD 生成后为了“像金标”补字数、补价位、补 rubric。六源采集与 `prepare` 完成后、动笔前，必须以 `scoring/golden_report_reasoning_alignment.md` 的压缩契约组织推理；`session_runner.py prepare` 只生成 `runtime_state/<date>/golden_reasoning_<slot>.json` 作为阶段与契约哈希证明，`lock-analysis` 校验该 manifest 早于报告文件。旧样本不得进入每次报告上下文，节省 token；表面长度/锚点检查只能 WARN，不能作为质量证明。推理方式、深度和维度硬对齐；旧 Word/冻结金标的格式只要求接近 100%，但字段含义、交易参数、Word QA 与 Notion 发布校验仍是硬门。
+> 🟥 **2026-06-26 前本地 Word 金标的正确用法（2026-07-04 修正；2026-07-06 加硬）**：金标只代表已经学习并固化的思考方式、推理逻辑和维度，不是每次报告重新读取旧 Word/旧 combined 的运行输入，也不是 MD 生成后为了“像金标”补字数、补价位、补 rubric。六源采集与 `prepare` 完成后、正式 MD 动笔前，必须以 `scoring/golden_report_reasoning_alignment.md` 的压缩契约组织推理，并先形成内部 `runtime_state/<date>/reasoning_work_<slot>.md`；随后运行 `session_runner.py certify-reasoning` 生成 `reasoning_readiness_<slot>.json`。`combined.md` 只能在 readiness 之后生成；后补理由、后补 rubric、后补任何推理均视为违背交易系统底层逻辑。`lock-analysis` 校验 `golden_reasoning` 与 `reasoning_readiness` 均早于报告文件。旧样本不得进入每次报告上下文，节省 token；表面长度/锚点检查只能 WARN，不能作为质量证明。推理方式、深度和维度硬对齐；旧 Word/冻结金标的格式只要求接近 100%，但字段含义、交易参数、Word QA 与 Notion 发布校验仍是硬门。
 
 1. `context_pack.py` 只提取交付连续性、权威文件哈希与分阶段读取计划，不复制台账中的方向、评分、胜率或计划；context 包只有在 `context_log` 哈希和权威 manifest 哈希同时未变时才允许复用。
 2. 早报建立来源基线；午/晚在采集层做 delta，但 delta 的含义是全六源重新采集后比较变化指纹、必要时一次 full fallback，不是跳过某个源或复用前序截图/JSON。`current.json` 仅保存来源清单、指纹和运行事实元数据。
 3. 数据源 SHA-256 与依赖图只解释“哪里发生变化”，绝不授权复用分析。三节点每次固定重算完整分析图。
 4. 分析结论与决策分别归档为 `analysis_<slot>.json`／`decision_<slot>.json`，均为 post-lock only，禁止进入下一节点分析前上下文。
 5. 采集完成后、进入源验真前必须确认宿主为最高可用模型且 Effort=`Max`，并以 `session_runner.py prepare ... --capture-manifest <精确路径> --lease-token <token> --max-reasoning-confirmed` 留下机械确认；缺任一项硬停。从源验真至审查结束全部使用 MAX 思考预算。
-6. 完整独立分析和 combined.md 通过 lint 后，必须先运行 `session_runner.py lock-analysis` 建立与报告哈希绑定的分析锁，再允许读取前序计划。
-7. 锁后完成撤旧挂新／漂移对照；晚报同时完成三段独立审查。运行 `session_runner.py finalize-post-lock` 后才可 commit；缺分析锁、post-lock 门、六源覆盖或任一完整分析节点时硬停。
-8. 最终 Notion 唯一页、冻结 verifier、Word 视觉 QA 和 `context_log.md` 最终记录全部完成后，必须运行 `session_runner.py deliver` 写入最终交付遥测。
-9. 运行命令以本 SOP 与 `.agents/skills/daily-report/SKILL.md` 为准；`.claude/skills/daily-report/SKILL.md` 仅为本机 Claude Code 兼容镜像，不得覆盖 committed Codex 权威。业务逻辑、三报告、模板、Notion 四子页及三门不变。
-10. 🟥 **报告／数据源独立性与时间锁（2026-06-30 用户拍板）**：每份报告绑定唯一不可变证据快照（交易日＋slot＋真实采集时间＋来源 SHA-256）。早／午／晚的报告与数据源均相互独立；后续时段采集不得覆盖、替换、补鲜、重新解释或替前序报告通过 freshness 门。分析锁建立后样本时间与来源冻结，发布延迟不改变样本时点；Notion、Word、台账和 deliver 必须使用同一报告哈希及同一 slot 快照。用户明确要求继续交付已锁定时点报告时，不吸收后续采集。工程实现与验收见 `memory/report-evidence-time-lock.md`。
+6. 🟥 **pre-MD 推理就绪门（2026-07-06 午报起）**：正式 `outputs/<date>_<slot>_combined.md` 生成前，必须先完成内部推理工作稿 `runtime_state/<date>/reasoning_work_<slot>.md`，覆盖六源准确性、pivot/CVD/SMA20/VRVP 承重点、盘口/盘面/总分合成链、胜率 rubric 链、方向反证/失效路径、风险验算。随后运行 `session_runner.py certify-reasoning --date <date> --slot <slot> --work-file runtime_state/<date>/reasoning_work_<slot>.md --capture-manifest <精确路径> --lease-token <token> --confirm-six-source-accuracy --confirm-critical-data-calibrated --confirm-score-winrate-risk-refutation --confirm-no-formal-md-written --confirm-no-posthoc-reasoning --confirm-max-reasoning`。缺 readiness 或 readiness 晚于 MD，`lock-analysis`、Word render、Notion publish 全部硬停。
+7. 完整独立分析和 combined.md 通过 lint 后，必须先运行 `session_runner.py lock-analysis` 建立与报告哈希绑定的分析锁，再允许读取前序计划。
+8. 锁后完成撤旧挂新／漂移对照；晚报同时完成三段独立审查。运行 `session_runner.py finalize-post-lock` 后才可 commit；缺分析锁、post-lock 门、六源覆盖或任一完整分析节点时硬停。
+9. 最终 Notion 唯一页、冻结 verifier、Word 视觉 QA 和 `context_log.md` 最终记录全部完成后，必须运行 `session_runner.py deliver` 写入最终交付遥测。
+10. 运行命令以本 SOP 与 `.agents/skills/daily-report/SKILL.md` 为准；`.claude/skills/daily-report/SKILL.md` 仅为本机 Claude Code 兼容镜像，不得覆盖 committed Codex 权威。业务逻辑、三报告、模板、Notion 四子页及三门不变。
+11. 🟥 **报告／数据源独立性与时间锁（2026-06-30 用户拍板）**：每份报告绑定唯一不可变证据快照（交易日＋slot＋真实采集时间＋来源 SHA-256）。早／午／晚的报告与数据源均相互独立；后续时段采集不得覆盖、替换、补鲜、重新解释或替前序报告通过 freshness 门。分析锁建立后样本时间与来源冻结，发布延迟不改变样本时点；Notion、Word、台账和 deliver 必须使用同一报告哈希及同一 slot 快照。用户明确要求继续交付已锁定时点报告时，不吸收后续采集。工程实现与验收见 `memory/report-evidence-time-lock.md`。
 
 ---
 
@@ -85,7 +86,8 @@
 - **命令**：先 `begin-session`，早报运行 `node tools/browser_capture/capture_all.js --slot morning --lease-token <token>`，午报运行 `node tools/browser_capture/capture_delta.js --slot midday --lease-token <token>`，晚报运行 `node tools/browser_capture/capture_delta.js --slot evening --lease-token <token>`（工具在 `tools/browser_capture/`）。用 PowerShell/Bash 跑、**必须前台 + 关沙箱（dangerouslyDisableSandbox）**。禁止旧 `npm run all` / `npm run delta` 无租约快捷入口。顺序＝BlockBeats → Coinglass → Exocharts → FedWatch → Farside BTC ETF Flow → TradingView → 清算热力图辅助源。
 - **BlockBeats 产物**：`blockbeats.png` + `blockbeats.json`。🟥 任何早报／午报／晚报及单源重采，只要发生 BlockBeats 抓取行为，均须先勾选页面「重要快讯」，并覆盖抓取前 12 小时内所有可加载重要快讯；截图必须显示已勾选，JSON 必须包含 `"important_only": true`、`"capture_window_hours": 12`、`"window_covered": true`、不少于 3 条 `candidate_rows`、正好 3 条 `selected_rows`，且 `rows` 必须等于按基本面影响优先级筛出的 selected top3。未勾选、勾选状态丢失、12 小时窗口不足、top3 缺失、`rows` 与 `selected_rows` 不一致或字段不合规均按核心源无效硬停，禁止退回未筛选快讯、只看最新几条或缩短窗口。完整契约见 `memory/blockbeats-important-only.md`。
 - **前置**：TV/Exo 登录态长期存在 `~/.tv_chrome_profile`；跑前确认这几个独立 profile 的 Chrome 窗口已关（独占锁；与你日常 Chrome 默认配置互不影响）。
-- 🧹 **自动清理（capture_all 开头先跑 `cleanup.js`）**：动态图(inbox 7 张 + blockbeats 快讯卡)读完/推完即无价值，capture_all 每次开头**只删"日期<cutoff"的过期图、保留最近 `CLEANUP_KEEP_DAYS` 天(默认 2=今天+昨天)**，绝不碰当天在用的图；也可 `npm run cleanup` 手动。两处目录均已 gitignore、不进库。
+- 🧹 **采集前自动清理（`cleanup.js`）**：动态图(inbox 7 张 + blockbeats 快讯卡)读完/推完即无长期价值，`capture_all.js`/`capture_delta.js` 每次采集前只删"日期<cutoff"的过期图、保留最近 `CLEANUP_KEEP_DAYS` 天(默认 2=今天+昨天)，绝不碰当天在用的图；也可 `npm run cleanup` 手动。两处目录均已 gitignore、不进库。
+- 🧹 **交付后自动保留期清理（`session_runner.py deliver` 自动触发 `runtime/report_retention.py`）**：报告交付完成后，除本地 Word 底稿 `outputs/<date>_<slot>_render.docx`、Notion 页面和必要交付/租约/automation 最小状态外，六源截图、combined 草稿、HTML 审查报告、执行中间 JSON、Word-QA 图片/PDF、publish attempts、一次性 `_*.py` 等可再生重物料只保留最近 `REPORT_RETENTION_KEEP_DAYS` 天(默认 2)。`deliver` 成功后自动真实清理并写 `runtime_state/<date>/retention_cleanup_<slot>.json`；排障时才允许临时加 `--skip-retention-cleanup`。
 - 🟥 **采集后验证门（接六源硬停·防把登录墙/空图/陈旧当数据读）**：Read 每张确认是**真实登录态正确图/结构化数据**——Exo 须 Bybit BTCUSD·Bid-Ask·有 VWAP/Footprint 统计·非"delayed 24h"·非默认 BitMEX；TV 四档须有手绘线/正确周期·非"需要登录"墙；Coinglass 须干净 4 面板·1H；CME 须工具概率表已渲染；Farside 须同时存在 `farside_btc_etf.png` + `farside_btc_etf.json`，JSON 标题匹配 `Bitcoin ETF Flow (US$m)`、Total 列可解析、latest 日度净流入/流出为数值。**除 FedWatch 浏览器渲染故障外，任一核心源失败 = 该源缺失 = 按六源硬停规则**（`memory/five-sources-complete-or-halt.md` 兼容旧名）→ 重登或回退该源用户手动截图；**绝不拿登录墙/空图/陈旧图当数据读**。
 - 🟢 **FedWatch 固定回退（2026-06-28 用户拍板）**：若 `fedwatch.png` 为浏览器错误页、空白页或 iframe 未渲染，先重试 1 次；仍失败则允许全网检索**当日权威数据**补全，不再因单一截图渲染故障硬停。来源优先级：① CME Group 官方 FedWatch 页面/API/官方发布；② Federal Reserve 官方资料；③ 能明确标注数据时点并直接引用 CME FedWatch 的主流金融数据源。必须记录来源 URL、采集时间、下次 FOMC 日期、各目标利率区间概率及相对 1 日/1 周/1 月变化；至少两处权威来源交叉核验关键数字。不得使用搜索摘要、旧闻、无日期转载或模型估算。替代数据写入 `data_sources/inbox/<当天>/fedwatch.json`，标记 `capture_mode=authoritative_web_fallback` 和截图失败原因；`fedwatch.png` 保留作故障证据但不得当有效图引用。
 - `capture_all` 走**独立 Playwright/Chrome、不经 Claude-in-Chrome 扩展**；六源均走此唯一路径。
@@ -139,8 +141,8 @@
 6. **Maker 段按用户 Notion 条目完整字段输出**：交易策略(做空/做多·高空/低多/反弹空) ｜ 开仓方式(Maker) ｜ 交易类型(左/右) ｜ 杠杆 ｜ 持仓量 ｜ 盈亏比(≥1:2.5) ｜ **入场区间** ｜ **止盈(TP1 减仓50%／TP2 清剩余·帐 100% 闭合)** ｜ **止损** ｜ **浮盈防守计划(第一层/第二层·只移损/保本损/取消加仓·禁减仓%)** ｜ **注意事项(取消价)** ｜ 核心(开仓理由)。
    - 「已执行X%」是本报告这张新计划发布后的成交比例字段，分析锁前默认按新计划写 0%；禁止用 Notion 既有持仓/已成交比例填充或改变 Maker 结论。
    - 🟥 **仓位帐一致性=金标口径锁死（2026-06-11 用户发现双扣矛盾后拍板·禁止飘移）**：仓位扣减**只在止盈档**（TP1 减仓50% → TP2 清剩余50%·全计划帐 100% 闭合）；**浮盈防守层只"移止损/保本损/取消加仓"、禁写任何减仓/平仓百分比**（6/2 冻结金标即此口径；6/3-6/10 曾漂移回 6/1 旧手写措辞"第二层减仓50%+保本损"与 TP1 双扣、TP2 成死条款＝飘移事故）。审查/复盘表述："价格触及 TPx"≠"仓位捕获至 TPx"，仓位已在 TP1 全部离场则禁写"TP2 命中·完整兑现"。门② lint 含此硬检查。见 `memory/defense-layer2-vs-tp1-conflict.md`。
-   - 🟥 **第一层防守级别锁死（2026-07-04 事故修复）**：Maker 浮盈防守第一层必须写 **4H级别K线极点**；空单用 4H 极点高点，多单用 4H 极点低点。禁止写 1H、1小时、15m、15分钟或笼统“小时级别”。第一层必须有具体触发价、4H极点、取消所有加仓；第二层只设保本损。
-   - ⚠️ **「取消价(注意事项)」≠「止损」（2026-06-01 用户纠错）**：取消价=挂单**成交前**失效价（价格优先触及反方向某位→撤掉未成交挂单，如"优先跌破71,000则取消"）；止损=**成交后**离场价（常写在防守层第一层"触及X设X级别极点为止损"，受宪法"单笔3%以内""浮盈≥+1.5R 才激活防守层"约束）。"站稳XXX上方=结构失效"是止损，别误标成取消价。
+   - 🟥 **第一层防守级别锁死（2026-07-04 事故修复；2026-07-06 用户补充底层逻辑）**：Maker 浮盈防守第一层必须写 **成交后后续形成并确认的4H级别K线结构性极点**；空单用成交后确认的 4H 极点高点，多单用成交后确认的 4H 极点低点。第一层必须有具体触发价、成交/入场后形成并确认的4H极点规则、取消所有加仓；**禁止预填第一层移动止损的具体极点价**，禁止把历史 4H 高/低点、当前未完成 K 线高/低点、1D high/low 或任何报告生成时已存在的价位当作未来防守止损价；禁止写 1H、1小时、15m、15分钟或笼统“小时级别”。第二层只设保本损。
+   - ⚠️ **「取消价(注意事项)」≠「止损」（2026-06-01 用户纠错）**：取消价=挂单**成交前**失效价（价格优先触及反方向某位→撤掉未成交挂单，如"优先跌破71,000则取消"）；止损=**成交后**离场价（第一层只能写"触及X后，移动至成交后后续形成并确认的4H级别K线结构性极点"，不得预填未来极点价；受宪法"单笔3%以内""浮盈≥+1.5R 才激活防守层"约束）。"站稳XXX上方=结构失效"是止损，别误标成取消价。
    - 🟥 **精确数字铁律（2026-06-02 用户拍板）**：报告里所有价格/百分比必须是核对过的确切数字；禁止 `71,2xx`、`712XX`、`@~71,7xx`、臆造 `~3%` 或具体价格位写 `73k`。现价取最新最细粒度图的确切收/现价；入场、止盈、止损、防守层触发价由六源和风险参数推导。出稿前自查无模糊数字残留；见 `memory/precise-numbers-no-fuzzy.md`。
    - edge 是资金保全（5 月成交 9 笔=盈2/保本5/亏2，7/9 不亏），不是高胜率；写到可执行单粒度。
 7. **盘口 footprint 表的 Coinglass 四维呈现为「上升/横盘/下降」**（按阶段性高低点斜率读，1H 周期），**资金费率双轨**=趋势「上升/横盘/下降」+ 水平「（为正值/为负值/低于正常值）」一起写（5 样本校验：你实际写法即"资金费率下降（为负值）"）；读数后跟一句文本含义，不要求精确数值。⚠️ 注意：旧稿常把 OI 写「稳/偏升」(24h 口径)，新口径须从最近阶段高/低点判（如 5/28 峰 62K→56K 应读**下降**）。
@@ -199,10 +201,10 @@
 - 每阶段通过 `runtime/usage_logger.py` 记录耗时、重试、真实全量回退及宿主真实提供的 token；宿主不提供 token 时写 `null`，严禁估造。至少覆盖 `render_docx`、`word_export`、`visual_qa`、`publish`、`delivery`。Token 优化只评价机械层，分析层以质量和 MAX 合规为先。
 - 更新 memory（若有新坑/决策）。
 - ❌ 默认不 commit；**仅当用户明确要求才 commit**，且推送脚本里的 Notion token 必须读环境变量、绝不硬编码进库。
-- 清临时文件（`sessions/_*.txt`）；不得删除当日动态图、锁定 evidence snapshot、capture/prepare/analysis/render/Word-QA/publish/delivery manifest。动态图过期清理由 `capture_all.js` 开头的 `cleanup.js` 或手动 `npm run cleanup` 执行，只删 cutoff 之前的 inbox 截图和 BlockBeats 卡片。
+- 清临时文件（`sessions/_*.txt`）。同日与保留期内不得删除动态图、锁定 evidence snapshot、capture/prepare/analysis/render/Word-QA/publish/delivery manifest。超过保留期后由 `session_runner.py deliver` 自动执行保留期清理；该清理长期只保留本地 Word 底稿、Notion 页面、`context_log.md`、delivery/lease/automation 最小状态，不清理当前日报仍需回查的证据。人工可运行 `py runtime/report_retention.py --json` 审计，但日常不再等待用户单独下清理指令。
 
 ### 5.5 收工触发器（Claude Code 旧机制平移到 Codex）
 - 用户说「收工」「如无问题即收工」「完成后收工」，或助手准备回复“完成/已交付”时，必须触发本节；不得把“我认为差不多了”当完成。
-- **日报交付型收工**：必须同时满足 `report_lint`/时效门、canonical render manifest、Word-QA `status=passed`、publish manifest、线上 verifier `[PASS]` 且退出码 0、同前缀唯一存活页、最终 `context_log.md`、`session_runner.py deliver` 成功、`sessions/_*.txt` 清理完成；晚报还必须完成 §5.3 独立审查 artifact 与 Notion 子页。缺任一项＝未收工，只能报告阻塞点。
+- **日报交付型收工**：必须同时满足 `report_lint`/时效门、canonical render manifest、Word-QA `status=passed`、publish manifest、线上 verifier `[PASS]` 且退出码 0、同前缀唯一存活页、最终 `context_log.md`、`session_runner.py deliver` 成功、`retention_cleanup_<slot>.json` 形成、`sessions/_*.txt` 清理完成；晚报还必须完成 §5.3 独立审查 artifact 与 Notion 子页。缺任一项＝未收工，只能报告阻塞点。
 - **工作流维护/审计型收工**（不发布日报时适用）：必须完成本次范围内的权威文件/测试/审计更新，跑相关回归检查，若用户明确要求 commit 则只 stage 本次范围文件并提交；最终回复必须列出验证结果、commit hash（如有）和仍存在的无关脏文件边界。
 - 完成回复只允许基于真实工具输出和 manifest；禁止用布尔自证、口头 PASS、未验证截图或未核 exit code 代替证据。

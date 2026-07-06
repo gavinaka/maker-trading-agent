@@ -45,6 +45,11 @@ class CodexClaudeParityTests(unittest.TestCase):
             with self.subTest(source=text[:20]):
                 self.assertIn("cleanup.js", text)
                 self.assertIn("CLEANUP_KEEP_DAYS", text)
+                self.assertIn("runtime/report_retention.py", text)
+                self.assertIn("REPORT_RETENTION_KEEP_DAYS", text)
+                self.assertIn("session_runner.py deliver", text)
+                self.assertIn("--skip-retention-cleanup", text)
+                self.assertIn("retention_cleanup_<slot>.json", text)
                 self.assertIn("sessions/_*.txt", text)
 
     def test_codex_does_not_delegate_execution_authority_to_ignored_claude_mirror(self):

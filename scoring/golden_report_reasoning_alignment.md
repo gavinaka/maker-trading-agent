@@ -12,15 +12,16 @@
 
 执行顺序固定为：
 
-1. 完成当次 slot 的五源采集与有效性确认。
+1. 完成当次 slot 的六源采集与有效性确认。
 2. 进入最高可用模型能力与 MAX reasoning。
 3. 在动笔前按本契约组织推理。
-4. 再写 combined.md / Word / Notion 正文。
-5. MD 生成后不得为了“像金标”补字数、补价位、补 rubric、补段落。
+4. 在正式 MD 前写入内部 `runtime_state/<date>/reasoning_work_<slot>.md`，并通过 `session_runner.py certify-reasoning` 形成 `reasoning_readiness_<slot>.json`。
+5. 再写正式 `combined.md`，并在 analysis lock 之后才允许 Word / Notion。
+6. MD 生成后不得为了“像金标”补字数、补价位、补 rubric、补段落；后补任何推理均禁止。
 
 ## 必须对齐的推理维度
 
-1. 五源验真与转录：BlockBeats、FedWatch、Coinglass、Exocharts、TradingView 都必须先读成当次证据，不从前序报告继承判断。
+1. 六源验真与转录：BlockBeats、FedWatch、Coinglass、Exocharts、Farside、TradingView 都必须先读成当次证据，不从前序报告继承判断。
 2. 基本面：BlockBeats 先分 Tier，再判断是否改变背景、是否已被价格兑现；FedWatch 写概率与边际变化，不把宏观词当方向锚。
 3. 盘口：Coinglass 先定阶段 pivot，再读价格、CVD、资金费率、OI 的方向/斜率/背离；清算热力图只作辅助，不单独翻向。
 4. 足迹：Exocharts 对 OHLC、POC、Delta、CVD、吸收/失衡做自洽校验；足迹只调强弱，不替代主盘口框架。
@@ -42,11 +43,11 @@
 3. 盘口评分必须有“综合权衡”：先承认主方向证据，再列出为什么不走极端的约束，最后落绝对分数。不能直接从结论倒推分数。
 4. 盘面 30 必须拆成支撑压力接近度、流动性掠夺、SMA20、量价、斐波/趋势线，说明每项如何贡献分数。
 5. 胜率必须写 rubric 链：锚点胜率 -> 合法次因加减 -> 落值 -> 再和 60% 比较。执行概率必须单独处理，只衡量挂单可达性，不能混入胜率。
-6. 五源支撑必须是源到判断的链：BlockBeats 分 Tier 并聚合；FedWatch 写当前概率与 1日/1周/1月边际；Coinglass 写四维状态；Exocharts 写 POC/Delta/CVD/成交量序列；TradingView 写跨源现价、日线/4H/1H/15m、SMA20、VRVP/POC/HVN/LVN。
+6. 六源支撑必须是源到判断的链：BlockBeats 分 Tier 并聚合；FedWatch 写当前概率与 1日/1周/1月边际；Farside 写 BTC ETF Flow 的 Total 流入/流出与价格关系；Coinglass 写四维状态；Exocharts 写 POC/Delta/CVD/成交量序列；TradingView 写跨源现价、日线/4H/1H/15m、SMA20、VRVP/POC/HVN/LVN。
 7. 流动性读法必须是 VRVP/成交量结构主判，清算热力图只辅助印证；猎杀位必须带周期和用途，不得用热力图单独翻向。
 8. “不能做”必须在完整推理后由拥挤侧、squeeze/rollover、位置、费率/OI 和趋势阶段推出；只约束日内 Maker，不反推主账户中线。
 9. Maker 计划必须体现订单生命周期：旧单是否成交、是否触及取消价/止损、是否撤旧挂新、为何边缘随行情上移/下移，且同一时刻只保留一张系统 Maker 单。
-10. 风险验算必须把入场、止损、TP1、TP2、R、杠杆名义风险、盈亏比和仓位金额算清楚；防守层第一层必须绑定 4H 极点，第二层只保本损。
+10. 风险验算必须把入场、止损、TP1、TP2、R、杠杆名义风险、盈亏比和仓位金额算清楚；防守层第一层只能绑定“成交后后续形成并确认的 4H 极点”规则，报告阶段不得预填该极点止损价，第二层只保本损。
 11. 冲突项必须显式处理：例如基本面偏暖但盘口承压时，主账户可以等待，Maker 只做压力区短线；不能为了统一叙事强行把所有源压成同一方向。
 12. 每个数值必须嵌入其对应推理节点，证明方向、分数、胜率、风险或取消条件。禁止在后附末尾堆“锚点组”来凑数；数字列表不能替代推理链。
 

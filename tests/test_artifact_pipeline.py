@@ -181,14 +181,21 @@ class RenderPipelineTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "report structure gate failed"):
                 validate_report_structure(report, "2026-07-05", "morning")
 
-    def test_historical_630_samples_cover_original_failures(self):
-        root = Path(__file__).resolve().parents[1]
-        midday = (
-            root / "outputs" / "2026-06-30_midday_combined_v2.md"
-        ).read_text(encoding="utf-8").splitlines()
-        evening = (
-            root / "outputs" / "2026-06-30_evening_combined.md"
-        ).read_text(encoding="utf-8").splitlines()
+    def test_inline_samples_cover_original_630_render_failures(self):
+        midday = """
+# 2026.6.30 午间日报
+>
+## ③ 后附
+BlockBeats / Coinglass / Exocharts / FedWatch / TradingView
+""".splitlines()
+        evening = """
+# 2026.6.30 晚间日报
+## ① 正文
+### 基本面
+中性。
+## ③ 后附
+BlockBeats / Coinglass / Exocharts / FedWatch / TradingView
+""".splitlines()
         with self.assertRaisesRegex(ValueError, "lone blockquote marker"):
             preflight(midday, "2026-06-30", "midday")
         self.assertEqual(
@@ -700,9 +707,9 @@ class PublishEvidenceTests(unittest.TestCase):
             else "低多：入场区间 62,560-62,650，挂单价 62,600，持仓 800 刀，OKX，左侧，5x，盈亏比 1:2.5 以上"
         )
         first_layer = (
-            "第一层：价格下行至 61,850 后，将止损移动至入场后形成的 4H K线结构高点极点；同时取消所有加仓。"
+            "第一层：价格下行至 61,850 后，将止损移动至入场后形成并确认的 4H K线结构性极点高点；同时取消所有加仓。"
             if slot == "evening"
-            else "第一层：价格首次触及 63,140 后，将止损移至 4H 级别 K 线极点低点 62,596，并取消所有加仓"
+            else "第一层：价格首次触及 63,140 后，将止损移至成交后新形成并确认的 4H 级别 K 线结构性极点低点，并取消所有加仓"
         )
         second_layer = (
             "第二层：价格下行至 61,250 后，设置保本损；不减仓。"

@@ -6,6 +6,7 @@ import { chromium } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { classifyImpact, compareRowsByPriority } from './blockbeats_priority.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -83,69 +84,6 @@ function parseRowsFromBody(bodyText) {
   }
   pushCurrent();
   return rows;
-}
-
-function addScore(match, score, reasons, reason) {
-  if (match) {
-    reasons.push(reason);
-    return score;
-  }
-  return 0;
-}
-
-function classifyImpact(row, nowMs) {
-  const text = `${row.title}\n${row.body}`;
-  const reasons = [];
-  let tier = 'T2行业';
-  let category = '其他';
-  let score = 300;
-
-  const t1Rules = [
-    ['地缘', /(战争|冲突|制裁|外交|选举|伊朗|以色列|俄罗斯|乌克兰|中东|白宫|国会|财政部|司法部|特朗普)/],
-    ['货币政策', /(美联储|FOMC|降息|加息|利率|FedWatch|CPI|PCE|通胀|非农|失业率|美债|美元|流动性|QT|QE)/i],
-    ['监管立法', /(SEC|CFTC|监管|立法|法案|政策|执法|批准.*ETF|拒绝.*ETF|ETF.*批准|ETF.*拒绝|MiCA)/i],
-  ];
-  for (const [name, regex] of t1Rules) {
-    if (regex.test(text)) {
-      tier = 'T1政治/宏观';
-      category = name;
-      score = 1000;
-      reasons.push(`T1:${name}`);
-      break;
-    }
-  }
-
-  if (tier !== 'T1政治/宏观') {
-    const t2Rules = [
-      ['ETF资金流', /(ETF|净流入|净流出|GBTC|IBIT|FBTC|ARKB)/i],
-      ['交易所', /(Binance|OKX|Coinbase|Kraken|Bybit|交易所|上币|宕机)/i],
-      ['链上/安全', /(链上|DeFi|TVL|黑客|攻击|漏洞|Tornado Cash|预言机|合约漏洞)/i],
-      ['鲸鱼', /(巨鲸|鲸鱼|大额转账|转入交易所|转出交易所|地址)/],
-      ['项目技术', /(主网|升级|路线图|生态|Meme|Solana|Ethereum|以太坊|项目)/i],
-      ['机构持仓', /(机构|Strategy|MicroStrategy|Metaplanet|持仓|增持|减持|买入|抛售|净买入)/i],
-    ];
-    for (const [name, regex] of t2Rules) {
-      if (regex.test(text)) {
-        category = name;
-        reasons.push(`T2:${name}`);
-        break;
-      }
-    }
-  }
-
-  score += addScore(/(BTC|比特币|Bitcoin)/i.test(text), 220, reasons, 'BTC相关');
-  score += addScore(/(ETH|以太坊|Ethereum)/i.test(text), 140, reasons, 'ETH相关');
-  score += addScore(/(ETF|净流入|净流出|抛压|需求)/i.test(text), 180, reasons, 'ETF/资金流');
-  score += addScore(/(爆仓|清算|杠杆|强平|连锁清算|波动)/.test(text), 170, reasons, '杠杆/清算风险');
-  score += addScore(/(黑客|攻击|漏洞|制裁|执法|监管|拒绝|批准)/i.test(text), 160, reasons, '安全/监管冲击');
-  score += addScore(/(\d+(?:\.\d+)?\s*(亿|万|万美元|亿美元|枚|%))/.test(text), 80, reasons, '量化规模');
-
-  const ageHours = Math.max(0, (nowMs - row.epoch_ms) / 3600000);
-  const recencyScore = Math.max(0, Math.round((WINDOW_HOURS - ageHours) * 5));
-  score += recencyScore;
-  reasons.push(`recency+${recencyScore}`);
-
-  return { tier, category, score, reasons };
 }
 
 async function readRows(page) {
@@ -234,13 +172,10 @@ try {
     .filter((row) => row.epoch_ms >= windowStartMs && row.epoch_ms <= nowMs + 60000)
     .map((row) => ({
       ...row,
-      analysis_priority: classifyImpact(row, nowMs),
+      analysis_priority: classifyImpact(row, nowMs, WINDOW_HOURS),
     }));
   const selected = [...candidateRows]
-    .sort((a, b) => (
-      b.analysis_priority.score - a.analysis_priority.score
-      || b.epoch_ms - a.epoch_ms
-    ))
+    .sort(compareRowsByPriority)
     .slice(0, TOP_N)
     .map((row, index) => ({
       ...row,
