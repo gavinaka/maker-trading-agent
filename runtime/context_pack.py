@@ -7,14 +7,18 @@ import hashlib
 import json
 import os
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from runtime.prelock_read_policy import prelock_policy_manifest
 from runtime.state_store import LOGIC_FILES
 
 
-ROOT = Path(__file__).resolve().parents[1]
 DATE_HEADING = re.compile(r"^##\s+20\d{2}-\d{2}-\d{2}")
 PAGE_ID = re.compile(
     r"\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b",
