@@ -10,6 +10,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from runtime.prelock_read_policy import prelock_policy_manifest
 from runtime.state_store import LOGIC_FILES
 
 
@@ -248,6 +249,11 @@ def build_context_pack(
             "load_complete_resolved_six_source_evidence": True,
             "mandatory_guardrails_always_read": (
                 authority_read_plan()["always_read"]
+            ),
+            "prelock_safe_read_policy": prelock_policy_manifest(
+                trading_date,
+                slot,
+                root=root,
             ),
         },
     }

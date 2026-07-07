@@ -209,6 +209,50 @@ def _prior_parent_for_reissue(directory: Path, slot: str) -> dict | None:
     return parent
 
 
+def _capture_lease_recovery(
+    *,
+    trading_date: str,
+    slot: str,
+    workflow_lease_id: str | None,
+    capture_workflow_lease_id: object,
+    recovered_from_workflow_lease: dict | None,
+) -> dict | None:
+    if workflow_lease_id is None or capture_workflow_lease_id == workflow_lease_id:
+        return None
+    if not isinstance(capture_workflow_lease_id, str) or not re.fullmatch(
+        r"[0-9a-f]{64}",
+        capture_workflow_lease_id,
+    ):
+        return None
+    if not isinstance(recovered_from_workflow_lease, dict):
+        return None
+    checks = {
+        "date": recovered_from_workflow_lease.get("trading_date") == trading_date,
+        "slot": recovered_from_workflow_lease.get("slot") == slot,
+        "lease_id": (
+            recovered_from_workflow_lease.get("lease_id")
+            == capture_workflow_lease_id
+        ),
+        "status": recovered_from_workflow_lease.get("status")
+        in {"abandoned", "recovered"},
+        "active_lease": bool(re.fullmatch(r"[0-9a-f]{64}", workflow_lease_id)),
+        "reason": len(
+            str(recovered_from_workflow_lease.get("recovery_reason", "")).strip()
+        )
+        >= 8,
+    }
+    if not all(checks.values()):
+        return None
+    return {
+        "kind": "recovered_capture_manifest_lease",
+        "captured_workflow_lease_id": capture_workflow_lease_id,
+        "active_workflow_lease_id": workflow_lease_id,
+        "captured_lease_status": recovered_from_workflow_lease.get("status"),
+        "captured_lease_closed_at": recovered_from_workflow_lease.get("closed_at"),
+        "recovery_reason": recovered_from_workflow_lease.get("recovery_reason"),
+    }
+
+
 @contextmanager
 def exclusive_lock(path: Path, *, stale_seconds: int = 1800):
     """Acquire a cross-process lock and never remove another owner's lock."""
@@ -262,6 +306,7 @@ def prepare_transition(
     allow_same_slot_reissue: bool = False,
     capture_manifest_path: Path | None = None,
     workflow_lease_id: str | None = None,
+    recovered_from_workflow_lease: dict | None = None,
     prior_state_skip_reason: str | None = None,
 ) -> tuple[dict, Path]:
     if slot not in SLOT_ORDER:
@@ -327,6 +372,14 @@ def prepare_transition(
         if slot == "morning"
         else {"conservative_delta", "full_recollection"}
     )
+    capture_workflow_lease_id = capture_manifest.get("workflow_lease_id")
+    capture_lease_recovery = _capture_lease_recovery(
+        trading_date=trading_date,
+        slot=slot,
+        workflow_lease_id=workflow_lease_id,
+        capture_workflow_lease_id=capture_workflow_lease_id,
+        recovered_from_workflow_lease=recovered_from_workflow_lease,
+    )
     capture_checks = {
         "date": capture_manifest.get("date") == trading_date,
         "slot": capture_manifest.get("slot") == slot,
@@ -345,14 +398,15 @@ def prepare_transition(
             or (
                 allow_same_slot_reissue
                 and reissue is not None
-                and isinstance(capture_manifest.get("workflow_lease_id"), str)
+                and isinstance(capture_workflow_lease_id, str)
                 and bool(
                     re.fullmatch(
                         r"[0-9a-f]{64}",
-                        str(capture_manifest.get("workflow_lease_id")),
+                        str(capture_workflow_lease_id),
                     )
                 )
             )
+            or capture_lease_recovery is not None
         ),
     }
     failed_capture_checks = sorted(
@@ -400,6 +454,11 @@ def prepare_transition(
         except ValueError as exc:
             raise ValueError("fallback manifest escapes its slot directory") from exc
         fallback_payload = load_json(fallback_path)
+        fallback_allowed_lease_ids = {workflow_lease_id}
+        if capture_lease_recovery is not None or (
+            allow_same_slot_reissue and reissue is not None
+        ):
+            fallback_allowed_lease_ids.add(capture_workflow_lease_id)
         fallback_checks = {
             "exists": isinstance(fallback_payload, dict),
             "hash": (
@@ -421,7 +480,7 @@ def prepare_transition(
             "lease": (
                 isinstance(fallback_payload, dict)
                 and fallback_payload.get("workflow_lease_id")
-                == workflow_lease_id
+                in fallback_allowed_lease_ids
             ),
             "success": (
                 isinstance(fallback_payload, dict)
@@ -498,6 +557,8 @@ def prepare_transition(
     }
     if reissue:
         transition["reissue"] = reissue
+    if capture_lease_recovery is not None:
+        transition["capture_lease_recovery"] = capture_lease_recovery
     target = directory / f"transition_{slot}.json"
     existing = load_json(target)
     if existing and not replace_prepared_transition:

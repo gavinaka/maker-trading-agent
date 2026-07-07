@@ -14,9 +14,12 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 
+from runtime.prelock_read_policy import prelock_policy_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SLOT_ORDER = ("morning", "midday", "evening")
+PYTHON_CACHE_SUFFIXES = {".pyc", ".pyo"}
 
 
 def now_iso() -> str:
@@ -59,6 +62,40 @@ def _safe_relative(path: Path, root: Path) -> str:
         raise ValueError(f"guard target escapes repository root: {path}") from exc
 
 
+def _is_python_cache_artifact(path: Path | str) -> bool:
+    candidate = Path(path)
+    return "__pycache__" in candidate.parts or candidate.suffix.lower() in PYTHON_CACHE_SUFFIXES
+
+
+def _is_current_slot_generated_output(relative: str, trading_date: str, slot: str) -> bool:
+    return relative in {
+        f"outputs/{trading_date}_{slot}_cards.json",
+        f"outputs/{trading_date}_{slot}_combined.md",
+        f"outputs/{trading_date}_{slot}_publish_payload.json",
+        f"outputs/{trading_date}_{slot}_render.docx",
+    }
+
+
+def _is_current_slot_generated_runtime_state(
+    relative: str,
+    trading_date: str,
+    slot: str,
+) -> bool:
+    resolved_state = "base.json" if slot == "morning" else f"resolved_{slot}.json"
+    return relative in {
+        f"runtime_state/{trading_date}/analysis_lock_{slot}.json",
+        f"runtime_state/{trading_date}/analysis_{slot}.json",
+        f"runtime_state/{trading_date}/decision_{slot}.json",
+        f"runtime_state/{trading_date}/{resolved_state}",
+        f"runtime_state/{trading_date}/current.json",
+        f"runtime_state/{trading_date}/delivery_{slot}.json",
+        f"runtime_state/{trading_date}/publish_{slot}.json",
+        f"runtime_state/{trading_date}/publish_payload_{slot}.json",
+        f"runtime_state/{trading_date}/render_{slot}.json",
+        f"runtime_state/{trading_date}/word_qa_{slot}.json",
+    }
+
+
 def _previous_date(trading_date: str) -> str:
     return (date.fromisoformat(trading_date) - timedelta(days=1)).isoformat()
 
@@ -80,6 +117,54 @@ def _candidate_paths_for_pair(root: Path, trading_date: str, slot: str) -> Itera
     yield outputs / f"{trading_date}_{slot}_combined.md"
     yield outputs / f"{trading_date}_{slot}_publish_payload.json"
     yield outputs / f"{trading_date}_{slot}_render.docx"
+
+
+def _prelock_broad_prior_judgment_paths(root: Path) -> Iterable[Path]:
+    sessions_archive = root / "sessions" / "archive"
+    if sessions_archive.is_dir():
+        yield from (path for path in sessions_archive.rglob("*") if path.is_file())
+
+    memory_aggregate = root / "memory" / "MEMORY.md"
+    if memory_aggregate.is_file():
+        yield memory_aggregate
+
+    reviews = root / "reviews"
+    if reviews.is_dir():
+        yield from (path for path in reviews.rglob("*") if path.is_file())
+
+    outputs = root / "outputs"
+    if outputs.is_dir():
+        for path in outputs.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() == ".py":
+                continue
+            if _is_python_cache_artifact(path):
+                continue
+            yield path
+
+    runtime_root = root / "runtime_state"
+    if runtime_root.is_dir():
+        prior_state_patterns = (
+            "analysis_*.json",
+            "decision_*.json",
+            "context_*.json",
+            "base.json",
+            "current.json",
+            "resolved_*.json",
+            "delivery_*.json",
+            "publish_*.json",
+            "render_*.json",
+            "word_qa_*.json",
+            "evening_independent_review.json",
+            "notion_*.json",
+            "publish_payload_*.json",
+        )
+        for date_dir in runtime_root.iterdir():
+            if not date_dir.is_dir() or date_dir.name.startswith("."):
+                continue
+            for pattern in prior_state_patterns:
+                yield from date_dir.glob(pattern)
 
 
 def prelock_guard_targets(
@@ -105,6 +190,25 @@ def prelock_guard_targets(
                 continue
             targets.append(path)
             seen.add(relative)
+    for path in _prelock_broad_prior_judgment_paths(root):
+        relative = _safe_relative(path, root)
+        if relative in seen:
+            continue
+        current_runtime_allowed = {
+            f"runtime_state/{trading_date}/context_{slot}.json",
+            f"runtime_state/{trading_date}/transition_{slot}.json",
+            f"runtime_state/{trading_date}/golden_reasoning_{slot}.json",
+            f"runtime_state/{trading_date}/prelock_guard_{slot}.json",
+            f"runtime_state/{trading_date}/usage.jsonl",
+        }
+        if relative in current_runtime_allowed:
+            continue
+        if relative.startswith(
+            f"runtime_state/{trading_date}/captures/{slot}/"
+        ) or relative.startswith(f"runtime_state/{trading_date}/evidence/{slot}/"):
+            continue
+        targets.append(path)
+        seen.add(relative)
     return targets
 
 
@@ -166,6 +270,11 @@ def activate_prelock_guard(
         "trading_date": trading_date,
         "slot": slot,
         "policy": "pre_analysis_prior_judgment_files_quarantined_until_lock",
+        "safe_read_policy": prelock_policy_manifest(
+            trading_date,
+            slot,
+            root=root,
+        ),
         "entries": entries,
     }
     atomic_json_write(manifest_path, payload)
@@ -184,29 +293,59 @@ def restore_prelock_guard(
     if not payload or payload.get("status") != "active":
         return payload, manifest_path
 
+    superseded_current_outputs: list[str] = []
     for entry in payload.get("entries", []):
         if not isinstance(entry, dict):
             raise ValueError("pre-lock guard entry must be an object")
-        original = (root / str(entry["original_path"])).resolve()
+        original_relative = str(entry["original_path"])
+        original = (root / original_relative).resolve()
         quarantine = (root / str(entry["quarantine_path"])).resolve()
         _safe_relative(original, root)
         _safe_relative(quarantine, root)
+        superseded_current_artifact = (
+            reason == "analysis_lock_success"
+            and (
+                _is_current_slot_generated_output(original_relative, trading_date, slot)
+                or _is_current_slot_generated_runtime_state(
+                    original_relative,
+                    trading_date,
+                    slot,
+                )
+            )
+        )
         if not quarantine.is_file():
+            if superseded_current_artifact:
+                superseded_current_outputs.append(original_relative)
+                continue
+            if original.is_file() and sha256_file(original) == entry.get("sha256"):
+                continue
             raise RuntimeError(f"pre-lock quarantine file is missing: {quarantine}")
         if sha256_file(quarantine) != entry.get("sha256"):
             raise RuntimeError(
                 f"pre-lock quarantine hash mismatch: {entry['original_path']}"
             )
+        if superseded_current_artifact:
+            quarantine.unlink()
+            superseded_current_outputs.append(original_relative)
+            continue
         if original.exists():
-            raise RuntimeError(
-                f"cannot restore pre-lock artifact over existing file: {original}"
-            )
+            if original.is_file() and sha256_file(original) == entry.get("sha256"):
+                quarantine.unlink()
+                continue
+            if _is_python_cache_artifact(entry["original_path"]) and original.is_file():
+                original.unlink()
+            else:
+                raise RuntimeError(
+                    f"cannot restore pre-lock artifact over existing file: {original}"
+                )
         original.parent.mkdir(parents=True, exist_ok=True)
         quarantine.replace(original)
 
     payload["status"] = "restored"
     payload["restored_at"] = now_iso()
     payload["restore_reason"] = reason
+    if superseded_current_outputs:
+        payload["superseded_current_outputs"] = superseded_current_outputs
     atomic_json_write(manifest_path, payload)
     return payload, manifest_path
 

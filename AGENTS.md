@@ -3,8 +3,8 @@
 ## 意图优先级
 
 - 用户要求“写/出/跑/生成日报、早报、早间日报、午报、午间日报、晚报、晚间日报”时，只运行项目级 `daily-report`。
-- 上述精确时段日报意图绝对优先，禁止触发、串联或输出 `quant-summary`。
-- Trading-System 工作区不提供 `quant-summary`；出现“量化总结／量化点评”时不做跨工作流路由。
+- 上述精确时段日报意图绝对优先，禁止触发、串联或输出任何外部报告、总结或跨工作流流程。
+- Trading-System 工作区只提供本仓库明确定义的交易日报流程；非日报请求不做跨工作流路由。
 - 确定性分类规则见 `runtime/intent_router.py`，回归测试见 `tests/test_report_intent_routing.py`。
 
 ## 执行权威
@@ -22,6 +22,7 @@
 - 从 2026-07-06 午报起，正式 `combined.md` 生成前必须先完成 `runtime_state/<date>/reasoning_work_<slot>.md` 并运行 `session_runner.py certify-reasoning` 形成 pre-MD readiness；后补理由、后补 rubric 或后补任何推理均禁止。
 - 推理资源不足时硬停，禁止降档或降质继续。
 - 分析前只读取 `context_pack.py` 生成的最小包，禁止直接读取完整 `context_log.md`、聚合 `MEMORY.md` 或前序分析／决策。
+- 分析锁前读取与搜索必须遵守 `context_pack.py` 输出的 `read_policy.prelock_safe_read_policy`；禁止裸全仓库搜索命中 `sessions/archive/**`、旧 `outputs/**`、旧 `runtime_state/**`、`reviews/**` 或 quarantine。
 - lint 后必须先建立与报告哈希绑定且包含 pre-MD readiness 的 `lock-analysis`，再允许事后读取前序计划；完成撤旧挂新／漂移对照及晚报独立审查后运行 `finalize-post-lock`，commit 缺任一道门或完整节点时硬停。
 - 最终三门和台账记录完成后必须运行 `session_runner.py deliver`，形成最终交付状态。
 - 采集前必须 `begin-session` 并把 lease token 传给采集及所有 runner 阶段；租约持续到 hash-closed delivery，禁止时段交叠或静默抢锁。

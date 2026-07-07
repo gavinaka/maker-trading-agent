@@ -1,0 +1,17 @@
+# Daily-report pre-lock safety: default text search must not surface prior
+# judgments. Use explicit paths or --no-ignore only for workflow maintenance.
+sessions/context_log.md
+sessions/archive/**
+memory/MEMORY.md
+reviews/**
+runtime_state/**
+
+# Keep deterministic output tooling searchable, but hide generated reports,
+# payloads, render artifacts, cards, and audits from default rg.
+outputs/*.md
+outputs/*.json
+outputs/*.docx
+outputs/*.html
+outputs/*.png
+outputs/*.pdf
+outputs/blockbeats/**

@@ -147,6 +147,13 @@ def main() -> int:
     recover.add_argument("--slot", required=True, choices=("morning", "midday", "evening"))
     recover.add_argument("--reason", required=True)
     recover.add_argument("--skip-prior-delivery-reason")
+    recover.add_argument(
+        "--from-lease-id",
+        help=(
+            "recover from a same date/slot archived abandoned or recovered lease "
+            "when no active lease remains"
+        ),
+    )
 
     prepare = sub.add_parser("prepare")
     prepare.add_argument("--date", required=True)
@@ -315,6 +322,7 @@ def main() -> int:
             args.slot,
             reason=args.reason,
             skip_prior_delivery_reason=args.skip_prior_delivery_reason,
+            from_lease_id=args.from_lease_id,
         )
         print(json.dumps(lease, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
@@ -354,6 +362,11 @@ def main() -> int:
             allow_same_slot_reissue=args.allow_same_slot_reissue,
             capture_manifest_path=args.capture_manifest,
             workflow_lease_id=lease["lease_id"],
+            recovered_from_workflow_lease=(
+                lease.get("recovered_from_workflow_lease")
+                if isinstance(lease.get("recovered_from_workflow_lease"), dict)
+                else None
+            ),
             prior_state_skip_reason=(
                 lease.get("prior_delivery_skip", {}).get("reason")
                 if isinstance(lease.get("prior_delivery_skip"), dict)

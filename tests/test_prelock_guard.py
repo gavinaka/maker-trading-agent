@@ -13,6 +13,13 @@ from runtime.prelock_guard import (
     restore_prelock_guard,
     sha256_file,
 )
+from runtime.prelock_read_policy import (
+    PrelockReadViolation,
+    assert_prelock_read_allowed,
+    classify_prelock_read,
+    prelock_policy_manifest,
+    prelock_rg_exclude_args,
+)
 
 
 class PrelockGuardTests(unittest.TestCase):
@@ -90,6 +97,347 @@ class PrelockGuardTests(unittest.TestCase):
             self.assertEqual(len(restored), 1)
             for path in files.values():
                 self.assertTrue(path.exists())
+
+    def test_guard_hides_broad_prior_surfaces_but_keeps_current_slot_pack(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prior = [
+                root / "sessions" / "archive" / "old_context.md",
+                root / "reviews" / "daily_review_structure.md",
+                root / "outputs" / "2026-07-05_morning_combined.md",
+                root / "runtime_state" / "2026-07-05" / "context_morning.json",
+                root / "runtime_state" / "2026-07-05" / "base.json",
+                root / "memory" / "MEMORY.md",
+            ]
+            generated_cache = root / "outputs" / "__pycache__" / "report_structure_gate.cpython-314.pyc"
+            current_allowed = [
+                root / "runtime_state" / "2026-07-07" / "context_morning.json",
+                root / "runtime_state" / "2026-07-07" / "transition_morning.json",
+                root
+                / "runtime_state"
+                / "2026-07-07"
+                / "captures"
+                / "morning"
+                / "full_base_run.json",
+                root
+                / "runtime_state"
+                / "2026-07-07"
+                / "evidence"
+                / "morning"
+                / "run"
+                / "blockbeats.json",
+            ]
+            for path in prior + current_allowed:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("payload\n", encoding="utf-8")
+            generated_cache.parent.mkdir(parents=True, exist_ok=True)
+            generated_cache.write_bytes(b"compiled cache")
+
+            targets = {
+                path.relative_to(root).as_posix()
+                for path in prelock_guard_targets("2026-07-07", "morning", root=root)
+            }
+            for path in prior:
+                self.assertIn(path.relative_to(root).as_posix(), targets)
+            for path in current_allowed:
+                self.assertNotIn(path.relative_to(root).as_posix(), targets)
+            self.assertNotIn(generated_cache.relative_to(root).as_posix(), targets)
+
+            activate_prelock_guard("2026-07-07", "morning", root=root)
+            for path in prior:
+                self.assertFalse(path.exists(), path)
+            for path in current_allowed:
+                self.assertTrue(path.exists(), path)
+            self.assertTrue(generated_cache.exists())
+
+            restore_prelock_guard("2026-07-07", "morning", root=root)
+            for path in prior + current_allowed:
+                self.assertTrue(path.exists(), path)
+
+    def test_restore_tolerates_regenerated_python_cache_collision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cache = root / "outputs" / "__pycache__" / "report_structure_gate.cpython-314.pyc"
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_bytes(b"old cache")
+
+            payload, _ = activate_prelock_guard("2026-07-07", "morning", root=root)
+            self.assertEqual(len(payload["entries"]), 0)
+
+            quarantine = (
+                root
+                / "runtime_state"
+                / "2026-07-07"
+                / ".prelock_quarantine"
+                / "morning"
+                / "manual_cache"
+            )
+            quarantine.parent.mkdir(parents=True, exist_ok=True)
+            quarantine.write_bytes(b"old cache")
+            manifest = root / "runtime_state" / "2026-07-07" / "prelock_guard_morning.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "status": "active",
+                        "trading_date": "2026-07-07",
+                        "slot": "morning",
+                        "entries": [
+                            {
+                                "original_path": cache.relative_to(root).as_posix(),
+                                "quarantine_path": quarantine.relative_to(root).as_posix(),
+                                "sha256": sha256_file(quarantine),
+                                "bytes": quarantine.stat().st_size,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            cache.write_bytes(b"regenerated cache")
+
+            restored, _ = restore_prelock_guard("2026-07-07", "morning", root=root)
+            self.assertEqual(restored["status"], "restored")
+            self.assertEqual(cache.read_bytes(), b"old cache")
+
+    def test_restore_is_idempotent_after_partial_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self._seed(root)
+            payload, _ = activate_prelock_guard("2026-07-06", "evening", root=root)
+            first_entry = payload["entries"][0]
+            original = root / first_entry["original_path"]
+            quarantine = root / first_entry["quarantine_path"]
+            quarantine.replace(original)
+
+            restored, _ = restore_prelock_guard("2026-07-06", "evening", root=root)
+            self.assertEqual(restored["status"], "restored")
+            for path in files.values():
+                self.assertTrue(path.exists(), path)
+
+    def test_analysis_lock_restore_discards_superseded_current_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = root / "outputs" / "2026-07-07_morning_combined.md"
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text("old report\n", encoding="utf-8")
+
+            payload, _ = activate_prelock_guard("2026-07-07", "morning", root=root)
+            self.assertTrue(
+                any(
+                    entry["original_path"] == "outputs/2026-07-07_morning_combined.md"
+                    for entry in payload["entries"]
+                )
+            )
+            self.assertFalse(report.exists())
+            report.write_text("new locked report\n", encoding="utf-8")
+
+            restored, _ = restore_prelock_guard(
+                "2026-07-07",
+                "morning",
+                root=root,
+                reason="analysis_lock_success",
+            )
+            self.assertEqual(restored["status"], "restored")
+            self.assertEqual(report.read_text(encoding="utf-8"), "new locked report\n")
+            self.assertIn(
+                "outputs/2026-07-07_morning_combined.md",
+                restored["superseded_current_outputs"],
+            )
+
+    def test_analysis_lock_restore_discards_stale_current_payload_and_render(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            cards = root / "outputs" / "2026-07-07_morning_cards.json"
+            payload_file = root / "outputs" / "2026-07-07_morning_publish_payload.json"
+            render = root / "outputs" / "2026-07-07_morning_render.docx"
+            for path, content in (
+                (cards, "old cards\n"),
+                (payload_file, "old payload\n"),
+                (render, "old render\n"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+
+            activate_prelock_guard("2026-07-07", "morning", root=root)
+            restored, _ = restore_prelock_guard(
+                "2026-07-07",
+                "morning",
+                root=root,
+                reason="analysis_lock_success",
+            )
+
+            self.assertEqual(restored["status"], "restored")
+            self.assertFalse(cards.exists())
+            self.assertFalse(payload_file.exists())
+            self.assertFalse(render.exists())
+            self.assertEqual(
+                sorted(restored["superseded_current_outputs"]),
+                [
+                    "outputs/2026-07-07_morning_cards.json",
+                    "outputs/2026-07-07_morning_publish_payload.json",
+                    "outputs/2026-07-07_morning_render.docx",
+                ],
+            )
+
+    def test_analysis_lock_restore_discards_stale_current_runtime_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "runtime_state" / "2026-07-07"
+            stale_files = [
+                state / "analysis_lock_morning.json",
+                state / "analysis_morning.json",
+                state / "decision_morning.json",
+                state / "base.json",
+                state / "current.json",
+                state / "render_morning.json",
+                state / "word_qa_morning.json",
+            ]
+            for path in stale_files:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"old {path.name}\n", encoding="utf-8")
+
+            activate_prelock_guard("2026-07-07", "morning", root=root)
+            new_lock = state / "analysis_lock_morning.json"
+            new_lock.write_text("new lock\n", encoding="utf-8")
+
+            restored, _ = restore_prelock_guard(
+                "2026-07-07",
+                "morning",
+                root=root,
+                reason="analysis_lock_success",
+            )
+
+            self.assertEqual(restored["status"], "restored")
+            self.assertEqual(new_lock.read_text(encoding="utf-8"), "new lock\n")
+            for path in stale_files[1:]:
+                self.assertFalse(path.exists(), path)
+            self.assertIn(
+                "runtime_state/2026-07-07/analysis_lock_morning.json",
+                restored["superseded_current_outputs"],
+            )
+
+    def test_analysis_lock_restore_is_idempotent_after_superseded_discard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = root / "outputs" / "2026-07-07_morning_combined.md"
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text("old report\n", encoding="utf-8")
+
+            payload, _ = activate_prelock_guard("2026-07-07", "morning", root=root)
+            entry = next(
+                item
+                for item in payload["entries"]
+                if item["original_path"] == "outputs/2026-07-07_morning_combined.md"
+            )
+            (root / entry["quarantine_path"]).unlink()
+            report.write_text("new locked report\n", encoding="utf-8")
+
+            restored, _ = restore_prelock_guard(
+                "2026-07-07",
+                "morning",
+                root=root,
+                reason="analysis_lock_success",
+            )
+
+            self.assertEqual(restored["status"], "restored")
+            self.assertEqual(report.read_text(encoding="utf-8"), "new locked report\n")
+            self.assertIn(
+                "outputs/2026-07-07_morning_combined.md",
+                restored["superseded_current_outputs"],
+            )
+
+    def test_prelock_safe_read_blocks_prior_judgment_surfaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            forbidden = [
+                root / "sessions" / "context_log.md",
+                root / "sessions" / "archive" / "context_log_old.md",
+                root / "outputs" / "2026-07-05_morning_combined.md",
+                root / "runtime_state" / "2026-07-05" / "base.json",
+                root
+                / "runtime_state"
+                / "2026-07-07"
+                / ".prelock_quarantine"
+                / "morning"
+                / "old.md",
+                root / "reviews" / "2026-07-05.md",
+                root / "memory" / "MEMORY.md",
+            ]
+            for path in forbidden:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("prior judgment\n", encoding="utf-8")
+
+            for path in forbidden:
+                with self.subTest(path=path):
+                    result = classify_prelock_read(
+                        path,
+                        trading_date="2026-07-07",
+                        slot="morning",
+                        root=root,
+                    )
+                    self.assertFalse(result["allowed"])
+                    with self.assertRaises(PrelockReadViolation):
+                        assert_prelock_read_allowed(
+                            path,
+                            trading_date="2026-07-07",
+                            slot="morning",
+                            root=root,
+                        )
+
+    def test_prelock_safe_read_allows_authority_and_current_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            allowed = [
+                root / ".agents" / "skills" / "daily-report" / "SKILL.md",
+                root / "sessions" / "日报SOP.md",
+                root / "risk" / "state_gate.md",
+                root / "agents" / "emotional_agent.md",
+                root
+                / "runtime_state"
+                / "2026-07-07"
+                / "context_morning.json",
+                root
+                / "runtime_state"
+                / "2026-07-07"
+                / "transition_morning.json",
+                root
+                / "runtime_state"
+                / "2026-07-07"
+                / "captures"
+                / "morning"
+                / "full_base_abc.json",
+                root
+                / "runtime_state"
+                / "2026-07-07"
+                / "evidence"
+                / "morning"
+                / "run"
+                / "blockbeats.json",
+                root / "outputs" / "2026-07-07_morning_combined.md",
+            ]
+            for path in allowed:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("current authority or evidence\n", encoding="utf-8")
+
+            for path in allowed:
+                with self.subTest(path=path):
+                    self.assertEqual(
+                        assert_prelock_read_allowed(
+                            path,
+                            trading_date="2026-07-07",
+                            slot="morning",
+                            root=root,
+                        ),
+                        path.relative_to(root).as_posix(),
+                    )
+
+    def test_prelock_policy_manifest_contains_safe_search_denylists(self):
+        manifest = prelock_policy_manifest("2026-07-07", "morning")
+        self.assertIn("sessions/archive/**", manifest["forbidden_prior_judgment_paths"])
+        self.assertIn("runtime_state/**", manifest["safe_rg_excludes"])
+        self.assertIn("reviews/**", manifest["safe_rg_excludes"])
+        self.assertIn("-g", prelock_rg_exclude_args())
 
 
 if __name__ == "__main__":

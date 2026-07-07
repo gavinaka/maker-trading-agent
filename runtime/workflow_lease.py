@@ -116,8 +116,11 @@ def _append_audit(root: Path, payload: dict) -> None:
 def _archive(root: Path, payload: dict) -> Path:
     directory = root / "runtime_state" / "workflow_leases"
     directory.mkdir(parents=True, exist_ok=True)
-    target = directory / (
-        f"{payload['trading_date']}_{payload['slot']}_{payload['lease_id']}.json"
+    target = _archive_file(
+        root,
+        payload["trading_date"],
+        payload["slot"],
+        payload["lease_id"],
     )
     if target.exists():
         existing = load_json(target)
@@ -126,6 +129,61 @@ def _archive(root: Path, payload: dict) -> Path:
         return target
     _atomic_create(target, payload)
     return target
+
+
+def _archive_file(root: Path, trading_date: str, slot: str, lease_id_value: str) -> Path:
+    return (
+        root
+        / "runtime_state"
+        / "workflow_leases"
+        / f"{trading_date}_{slot}_{lease_id_value}.json"
+    )
+
+
+def _assert_lease_id(value: str) -> None:
+    if not re.fullmatch(r"[0-9a-f]{64}", str(value)):
+        raise ValueError(f"invalid workflow lease id: {value}")
+
+
+def _load_recoverable_archived_lease(
+    trading_date: str,
+    slot: str,
+    lease_id_value: str,
+    root: Path,
+) -> dict:
+    _validate_identity(trading_date, slot)
+    _assert_lease_id(lease_id_value)
+    archived = load_json(_archive_file(root, trading_date, slot, lease_id_value))
+    if not archived:
+        raise RuntimeError(
+            "archived workflow lease not found for recovery: "
+            f"{trading_date} {slot} lease_id={lease_id_value}"
+        )
+    checks = {
+        "date": archived.get("trading_date") == trading_date,
+        "slot": archived.get("slot") == slot,
+        "lease_id": archived.get("lease_id") == lease_id_value,
+        "closed": archived.get("status") in {"abandoned", "recovered"},
+        "token_removed": "token" not in archived,
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise RuntimeError(
+            "archived workflow lease is not recoverable: " + ", ".join(failed)
+        )
+    return archived
+
+
+def _recovered_from_payload(archived: dict, recovery_reason: str) -> dict:
+    return {
+        "trading_date": archived["trading_date"],
+        "slot": archived["slot"],
+        "lease_id": archived["lease_id"],
+        "status": archived["status"],
+        "closed_at": archived.get("closed_at"),
+        "close_reason": archived.get("reason"),
+        "recovery_reason": recovery_reason.strip(),
+    }
 
 
 def _delivery_path(trading_date: str, slot: str, root: Path) -> Path:
@@ -332,6 +390,7 @@ def begin_lease(
     *,
     root: Path = ROOT,
     skip_prior_delivery_reason: str | None = None,
+    recovered_from_workflow_lease: dict | None = None,
 ) -> dict:
     _validate_identity(trading_date, slot)
     _assert_not_already_delivered(trading_date, slot, root)
@@ -365,17 +424,21 @@ def begin_lease(
             "skipped_prior_slot": prior_delivery_skip["skipped_prior_slot"],
             "reason": prior_delivery_skip["reason"],
         }
+    if recovered_from_workflow_lease is not None:
+        payload["recovered_from_workflow_lease"] = recovered_from_workflow_lease
     _atomic_create(target, payload)
-    _append_audit(
-        root,
-        {
-            "event": "begin",
-            "at": payload["started_at"],
-            "trading_date": trading_date,
-            "slot": slot,
-            "lease_id": payload["lease_id"],
-        },
-    )
+    audit_payload = {
+        "event": "begin",
+        "at": payload["started_at"],
+        "trading_date": trading_date,
+        "slot": slot,
+        "lease_id": payload["lease_id"],
+    }
+    if recovered_from_workflow_lease is not None:
+        audit_payload["recovered_from_workflow_lease_id"] = (
+            recovered_from_workflow_lease["lease_id"]
+        )
+    _append_audit(root, audit_payload)
     return payload
 
 
@@ -457,22 +520,48 @@ def recover_lease(
     *,
     reason: str,
     skip_prior_delivery_reason: str | None = None,
+    from_lease_id: str | None = None,
     root: Path = ROOT,
 ) -> dict:
     if len(reason.strip()) < 8:
         raise ValueError("recovery reason must be explicit")
     existing = load_json(active_path(root))
-    if not existing:
+    if existing:
+        if from_lease_id is not None and existing.get("lease_id") != from_lease_id:
+            raise RuntimeError("active workflow lease does not match --from-lease-id")
+        archived = _close_lease(
+            existing["token"],
+            status="recovered",
+            reason=reason.strip(),
+            root=root,
+        )
+    elif from_lease_id is not None:
+        archived = _load_recoverable_archived_lease(
+            trading_date,
+            slot,
+            from_lease_id,
+            root,
+        )
+        _append_audit(
+            root,
+            {
+                "event": "recover_archived",
+                "at": now_iso(),
+                "trading_date": trading_date,
+                "slot": slot,
+                "lease_id": archived["lease_id"],
+                "reason": reason.strip(),
+            },
+        )
+    else:
         raise RuntimeError("no active workflow lease to recover")
-    _close_lease(
-        existing["token"],
-        status="recovered",
-        reason=reason.strip(),
-        root=root,
-    )
     return begin_lease(
         trading_date,
         slot,
         root=root,
         skip_prior_delivery_reason=skip_prior_delivery_reason,
+        recovered_from_workflow_lease=_recovered_from_payload(
+            archived,
+            reason,
+        ),
     )

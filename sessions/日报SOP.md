@@ -1,7 +1,7 @@
 # 日报执行 SOP（确定性流程 · 照此走不试错）
 
 > ⚡ **已落成 skill**：跑日报直接调 `/daily-report`（先取得整链租约，六源统一走带 lease token 的 capture 脚本；Notion 实际持仓只允许分析锁后校准）。本文件是权威全文，skill 是其可执行 checklist；路径/规则变更时**本文件 + 对应 SKILL.md + memory 三处同步**。
-> 🟥 **工作流永久隔离边界（2026-06-28 用户明确）**：今后每一次早报／午报／晚报均只执行本 SOP 及其明确列出的本仓库子流程；与任何其他报告、总结或跨仓库工作流无关。禁止调用、串联、读取或写入其他工作流（包括 `quant-summary`），禁止把其他工作流的规则、上下文或产物混入日报。此规则永久生效，不是单次例外。
+> 🟥 **工作流永久隔离边界（2026-06-28 用户明确）**：今后每一次早报／午报／晚报均只执行本 SOP 及其明确列出的本仓库子流程；与任何其他报告、总结或跨仓库工作流无关。禁止调用、串联、读取或写入其他工作流，禁止把其他工作流的规则、上下文或产物混入日报。此规则永久生效，不是单次例外。
 > 目的：减少踩坑、省 token。每条都是已验证的「唯一正确路径」，不要再探索替代方案。
 > 维护：发现新坑或路径变化时更新本文件 + 对应 memory。
 > 🟥 **宪法级·第一优先级（除用户拍板的系统逻辑外最高优先）：报告必须完全对齐用户 Notion 实际模板字段**（字段名/顺序/含义全对）。出稿前对照用户最近 Notion 条目逐字段核，**严禁臆造/混用字段**（如把"止损"标成"取消价"）。模板对齐错误=宪法级违规、误导执行+二次返工耗 token。详见 §3 渲染规则与 `memory/report-template-alignment.md`。
@@ -52,7 +52,7 @@
 ---
 
 ## 0. 开场（每次会话固定）
-1. 运行 `context_pack.py`，先核对生成包中的 `authority_sha256`、`authority_manifest` 与 `authority_read_plan`。只固定读取 `read_policy.mandatory_guardrails_always_read` 列出的硬门文件；其余权威文件按当前阶段（采集验真／分析评分／风控执行／渲染发布）展开读取，禁止每次盲读全量权威文件。若权威摘要意外变化、阶段边界不清或相关文件缺失，则读取受影响权威文件并硬停确认。分析锁定前禁止直接读取 `sessions/context_log.md`、`memory/MEMORY.md`、前序报告、`analysis_*.json` 或 `decision_*.json`。
+1. 运行 `context_pack.py`，先核对生成包中的 `authority_sha256`、`authority_manifest`、`authority_read_plan` 与 `read_policy.prelock_safe_read_policy`。只固定读取 `read_policy.mandatory_guardrails_always_read` 列出的硬门文件；其余权威文件按当前阶段（采集验真／分析评分／风控执行／渲染发布）展开读取，禁止每次盲读全量权威文件。若权威摘要意外变化、阶段边界不清或相关文件缺失，则读取受影响权威文件并硬停确认。分析锁定前禁止直接读取 `sessions/context_log.md`、`sessions/archive/**`、`memory/MEMORY.md`、旧 `outputs/**`、旧 `runtime_state/**`、`reviews/**`、`.prelock_quarantine/**`、前序报告、`analysis_*.json` 或 `decision_*.json`；禁止裸全仓库 `rg` 搜索 pre-lock 事实，只能按 context pack 明确路径读取或使用 `runtime/prelock_read_policy.py` 的 safe rg excludes。
 2. 确认今天出早报(🌅链A)、午报(🌇新增·同早报全骨架)还是晚报(🌙链B)。
 3. 不再拉取 Chrome 扩展 schema；六源统一走本仓库 Playwright 采集器，Notion REST 走 PowerShell。
 4. **分析锁定前不读两库交易Check 实际持仓**。禁止沿用上次 state，也禁止用 Notion 已开/已平、已成交比例、缺均价、缺止损等改变 Maker/主账户独立判断。持仓校准只能在 `lock-analysis` 成功后作为单独操作校准执行。
@@ -70,7 +70,7 @@
 3. 数据源 SHA-256 与依赖图只解释“哪里发生变化”，绝不授权复用分析。三节点每次固定重算完整分析图。
 4. 分析结论与决策分别归档为 `analysis_<slot>.json`／`decision_<slot>.json`，均为 post-lock only，禁止进入下一节点分析前上下文。
 5. 采集完成后、进入源验真前必须确认宿主为最高可用模型且 Effort=`Max`，并以 `session_runner.py prepare ... --capture-manifest <精确路径> --lease-token <token> --max-reasoning-confirmed` 留下机械确认；缺任一项硬停。从源验真至审查结束全部使用 MAX 思考预算。
-   `prepare` 会同步启用 `runtime/prelock_guard.py`：在分析锁建立前，`sessions/context_log.md`、前序 `analysis_*.json`／`decision_*.json`、前序 combined/payload/render 输出会被临时移入 `runtime_state/<date>/.prelock_quarantine/<slot>/`，并记录 `runtime_state/<date>/prelock_guard_<slot>.json`。任何人工或自动化不得绕过、手动恢复或读取隔离区内容。`lock-analysis` 成功后自动恢复给锁后连续性/独立审查使用；`abandon-session`／`recover-session` 必须恢复后退出。
+   `prepare` 会同步启用 `runtime/prelock_guard.py`：在分析锁建立前，`sessions/context_log.md`、前序 `analysis_*.json`／`decision_*.json`、前序 combined/payload/render 输出会被临时移入 `runtime_state/<date>/.prelock_quarantine/<slot>/`，并记录 `runtime_state/<date>/prelock_guard_<slot>.json`；该 manifest 同时写入 `runtime/prelock_read_policy.py` 生成的安全读取策略。任何人工或自动化不得绕过、手动恢复或读取隔离区内容。默认 `rg` 受 `.rgignore` 保护，隐藏 archive/old outputs/runtime_state/reviews 等已知污染面；若维护审计必须使用 `--no-ignore`，只能在非日报正式分析上下文中执行。`lock-analysis` 成功后自动恢复给锁后连续性/独立审查使用；`abandon-session`／`recover-session` 必须恢复后退出。
 6. 🟥 **pre-MD 推理就绪门（2026-07-06 午报起）**：正式 `outputs/<date>_<slot>_combined.md` 生成前，必须先完成内部推理工作稿 `runtime_state/<date>/reasoning_work_<slot>.md`，覆盖六源准确性、pivot/CVD/SMA20/VRVP 承重点、盘口/盘面/总分合成链、胜率 rubric 链、方向反证/失效路径、风险验算。随后运行 `session_runner.py certify-reasoning --date <date> --slot <slot> --work-file runtime_state/<date>/reasoning_work_<slot>.md --capture-manifest <精确路径> --lease-token <token> --confirm-six-source-accuracy --confirm-critical-data-calibrated --confirm-score-winrate-risk-refutation --confirm-no-formal-md-written --confirm-no-posthoc-reasoning --confirm-max-reasoning`。缺 readiness 或 readiness 晚于 MD，`lock-analysis`、Word render、Notion publish 全部硬停。
 7. 完整独立分析和 combined.md 通过 lint 后，必须先运行 `session_runner.py lock-analysis` 建立与报告哈希绑定的分析锁，再允许读取前序计划。
 8. 锁后完成撤旧挂新／漂移对照；晚报同时完成三段独立审查。运行 `session_runner.py finalize-post-lock` 后才可 commit；缺分析锁、post-lock 门、六源覆盖或任一完整分析节点时硬停。
@@ -200,6 +200,7 @@
 ### 5.4 收尾杂项
 - render manifest、Word QA manifest（`status=passed`）、publish manifest、线上 verifier＋唯一存活页全部形成后才写 `context_log.md`（倒序，新日期块在顶）；必须写最终 page id、发布时间与 PASS。`context_log` 与 delivery 的时间必须晚于真实 DOCX／PDF／PNG／视觉审核证据，禁止在证据出现前声明 PASS。
 - 每份报告采集前必须持有 `begin-session` 整链租约；午报/晚报仅在前一时段 delivery 完整后才能开始。deliver 机械核对 DOCX/QA/publish/context_log 哈希闭环后才释放；中断用带原因的 abandon/recover，禁止自动抢过期锁。
+- 若同一日期/时段的六源采集已经成功生成不可变 manifest，但后续 hard stop 已把原 lease 关闭，不得手改 manifest、不得复制 evidence、不得伪造 lease。只能通过 `session_runner.py recover-session --date <date> --slot <slot> --from-lease-id <capturing_lease_id> --reason <明确原因>` 建立带 `recovered_from_workflow_lease` 的新 lease，然后用新 token 对同一旧 manifest 运行 `prepare`；`prepare` 必须在 transition 中记录 `capture_lease_recovery`。归档 lease、日期、时段、manifest 任一不匹配则硬停并重新采集。
 - 每阶段通过 `runtime/usage_logger.py` 记录耗时、重试、真实全量回退及宿主真实提供的 token；宿主不提供 token 时写 `null`，严禁估造。至少覆盖 `render_docx`、`word_export`、`visual_qa`、`publish`、`delivery`。Token 优化只评价机械层，分析层以质量和 MAX 合规为先。
 - 更新 memory（若有新坑/决策）。
 - ❌ 默认不 commit；**仅当用户明确要求才 commit**，且推送脚本里的 Notion token 必须读环境变量、绝不硬编码进库。

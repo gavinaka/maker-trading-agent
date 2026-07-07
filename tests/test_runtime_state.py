@@ -1089,6 +1089,70 @@ class DependencyTests(unittest.TestCase):
                     workflow_lease_id="d" * 64,
                 )
 
+    def test_prepare_allows_capture_from_explicitly_recovered_lease(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            seed_logic_files(root)
+            trading_date = "2026-06-30"
+            seed_inbox(root / "data_sources" / "inbox" / trading_date)
+            directory = root / "runtime_state" / trading_date
+            capture_dir = directory / "captures" / "morning"
+            capture_dir.mkdir(parents=True)
+            old_lease_id = "1" * 64
+            new_lease_id = "2" * 64
+            capture = capture_dir / ("full_base_" + "a" * 32 + ".json")
+            capture.write_text(
+                json.dumps(
+                    {
+                        "date": trading_date,
+                        "slot": "morning",
+                        "mode": "full_base",
+                        "run_id": "a" * 32,
+                        "workflow_lease_id": old_lease_id,
+                        "completed_at": "2026-06-30T00:00:00Z",
+                        "evidence_snapshot": seed_evidence_snapshot(
+                            root, trading_date, "morning", "a" * 32
+                        ),
+                        "success": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "workflow_lease"):
+                prepare_transition(
+                    trading_date,
+                    "morning",
+                    root=root,
+                    max_reasoning_confirmed=True,
+                    capture_manifest_path=capture,
+                    workflow_lease_id=new_lease_id,
+                )
+            transition, _ = prepare_transition(
+                trading_date,
+                "morning",
+                root=root,
+                max_reasoning_confirmed=True,
+                replace_prepared_transition=True,
+                capture_manifest_path=capture,
+                workflow_lease_id=new_lease_id,
+                recovered_from_workflow_lease={
+                    "trading_date": trading_date,
+                    "slot": "morning",
+                    "lease_id": old_lease_id,
+                    "status": "abandoned",
+                    "closed_at": "2026-06-30T00:05:00+00:00",
+                    "recovery_reason": "resume after hard stop",
+                },
+            )
+            self.assertEqual(
+                transition["capture_lease_recovery"]["captured_workflow_lease_id"],
+                old_lease_id,
+            )
+            self.assertEqual(
+                transition["capture_lease_recovery"]["active_workflow_lease_id"],
+                new_lease_id,
+            )
+
     def test_delta_full_fallback_requires_hash_bound_full_manifest(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -1183,6 +1247,36 @@ class WorkflowLeaseTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn('"event": "recovered"', audit)
             self.assertIn('"event": "abandoned"', audit)
+
+    def test_archived_abandoned_lease_can_be_recovered_explicitly(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            first = begin_lease("2026-06-30", "morning", root=root)
+            abandon_lease(
+                first["token"],
+                reason="hard stop after immutable capture",
+                root=root,
+            )
+            recovered = recover_lease(
+                "2026-06-30",
+                "morning",
+                reason="resume with existing immutable capture",
+                from_lease_id=first["lease_id"],
+                root=root,
+            )
+            self.assertNotEqual(first["lease_id"], recovered["lease_id"])
+            self.assertEqual(
+                recovered["recovered_from_workflow_lease"]["lease_id"],
+                first["lease_id"],
+            )
+            self.assertEqual(
+                recovered["recovered_from_workflow_lease"]["status"],
+                "abandoned",
+            )
+            audit = (
+                root / "runtime_state" / "workflow_lease_audit.jsonl"
+            ).read_text(encoding="utf-8")
+            self.assertIn('"event": "recover_archived"', audit)
 
     def test_already_delivered_slot_is_blocked_before_capture(self):
         with tempfile.TemporaryDirectory() as td:

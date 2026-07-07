@@ -16,18 +16,18 @@ class ReportIntentRoutingTests(unittest.TestCase):
             "生成晚报",
             "开始晚间日报",
             "写日报",
-            "写早报，不要给我量化总结",
+            "写早报，不要给我其他总结",
         ]
         for prompt in prompts:
             with self.subTest(prompt=prompt):
                 self.assertEqual(classify_intent(prompt), "daily-report")
 
-    def test_quant_summary_is_not_a_workflow_in_this_workspace(self):
-        self.assertEqual(classify_intent("跑量化总结"), "none")
-        self.assertEqual(classify_intent("量化点评"), "none")
+    def test_external_summary_language_is_not_a_workflow_in_this_workspace(self):
+        self.assertEqual(classify_intent("跑跨仓库总结"), "none")
+        self.assertEqual(classify_intent("跨库点评"), "none")
 
     def test_unrelated_report_language_does_not_guess(self):
-        self.assertEqual(classify_intent("今天有什么变化"), "none")
+        self.assertEqual(classify_intent("今天有哪些更新"), "none")
         self.assertEqual(classify_intent("生成今天的报告"), "none")
 
     def test_negation_and_meta_discussion_do_not_execute(self):
@@ -52,10 +52,9 @@ class ReportIntentRoutingTests(unittest.TestCase):
         ):
             text = (root / relative).read_text(encoding="utf-8")
             with self.subTest(relative=relative):
-                self.assertIn("quant-summary", text)
                 self.assertTrue(
-                    "不提供" in text
-                    or "Never invoke" in text
+                    "外部报告" in text
+                    or "cross-workflow" in text
                     or "Do not invoke" in text
                     or "禁止调用" in text
                 )
