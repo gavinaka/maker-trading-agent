@@ -27,19 +27,21 @@ PAGE_ID = re.compile(
 MEMORY_REF = re.compile(r"`?(memory/[A-Za-z0-9_.\-/]+\.md)`?")
 PROHIBITED_PRE_ANALYSIS_REFS = {"memory/MEMORY.md"}
 MANDATORY_GUARDRAIL_NAMES = (
-    "daily_skill",
-    "daily_sop",
+    "daily_runtime_contract",
+    "automation_memory_policy",
     "token_policy",
     "memory_independent_report_no_user_reference",
     "memory_precise_numbers_no_fuzzy",
-    "memory_report_chinese_only_narrative",
-    "memory_notion_publish_checklist",
     "memory_stability_contract",
     "memory_report_evidence_time_lock",
     "golden_reasoning",
 )
+ALWAYS_READ_BYTE_BUDGET = 30 * 1024
 AUTHORITY_READ_PLAN = {
     "always_read": MANDATORY_GUARDRAIL_NAMES,
+    "workflow_entry": (
+        "daily_sop",
+    ),
     "source_validation": (
         "blockbeats_rules",
         "blockbeats_collector",
@@ -47,11 +49,13 @@ AUTHORITY_READ_PLAN = {
         "memory_browser_capture_toolset",
         "memory_five_sources_complete_or_halt",
     ),
-    "analysis_scoring": (
+    "analysis_orderflow": (
         "reasoning_depth",
         "scoring_system",
         "orderflow",
         "orderflow_scoring",
+    ),
+    "analysis_chart_winrate": (
         "chart",
         "chart_scoring",
         "winrate",
@@ -59,6 +63,8 @@ AUTHORITY_READ_PLAN = {
         "trading_constitution",
         "maker_principles",
         "cannot_do",
+    ),
+    "analysis_agents": (
         "news_agent",
         "scoring_agent",
         "footprint_agent",
@@ -75,10 +81,11 @@ AUTHORITY_READ_PLAN = {
         "emotional_agent",
     ),
     "render_publish_post_lock": (
+        "memory_report_chinese_only_narrative",
+        "memory_notion_publish_checklist",
         "memory_basemian_news_cards",
         "memory_push_report_to_ai_agent_plan",
         "memory_report_template_alignment",
-        "memory_evening_review_visual_to_notion",
         "output_agent",
         "review_agent",
         "penalty_agent",
@@ -169,6 +176,20 @@ def authority_read_plan() -> dict[str, list[str]]:
     return plan
 
 
+def authority_read_budget(root: Path = ROOT) -> dict:
+    paths = authority_read_plan()["always_read"]
+    records = [
+        {"path": relative, "bytes": (root / relative).stat().st_size}
+        for relative in paths
+    ]
+    total = sum(item["bytes"] for item in records)
+    if total > ALWAYS_READ_BYTE_BUDGET:
+        raise ValueError(
+            f"always-read authority exceeds {ALWAYS_READ_BYTE_BUDGET} bytes: {total}"
+        )
+    return {"budget_bytes": ALWAYS_READ_BYTE_BUDGET, "total_bytes": total, "files": records}
+
+
 def latest_context_block(text: str) -> str:
     lines = text.splitlines()
     start = next((i for i, line in enumerate(lines) if DATE_HEADING.match(line)), None)
@@ -234,6 +255,7 @@ def build_context_pack(
         "authority_manifest": manifest,
         "authority_sha256": manifest_hash,
         "authority_read_plan": authority_read_plan(),
+        "authority_read_budget": authority_read_budget(root),
         "analysis_policy": {
             "reasoning_effort": "max",
             "max_reasoning_confirmation_required": True,

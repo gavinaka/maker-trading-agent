@@ -17,6 +17,7 @@ from typing import Any
 
 from runtime.delta_engine import compare_snapshots, scan_source_snapshot
 from runtime.dependency_graph import (
+    active_post_lock_nodes,
     affected_nodes,
     required_analysis_nodes,
     required_post_lock_nodes,
@@ -26,10 +27,13 @@ from runtime.dependency_graph import (
 ROOT = Path(__file__).resolve().parents[1]
 _REASONING_READINESS_FROM = "2026-07-06"
 _REASONING_READINESS_EXEMPT = ("2026-07-06", "morning")
+_REPORT_PREFLIGHT_FROM = "2026-07-11"
 LOGIC_FILES = {
     "daily_skill": ".agents/skills/daily-report/SKILL.md",
     "daily_sop": "sessions/日报SOP.md",
     "token_policy": "governance/token_policy.md",
+    "daily_runtime_contract": "governance/daily_runtime_contract.md",
+    "automation_memory_policy": "governance/automation_memory_policy.md",
     "golden_reasoning": "scoring/golden_report_reasoning_alignment.md",
     "blockbeats_rules": "data_sources/blockbeats_rules.md",
     "blockbeats_collector": "data_sources/collectors/blockbeats.md",
@@ -48,7 +52,6 @@ LOGIC_FILES = {
     "memory_blockbeats_important_only": "memory/blockbeats-important-only.md",
     "memory_browser_capture_toolset": "memory/browser-capture-toolset.md",
     "maker_defense_memory": "memory/defense-layer2-vs-tp1-conflict.md",
-    "memory_evening_review_visual_to_notion": "memory/evening-review-visual-to-notion.md",
     "memory_five_sources_complete_or_halt": "memory/five-sources-complete-or-halt.md",
     "memory_fundamentals_brief_core_priority": "memory/fundamentals-brief-core-priority.md",
     "memory_independent_report_no_user_reference": "memory/independent-report-no-user-reference.md",
@@ -82,6 +85,46 @@ LOGIC_FILES = {
 
 def _reasoning_readiness_required(trading_date: str, slot: str) -> bool:
     return (trading_date, slot) != _REASONING_READINESS_EXEMPT and trading_date >= _REASONING_READINESS_FROM
+
+
+def _report_preflight_required(trading_date: str) -> bool:
+    return trading_date >= _REPORT_PREFLIGHT_FROM
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _report_preflight_binding_valid(
+    trading_date: str,
+    slot: str,
+    validation: dict,
+    directory: Path,
+) -> bool:
+    if not _report_preflight_required(trading_date):
+        return True
+    if not isinstance(validation, dict):
+        return False
+    preflight_path = (directory / f"report_preflight_{slot}.json").resolve()
+    recorded_path = validation.get("report_preflight_manifest")
+    expected_hash = validation.get("report_preflight_manifest_sha256")
+    payload_hash = validation.get("payload_preview_sha256")
+    return bool(
+        validation.get("report_preflight_required") is True
+        and validation.get("payload_derivation_pre_lock") is True
+        and recorded_path
+        and Path(str(recorded_path)).resolve() == preflight_path
+        and preflight_path.is_file()
+        and re.fullmatch(r"[0-9a-f]{64}", str(expected_hash or ""))
+        and _file_sha256(preflight_path) == expected_hash
+        and re.fullmatch(r"[0-9a-f]{64}", str(payload_hash or ""))
+    )
+
+
 SLOT_ORDER = {"morning": 1, "midday": 2, "evening": 3}
 PRIOR_SLOT = {"midday": "morning", "evening": "midday"}
 RESOLVED_STATE_KEYS = {
@@ -631,7 +674,7 @@ def commit_transition(
         raise ValueError(
             "analysis lock contains unexpected nodes: " + ", ".join(unexpected_nodes)
         )
-    required_post_lock = set(transition.get("post_lock_nodes", []))
+    required_post_lock = active_post_lock_nodes(transition.get("post_lock_nodes", []))
     completed_post_lock = set(analysis_lock.get("post_lock_completed_nodes", []))
     missing_post_lock = sorted(required_post_lock - completed_post_lock)
     unexpected_post_lock = sorted(completed_post_lock - required_post_lock)
@@ -676,6 +719,12 @@ def commit_transition(
         and validation.get("source_coverage_validated") is True
         and validation.get("position_coupling_absent") is True
         and reasoning_ready
+        and _report_preflight_binding_valid(
+            trading_date,
+            slot,
+            validation,
+            directory,
+        )
     )
     failed_checks = sorted(name for name, passed in lock_checks.items() if not passed)
     if failed_checks:

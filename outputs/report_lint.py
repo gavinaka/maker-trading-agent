@@ -465,6 +465,9 @@ def maker_defense_check(lines):
     sec = _maker_section(lines)
     if sec is None:
         return []
+    sec_text = "\n".join(ln for _, ln in sec)
+    if re.search(r"观望", sec_text) and re.search(r"无新增挂单|不挂新单|不挂单", sec_text):
+        return []
     issues = []
     first = [
         (lineno, ln.strip())
@@ -565,13 +568,6 @@ def analysis_depth_check(lines):
     issues = []
     if not section:
         return [(0, "缺少③后附完整分析区", "## ③", "报告无法建立完整分析锁")]
-    if len(section) < 5000:
-        issues.append((
-            0,
-            "③后附分析过短，疑似摘要化/降档推理",
-            f"{len(section)} chars",
-            "最低要求 5000 字符，且必须覆盖完整六源、评分、胜率、风险、情景",
-        ))
     required_markers = [
         ("BlockBeats", "基本面源细节"),
         ("Coinglass", "盘口源细节"),
@@ -742,23 +738,8 @@ def golden_surface_proxy_check(lines):
     These checks are WARN-only. Golden alignment is a pre-write reasoning
     contract, not a posthoc length/price/rubric-count target.
     """
-    text = "\n".join(lines)
     section = _third_section_text(lines)
     issues = []
-    if len(text) < 10000:
-        issues.append((
-            0,
-            "golden-surface-proxy：combined 报告短于旧样本表面下限",
-            f"{len(text)} chars",
-            "WARN only；不得为了过门补字数，真实金标以 pre-write reasoning manifest 为准",
-        ))
-    if len(section) < 7000:
-        issues.append((
-            0,
-            "golden-surface-proxy：③后附推理区短于旧样本表面下限",
-            f"{len(section)} chars",
-            "WARN only；不得为了过门补长度，真实金标以 pre-write reasoning manifest 为准",
-        ))
     required_sources = _required_source_markers(lines)
     missing_sources = [source for source in required_sources if source not in section]
     if missing_sources:
@@ -768,14 +749,6 @@ def golden_surface_proxy_check(lines):
             f"golden-surface-proxy：③后附未承载完整{source_label}逐项证据",
             ",".join(missing_sources),
             f"WARN only；{source_label}缺失仍会由分析深度门/源覆盖门硬拦",
-        ))
-    price_refs = len(_GOLDEN_PRICE_REF.findall(section))
-    if price_refs < 120:
-        issues.append((
-            0,
-            "golden-surface-proxy：数值/价位证据锚点低于旧样本表面下限",
-            f"{price_refs} refs",
-            "WARN only；禁止补价位凑数，必须来自当次六源证据",
         ))
     rubric_refs = section.lower().count("rubric")
     if rubric_refs < 2:

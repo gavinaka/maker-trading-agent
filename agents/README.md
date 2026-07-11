@@ -12,7 +12,7 @@
 | # | Agent | 角色 | 输入 | 输出 |
 |---|---|---|---|---|
 | 0 | **session_orchestrator** | 总调度，按时段/链触发其他 agent | session_state + 当前时刻 | 编排链 A/B/C/D 执行 |
-| 1 | **emotional_agent** | 情绪 + 状态门禁（5 项）采集 | 用户自报 + risk_state | risk_state.state_gate.* + emotional_log |
+| 1 | **emotional_agent** | 当天开仓前状态门禁（5 项）只读校验 + 晚间 review 独立记录 | Notion 当天门禁行 | risk_state.state_gate.* 只读镜像 + emotional_log |
 | 2 | **data_collection_agent** | 5 数据源采集，A→B→C 通道降级 | session_state + collectors SOP | inbox/_manifest.json + 截图/JSON |
 | 3 | **news_agent** | BlockBeats 12 小时候选池 + top3 校验 + sentiment | inbox/blockbeats.png + blockbeats.json | outputs/news_summary.json |
 | 4 | **footprint_agent** | 盘口 16 组合表 + 4 维状态判定 | inbox/exocharts_*.json + coinglass_*.json | outputs/footprint_<HHMM>.json |
@@ -100,14 +100,14 @@
 
 | state 文件 | 唯一写者 | 读者 |
 |---|---|---|
-| main_account_state.json | 用户 + emotional_agent（state_gate 子集） | output_agent / risk_agent / review_agent |
-| maker_state.json | emotional_agent（state_gate 子集）+ review_agent（clean_sample） | output_agent / risk_agent |
+| main_account_state.json | 用户 + emotional_agent（当天门禁只读镜像） | output_agent / risk_agent / review_agent |
+| maker_state.json | emotional_agent（当天门禁只读镜像）+ review_agent（clean_sample） | output_agent / risk_agent |
 | market_state.json | 用户（手动维护）| 各 agent 参考 |
 | score_state.json | **scoring_agent**（唯一） | output_agent / risk_agent |
 | session_state.json | **session_orchestrator** + 部分 agent（tasks 段） | 全 agent |
-| risk_state.json | emotional_agent（state_gate canonical）+ risk_agent（alerts） | 全 agent |
+| risk_state.json | emotional_agent（当天 Notion 门禁镜像）+ risk_agent（alerts） | 全 agent |
 
-**Canonical 规则**：`risk_state.state_gate.*` 是 5 项状态门禁的唯一权威；其他 state 中的 state_gate 是冗余副本，emotional_agent 保证一致。
+**Canonical 规则**：唯一权威是 Notion 当天「开仓前状态门禁」行及其`主观结论`；`risk_state.state_gate.*` 与其他 state 中的 `state_gate` 都只是机械镜像。心智自控与心力监控 review 不得写入这些镜像。
 
 ---
 
@@ -164,7 +164,7 @@ session_orchestrator.trigger(
 | Agent | 关键禁止 |
 |---|---|
 | session_orchestrator | 禁止跨链并行；禁止跳过 emotional_agent |
-| emotional_agent | 禁止 AI 自动判定情绪；禁止跳过 5 项采集 |
+| emotional_agent | 禁止 AI 自动判定门禁；禁止用心智／心力 review 生成或覆盖门禁 |
 | data_collection_agent | 禁止伪造数据；禁止 BlockBeats 走通道 B |
 | news_agent | 禁止文字替代截图；禁止 AI 总结 |
 | footprint_agent | 禁止跳过 C01/C02 极端组合判定 |

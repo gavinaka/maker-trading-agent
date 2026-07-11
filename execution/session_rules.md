@@ -48,7 +48,7 @@
   ↓
 08:00-10:00 链 A（早间 · 严格按用户工作流序）
   ├─ Step 0 prereqs：notion-positions 校准持仓 + data_collection_agent 采集五源 + news_agent
-  ├─ Step 1 门禁：emotional_agent 读「开仓前门禁/心力监控」
+  ├─ Step 1 门禁：emotional_agent 只读当天 Notion「开仓前状态门禁」
   │           └─ ⛔ 关闭/不可交易 → 硬停：不写任何计划，output 只出"门禁关闭·观望"
   ├─ Step 2 主账户 plan：基本面(news)>盘面结构>盘口 → 中线计划（**不依赖评分**）
   ├─ Step 3 评分：footprint_agent → scoring_agent (morning 11:00，盘口70+盘面30)
@@ -73,7 +73,7 @@
 
 ~23:00 链 C（晚间反思·复盘四件套，按序）
   ├─ Step 1 emotional_agent → 心智自控日记表
-  ├─ Step 2 emotional_agent → 心力监控模块（写入，供次日早间链 A 门禁读取）
+  ├─ Step 2 emotional_agent → 心力监控模块（仅写当天结束后的 review，不写门禁）
   ├─ Step 3 50 笔结晶/洁净样本 check（clean sample 进度更新）
   ├─ Step 4 review_agent → 交易 review（reviews/<today>.md）
   ├─ Step 5 penalty_agent → 违规审计
@@ -144,7 +144,7 @@
   "risk_checks_completed":          // 实际开仓时由 risk_agent 写
   "review_completed":               // 链 C Step 4 后
   "data_collection_done":           // 链 A Step 0 后 / 链 B Step 1 后
-  "emotional_check_done":           // 链 A Step 1 门禁读取后（写入在链 C Step 1-2）
+  "emotional_check_done":           // 链 A Step 1 当天开仓前状态门禁读取并校验后
 }
 ```
 
@@ -153,7 +153,7 @@
 ## 异常时段处理
 
 ### 用户外出 / 无法操作
-* 链 A 启动 → emotional_agent 等待用户回答 → 超时 5 分钟则 allow_trade_today = false
+* 链 A 启动 → emotional_agent 读取当天开仓前状态门禁；缺失、读取失败或内容矛盾则硬停人工确认
 * 链 A 自动跑完到 output_agent → 输出"今日无交易资格"日报
 * 链 B/C 同上流程
 

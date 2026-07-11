@@ -18,7 +18,7 @@ metadata:
 - "必开"＝必须把 **Maker 限价单挂出去**，**不是市价立即成交**。单子挂在高质量边缘等待，价格触及才成交、不触及自然不成交 → 既"必开"又"绝不追价"。
 - 位置把关（⑤源）**只决定挂单价与方向，不再否决开仓**；价处中部＝挂单价远离现价、暂不成交，**不写"观望"**，写「挂单于边缘等待」。
 - 🟥🟥 **门槛②＝胜率自估 ≥60% 即可；胜率是真实估计值（实际多少就多少·不锁 70/75/80 三档）**。2026-06-17 用户**连续两次纠错**：(纠错1)「胜率60才是门槛 别再搞错」＝门槛线是 60% 不是 70；(纠错2)「落地档也不是70固定的以上 实际多少就多少 门槛是60%以上即可」＝**胜率自估取真实估值（如 62/65/68%…均合法），不被锁进 70/75/80 三档、不存在"自估<70即观望"的判停**。🪦 **`scoring/winrate_methodology.md` 原"胜率词汇只有70/75/80·实际开单从不<70·自估<70即观望"的 rigid rubric 已被用户推翻**（2026-06-17·已就地订正该文件）；那条 rubric 只能当"估算时的质量参照（信号强度+结构位→拉高/拉低%）"，**不再是允许值清单、不再有 70 floor**。我首版误写「胜率68<70门槛②」（把 70 当门槛），二版又误锁「胜率70达标档」，均错。**正解：估出真实胜率%（综合盘口信号强度+结构位质量+事件窗口），≥60% 即门槛②满足、<60% 才不满足。**
-- 出稿：双门槛满足写「总分≥65 且 胜率自估X%≥60% → 挂 Maker 单」+ 方向 + 挂单价(边缘区间) + 取消价 + 防守层（X%=真实估值）。观望留给 总评分<65 / 胜率自估<60% / 门禁关闭 / 收缩机制 / 风控阻断（Gate 任一不过，优先于评分）；写明哪一项未达，并区分"观望主因"是门槛①还是门槛②。**绝不把 70 写成门槛、绝不把胜率锁进固定三档。**
+- 出稿：双门槛满足写「总分≥65 且 胜率自估X%≥60% → 挂 Maker 单」+ 方向 + 挂单价(边缘区间) + 取消价 + 防守层（X%=真实估值）。观望留给 总评分<65 / 胜率自估<60% / 开仓前状态门禁关闭 / 风控阻断（Gate 任一不过，优先于评分）；写明哪一项未达，并区分"观望主因"是门槛①还是门槛②。**绝不把 70 写成门槛、绝不把胜率锁进固定三档；心智自控与心力监控是事后 review，不是额外 Gate。**
 - 已就地订正：`scoring/score_thresholds.md`+`scoring_system.md`、`governance/workflow.md`+`consistency_rules.md`、`sessions/日报SOP.md`、daily-report `SKILL.md`、`agents/risk_agent.md` Gate5(双门槛)+`scoring_agent.md`+`session_orchestrator.md`+`output_agent.md`、`constitution/{trading_constitution,maker_principles,execution_philosophy}.md`、`execution/{maker_execution,session_rules}.md`、`risk/risk_checklist.md`、`README.md`、`交易系统底层逻辑全图谱.md`。
 
 关联 [[daily-workflow-order]]、[[cannot-do-is-maker-only]]、[[independent-report-no-user-reference]]。

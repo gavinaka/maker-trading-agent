@@ -10,7 +10,7 @@
 
 > 本仓库分两层：
 > - **参考设计层**：`agents/` + `state/` + `session_orchestrator`（链 A/B/C/D 自动机）—— **设计稿，当前未作为自动机运行**。
-> - **实际运行层（每天真跑）**：`/daily-report` skill + `sessions/日报SOP.md` + `runtime/` 三时段原始证据增量／分析全量重算层 + 项目 `memory/` 用户拍板决策 + Notion REST + `outputs/*.py`（出 .docx + 推 Notion 🌅🌇🌙🔍 子页 + verifier/lint 三门）。
+> - **实际运行层（每天真跑）**：`/daily-report` skill + `sessions/日报SOP.md` + `runtime/` 三时段原始证据增量／分析全量重算层 + 项目 `memory/` 用户拍板决策 + Notion REST + `outputs/*.py`（出 .docx + 推 Notion 🌅🌇🌙 子页 + verifier/lint 三门）。晚间独立审查已退役，由外置准确性评估替代。
 >
 > **真相源 = Notion 对应库**：持仓→（主/Maker）交易Check；门禁→开仓前状态门禁库；心力/心智→对应库；洁净进度→系统50笔库。**`state/` 6 个 JSON 为历史快照、不保证实时**。下文具体持仓/进度数字均以 Notion 为准。
 >
@@ -290,7 +290,7 @@ mkdir -p Trading-System/data_sources/inbox/$(date +%Y-%m-%d)
 对话中说："session_orchestrator 跑早间链 A"
 
 agent 会：
-1. 询问 5 项情绪状态（emotional_agent）
+1. 读取并校验当天 Notion「开仓前状态门禁」（emotional_agent）
 2. 自动采集 4 数据源（data_collection_agent）
 3. 校验 BlockBeats 截图（news_agent）
 4. 盘口 16 组合判定（footprint_agent）

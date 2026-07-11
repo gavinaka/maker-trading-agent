@@ -80,6 +80,7 @@ ANALYSIS_ASSURANCE_NODES = {
     "output:report_writing",
     "output:quality_review",
 }
+RETIRED_POST_LOCK_NODES = frozenset({"post_lock:evening_independent_review"})
 
 
 def affected_nodes(changed_sources: set[str]) -> set[str]:
@@ -115,10 +116,12 @@ def required_analysis_nodes(slot: str | None = None) -> set[str]:
 
 def required_post_lock_nodes(slot: str) -> set[str]:
     """Return work that is allowed only after the independent analysis lock."""
-    nodes = {"post_lock:prior_plan_continuity"}
-    if slot == "evening":
-        nodes.add("post_lock:evening_independent_review")
-    return nodes
+    return {"post_lock:prior_plan_continuity"}
+
+
+def active_post_lock_nodes(nodes: set[str] | list[str]) -> set[str]:
+    """Normalize pre-cutover transitions without reviving retired review work."""
+    return set(nodes) - RETIRED_POST_LOCK_NODES
 
 
 ALWAYS_RECOMPUTE = required_analysis_nodes()

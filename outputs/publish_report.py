@@ -52,7 +52,10 @@ from review_contract import (
     validate_review_payload_shape,
     validate_review_payload_source,
 )
-from runtime.reasoning_readiness import validate_locked_report_for_output
+from runtime.reasoning_readiness import (
+    report_preflight_required,
+    validate_locked_report_for_output,
+)
 from runtime.state_store import atomic_json_write
 from runtime.usage_logger import append_usage
 
@@ -68,6 +71,155 @@ REQUIRED = {
     "image_paths",
 }
 DAILY_REQUIRED = REQUIRED | {"source_specs"}
+LOCKED_TIMEPOINT_POLICY = "user_authorized_locked_evidence_delivery_v1"
+
+
+def canonical_json_sha256(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def validate_payload_preflight_binding(
+    payload: dict,
+    analysis_lock: dict | None,
+    trading_date: str,
+) -> dict:
+    if not report_preflight_required(trading_date):
+        return {"status": "not_required", "required_from": "2026-07-11"}
+    if not isinstance(analysis_lock, dict):
+        raise ValueError("daily payload blocked: missing analysis lock")
+    validation = analysis_lock.get("analysis_validation")
+    if not isinstance(validation, dict):
+        raise ValueError("daily payload blocked: analysis lock has no validation record")
+    expected = validation.get("payload_preview_sha256")
+    actual = canonical_json_sha256(payload)
+    if not isinstance(expected, str) or expected != actual:
+        raise ValueError(
+            "daily payload blocked: final payload differs from pre-lock derivation"
+        )
+    return {
+        "status": "passed",
+        "payload_preview_sha256": actual,
+        "report_preflight_manifest": validation.get("report_preflight_manifest"),
+        "report_preflight_manifest_sha256": validation.get(
+            "report_preflight_manifest_sha256"
+        ),
+    }
+LOCKED_TIMEPOINT_REASON_MIN_CHARS = 20
+
+
+def _source_age_evidence(source_specs: dict, *, now_ts: float) -> dict:
+    """Return an audit-only age snapshot without changing freshness limits."""
+    evidence = {}
+    for label, raw_spec in source_specs.items():
+        spec = {"path": raw_spec} if isinstance(raw_spec, str) else dict(raw_spec)
+        path = Path(spec["path"]).resolve()
+        if not path.is_file():
+            raise ValueError(f"locked-timepoint source is missing: {label}")
+        modified = path.stat().st_mtime
+        evidence[label] = {
+            "age_minutes": round(max(0.0, (now_ts - modified) / 60.0), 2),
+            "max_age_minutes": float(spec.get("max_age_minutes", 240)),
+            "same_local_day_required": bool(spec.get("same_local_day")),
+            "same_local_day": (
+                time.localtime(modified)[:3] == time.localtime(now_ts)[:3]
+            ),
+        }
+    return evidence
+
+
+def enforce_source_freshness(
+    source_specs: dict,
+    *,
+    allow_locked_timepoint_publish: bool = False,
+    locked_timepoint_reason: str | None = None,
+    analysis_lock: dict | None = None,
+    source_binding: dict | None = None,
+    report_sha256: str | None = None,
+) -> dict:
+    """Enforce the normal freshness gate or record a narrow time-lock override.
+
+    The override does not make stale evidence fresh. It only permits delivery of
+    an explicitly requested historical time-slice when the formal report is
+    already bound to an analysis lock and the immutable evidence snapshot.
+    """
+    reason = (locked_timepoint_reason or "").strip()
+    if reason and not allow_locked_timepoint_publish:
+        raise ValueError(
+            "locked-timepoint reason requires --allow-locked-timepoint-publish"
+        )
+    if allow_locked_timepoint_publish:
+        if len(reason) < LOCKED_TIMEPOINT_REASON_MIN_CHARS:
+            raise ValueError(
+                "locked-timepoint publish requires an explicit audit reason of at "
+                f"least {LOCKED_TIMEPOINT_REASON_MIN_CHARS} characters"
+            )
+        if not isinstance(analysis_lock, dict):
+            raise ValueError(
+                "locked-timepoint publish requires a hash-bound analysis lock"
+            )
+        if analysis_lock.get("report_sha256") != report_sha256:
+            raise ValueError(
+                "locked-timepoint publish report hash does not match analysis lock"
+            )
+        if not isinstance(source_binding, dict):
+            raise ValueError(
+                "locked-timepoint publish requires immutable source binding"
+            )
+        if not source_binding.get("capture_manifest_sha256"):
+            raise ValueError(
+                "locked-timepoint publish requires capture manifest hash binding"
+            )
+        if not source_binding.get("evidence_snapshot_root"):
+            raise ValueError(
+                "locked-timepoint publish requires evidence snapshot binding"
+            )
+
+    now_ts = time.time()
+    ages = _source_age_evidence(source_specs, now_ts=now_ts)
+    try:
+        assert_source_freshness(source_specs, now_ts=now_ts)
+    except SystemExit as exc:
+        if not allow_locked_timepoint_publish:
+            raise
+        result = {
+            "policy": LOCKED_TIMEPOINT_POLICY,
+            "status": "authorized_locked_timepoint",
+            "freshness_passed": False,
+            "override_used": True,
+            "reason": reason,
+            "original_failure": str(exc),
+            "source_ages": ages,
+            "analysis_lock_commit_id": analysis_lock.get("commit_id"),
+            "report_sha256": report_sha256,
+            "capture_manifest_sha256": source_binding.get(
+                "capture_manifest_sha256"
+            ),
+            "evidence_snapshot_root": source_binding.get(
+                "evidence_snapshot_root"
+            ),
+        }
+        print(
+            "SOURCE FRESHNESS OVERRIDDEN: user-authorized locked-timepoint "
+            "delivery; immutable report and evidence bindings verified"
+        )
+        return result
+    return {
+        "policy": "normal_current_freshness_v1",
+        "status": "passed",
+        "freshness_passed": True,
+        "override_used": False,
+        "override_requested": allow_locked_timepoint_publish,
+        "source_ages": ages,
+    }
+
+
 def _rich_text_plain(block: dict) -> str:
     block_type = block.get("type")
     body = block.get(block_type)
@@ -395,6 +547,8 @@ def publish(
     *,
     dry_run: bool = False,
     force_republish: bool = False,
+    allow_locked_timepoint_publish: bool = False,
+    locked_timepoint_reason: str | None = None,
 ) -> dict:
     started = time.perf_counter()
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
@@ -405,6 +559,10 @@ def publish(
         raise ValueError(f"publish payload missing fields: {missing}")
     if mode not in {"morning", "midday", "evening", "review"}:
         raise ValueError("unsupported verifier_mode")
+    if mode == "review" and (
+        allow_locked_timepoint_publish or locked_timepoint_reason
+    ):
+        raise ValueError("locked-timepoint publish is available only for daily reports")
     if not isinstance(payload["children"], list):
         raise ValueError("children must be an array of Notion blocks")
     if not isinstance(payload["image_paths"], list):
@@ -441,15 +599,21 @@ def publish(
     if not report_match:
         raise ValueError("report_path must use canonical date/slot naming")
     trading_date, report_slot = report_match.groups()
+    if mode == "review" and trading_date >= "2026-07-09":
+        raise RuntimeError(
+            "evening independent review publishing retired on 2026-07-09; "
+            "use the external Trading accuracy evaluator"
+        )
     if mode != "review" and mode != report_slot:
         raise ValueError("verifier_mode does not match report filename slot")
     if mode == "review" and report_slot != "evening":
         raise ValueError("review verifier_mode must reference the evening report")
     telemetry_slot = report_slot
+    analysis_lock = None
     if mode != "review":
         report_lines = report.read_text(encoding="utf-8").splitlines()
         assert_combined_structure(report_lines, trading_date, report_slot)
-        validate_locked_report_for_output(
+        analysis_lock = validate_locked_report_for_output(
             trading_date,
             report_slot,
             report,
@@ -471,6 +635,7 @@ def publish(
         )
         payload_shape = validate_review_payload_shape(payload, trading_date)
         payload_colors = validate_review_payload_colors(payload)
+        payload_preflight = {"status": "not_applicable"}
     else:
         report_text = report.read_text(encoding="utf-8")
         payload_source = validate_payload_derivation(
@@ -479,6 +644,11 @@ def publish(
             trading_date,
             report_slot,
             root=ROOT,
+        )
+        payload_preflight = validate_payload_preflight_binding(
+            payload,
+            analysis_lock,
+            trading_date,
         )
         payload_shape = validate_daily_payload_shape(
             payload,
@@ -556,12 +726,26 @@ def publish(
         "notion_payload_source": payload_source,
         "notion_payload_shape": payload_shape,
         "notion_payload_colors": payload_colors,
+        "payload_preflight": payload_preflight,
         "source_binding": source_binding,
+    }
+    source_freshness = {
+        "policy": LOCKED_TIMEPOINT_POLICY,
+        "status": "not_evaluated",
+        "override_requested": allow_locked_timepoint_publish,
     }
 
     try:
         if mode != "review":
-            assert_source_freshness(source_specs)
+            source_freshness = enforce_source_freshness(
+                source_specs,
+                allow_locked_timepoint_publish=allow_locked_timepoint_publish,
+                locked_timepoint_reason=locked_timepoint_reason,
+                analysis_lock=analysis_lock,
+                source_binding=source_binding,
+                report_sha256=report_hash,
+            )
+            summary["source_freshness"] = source_freshness
             run_report_lint(report_path)
         if dry_run:
             return summary
@@ -598,12 +782,14 @@ def publish(
             "report_path": report_path,
             "report_sha256": report_hash,
             "source_binding": source_binding,
+            "source_freshness": source_freshness,
             "page_id": page_id,
             "frozen_verifier_pass": True,
             "frozen_verifier": frozen_verifier_evidence,
             "notion_payload_source": payload_source,
             "notion_payload_shape": payload_shape,
             "notion_payload_colors": payload_colors,
+            "payload_preflight": payload_preflight,
             "unique_page_pass": True,
             "archived_pages": archived_pages,
         }
@@ -629,6 +815,9 @@ def publish(
                 "page_id": page_id,
                 "frozen_verifier_pass": True,
                 "unique_page_pass": True,
+                "locked_timepoint_override_used": source_freshness.get(
+                    "override_used", False
+                ),
             },
             root=ROOT,
         )
@@ -649,6 +838,7 @@ def publish(
             "report_path": report_path,
             "report_sha256": report_hash,
             "source_binding": source_binding,
+            "source_freshness": source_freshness,
             "notion_payload_source": payload_source,
             "failure_class": type(exc).__name__,
             "failure_reason": str(exc),
@@ -673,6 +863,9 @@ def publish(
                 "input_sha256": payload_hash,
                 "report_sha256": report_hash,
                 "failure_reason": str(exc),
+                "locked_timepoint_override_requested": (
+                    allow_locked_timepoint_publish
+                ),
             },
             root=ROOT,
         )
@@ -684,11 +877,25 @@ def main() -> int:
     parser.add_argument("payload", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force-republish", action="store_true")
+    parser.add_argument(
+        "--allow-locked-timepoint-publish",
+        action="store_true",
+        help=(
+            "permit an explicitly requested locked historical time-slice only "
+            "after analysis-lock and immutable-source validation"
+        ),
+    )
+    parser.add_argument(
+        "--locked-timepoint-reason",
+        help="audited user-authorization reason for locked-timepoint delivery",
+    )
     args = parser.parse_args()
     result = publish(
         args.payload.resolve(),
         dry_run=args.dry_run,
         force_republish=args.force_republish,
+        allow_locked_timepoint_publish=args.allow_locked_timepoint_publish,
+        locked_timepoint_reason=args.locked_timepoint_reason,
     )
     # Windows PowerShell may expose a GBK stdout that cannot encode title emoji.
     # ASCII-safe JSON preserves the exact Unicode content without console crashes.

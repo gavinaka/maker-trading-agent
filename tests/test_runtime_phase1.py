@@ -8,6 +8,7 @@ from pathlib import Path
 from runtime.context_pack import (
     authoritative_runtime_files,
     authority_manifest,
+    authority_read_budget,
     build_context_pack,
     ensure_context_pack,
     latest_context_block,
@@ -89,6 +90,14 @@ OLD
             self.assertFalse(payload["read_policy"]["load_full_context_log"])
             self.assertTrue(payload["read_policy"]["load_authority_digest_first"])
             self.assertTrue(payload["read_policy"]["expand_authority_by_phase"])
+            self.assertLessEqual(
+                payload["authority_read_budget"]["total_bytes"],
+                payload["authority_read_budget"]["budget_bytes"],
+            )
+            self.assertNotIn(
+                "memory/evening-review-visual-to-notion.md",
+                payload["authoritative_runtime_files"],
+            )
             self.assertFalse(
                 payload["read_policy"]["load_all_authoritative_methodology"]
             )

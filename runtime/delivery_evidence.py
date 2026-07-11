@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import date, datetime
 from pathlib import Path
@@ -127,6 +128,29 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
         "frozen_verifier_stdout": isinstance(verifier, dict)
         and "[PASS]" in str(verifier.get("stdout", "")),
     }
+    if date.fromisoformat(trading_date) >= date(2026, 7, 11):
+        preflight = publish.get("payload_preflight")
+        checks.update(
+            {
+                "payload_preflight": isinstance(preflight, dict),
+                "payload_preflight_passed": isinstance(preflight, dict)
+                and preflight.get("status") == "passed",
+                "payload_preflight_hash": isinstance(preflight, dict)
+                and bool(
+                    re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        str(preflight.get("payload_preview_sha256", "")),
+                    )
+                ),
+                "payload_preflight_manifest_hash": isinstance(preflight, dict)
+                and bool(
+                    re.fullmatch(
+                        r"[0-9a-f]{64}",
+                        str(preflight.get("report_preflight_manifest_sha256", "")),
+                    )
+                ),
+            }
+        )
     failed = sorted(name for name, passed in checks.items() if not passed)
     if failed:
         raise ValueError("invalid strict publish quality evidence: " + ", ".join(failed))
@@ -170,6 +194,7 @@ def validate_delivery_evidence(
     *,
     current: dict,
     root: Path = ROOT,
+    require_context: bool = True,
 ) -> dict:
     directory = root / "runtime_state" / trading_date
     canonical_docx = (root / "outputs" / f"{trading_date}_{slot}_render.docx").resolve()
@@ -269,6 +294,25 @@ def validate_delivery_evidence(
     if failed:
         raise ValueError("invalid publish source binding: " + ", ".join(failed))
 
+    reviewed_at = _parse_time(qa["reviewed_at"], "reviewed_at")
+    published_at = _parse_time(publish["published_at"], "published_at")
+    base_evidence = {
+        "report_sha256": current["report_sha256"],
+        "docx_path": str(canonical_docx),
+        "docx_sha256": render["docx_sha256"],
+        "render_manifest": str(render_path),
+        "render_manifest_sha256": sha256_file(render_path),
+        "word_qa_manifest": str(qa_path),
+        "word_qa_manifest_sha256": sha256_file(qa_path),
+        "publish_manifest": str(publish_path),
+        "publish_manifest_sha256": sha256_file(publish_path),
+        "source_binding": source_binding,
+        "reviewed_at": reviewed_at.isoformat(),
+        "published_at": publish["published_at"],
+    }
+    if not require_context:
+        return base_evidence
+
     context_text = context_path.read_text(encoding="utf-8")
     block = _context_block(context_text, trading_date, slot, page_id)
     render_manifest_rel = _relative(render_path, root)
@@ -290,8 +334,6 @@ def validate_delivery_evidence(
     if failed:
         raise ValueError("context_log final evidence is incomplete: " + ", ".join(failed))
 
-    reviewed_at = _parse_time(qa["reviewed_at"], "reviewed_at")
-    published_at = _parse_time(publish["published_at"], "published_at")
     context_mtime = datetime.fromtimestamp(
         context_path.stat().st_mtime,
         tz=reviewed_at.tzinfo,
@@ -303,17 +345,82 @@ def validate_delivery_evidence(
         )
 
     return {
-        "report_sha256": current["report_sha256"],
-        "docx_path": str(canonical_docx),
-        "docx_sha256": render["docx_sha256"],
-        "render_manifest": str(render_path),
-        "render_manifest_sha256": sha256_file(render_path),
-        "word_qa_manifest": str(qa_path),
-        "word_qa_manifest_sha256": sha256_file(qa_path),
-        "publish_manifest": str(publish_path),
-        "publish_manifest_sha256": sha256_file(publish_path),
+        **base_evidence,
         "context_log_sha256": sha256_file(context_path),
         "context_log_block_sha256": sha256_text(block),
-        "source_binding": source_binding,
-        "published_at": publish["published_at"],
+    }
+
+
+def record_delivery_context(
+    trading_date: str,
+    slot: str,
+    page_id: str,
+    *,
+    current: dict,
+    root: Path = ROOT,
+) -> dict:
+    """Write the mechanical final-evidence block without free-form labels."""
+    root = Path(root).resolve()
+    evidence = validate_delivery_evidence(
+        trading_date,
+        slot,
+        page_id,
+        current=current,
+        root=root,
+        require_context=False,
+    )
+    context_path = root / "sessions" / "context_log.md"
+    context_path.parent.mkdir(parents=True, exist_ok=True)
+    existing = context_path.read_text(encoding="utf-8") if context_path.is_file() else ""
+    marker = f"<!-- generated-delivery-evidence:{trading_date}:{slot}:{page_id} -->"
+    render_rel = _relative(Path(evidence["render_manifest"]), root)
+    qa_rel = _relative(Path(evidence["word_qa_manifest"]), root)
+    publish_rel = _relative(Path(evidence["publish_manifest"]), root)
+    block = "\n".join(
+        [
+            f"## {trading_date} {SLOT_CN[slot]}最终交付",
+            marker,
+            f"- 最终唯一存活页：`{page_id}`",
+            f"- 发布时间：`{evidence['published_at']}`",
+            f"- report_sha256：`{evidence['report_sha256']}`",
+            f"- docx_sha256：`{evidence['docx_sha256']}`",
+            f"- render_manifest：`{render_rel}`",
+            f"- word_qa_manifest：`{qa_rel}`",
+            f"- publish_manifest：`{publish_rel}`",
+            "- Word 视觉 QA PASS",
+            "- 冻结 verifier PASS",
+            "",
+        ]
+    )
+    generated = re.compile(
+        rf"^## {re.escape(trading_date)} {re.escape(SLOT_CN[slot])}最终交付\n"
+        rf"<!-- generated-delivery-evidence:{re.escape(trading_date)}:"
+        rf"{re.escape(slot)}:[^>]+ -->\n.*?(?=^## 20\d{{2}}-\d{{2}}-\d{{2}}|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    remainder = generated.sub("", existing).lstrip("\n")
+    updated = block + ("\n" + remainder if remainder else "")
+    changed = updated != existing
+    if changed:
+        temporary = context_path.with_suffix(".md.tmp")
+        temporary.write_text(updated, encoding="utf-8")
+        os.replace(temporary, context_path)
+    verified = validate_delivery_evidence(
+        trading_date,
+        slot,
+        page_id,
+        current=current,
+        root=root,
+        require_context=True,
+    )
+    return {
+        "schema_version": "delivery-context-record-v1",
+        "trading_date": trading_date,
+        "slot": slot,
+        "page_id": page_id,
+        "context_log": str(context_path),
+        "context_log_sha256": verified["context_log_sha256"],
+        "context_log_block_sha256": verified["context_log_block_sha256"],
+        "changed": changed,
+        "verified": True,
     }

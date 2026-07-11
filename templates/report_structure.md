@@ -18,7 +18,7 @@
 | 月报 | `<YYYY-MM>_monthly.md` | 月末 23:00 | review_agent | `reviews/` |
 | 新闻摘要 | `<YYYY-MM-DD>_news_summary.json` | 数据采集后 | news_agent | `outputs/` |
 | 盘口分析 | `<YYYY-MM-DD>_footprint_<HHMM>.json` | 每次评分前 | footprint_agent | `outputs/` |
-| 情绪日志 | `<YYYY-MM-DD>_emotional_log.json` | 链 A 第 1 步 | emotional_agent | `outputs/` |
+| 门禁读取快照 | `<YYYY-MM-DD>_emotional_log.json` | 链 A 第 1 步 | emotional_agent | `outputs/` |
 | 风控决策 | `<HHMMSS>_<mode>.json` | 每次开仓/precheck/modify | risk_agent | `outputs/<YYYY-MM-DD>_risk_decisions/` |
 | 交易 Check | `<YYYY-MM-DD>_check_records.json` | 日复盘时 | review_agent | `outputs/` |
 | 违规记录 | `<YYYY-MM-DD>_<NNN>.json` | 违规识别时 | penalty_agent | `governance/violations/` |

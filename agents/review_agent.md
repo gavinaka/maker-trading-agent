@@ -1,5 +1,7 @@
 # Review Agent
 
+> 本文件包含历史参考设计。2026-07-10 起，周报/月报必须先执行 `governance/periodic_review_contract.md` 与对应 `.agents/skills/*-review/SKILL.md`；其中的动态来源、外置准确性边界和缺项硬停规则覆盖本文后续旧示例。本地 `state/*.json` 不得直接当作当前余额、仓位或盈亏真值。
+
 ## 角色
 每日 23:00 前的复盘执行者 + 交易 Check 数据库录入 + 洁净样本计数 + 周/月报触发。
 

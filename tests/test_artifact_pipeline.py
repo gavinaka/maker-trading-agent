@@ -842,6 +842,83 @@ class PublishEvidenceTests(unittest.TestCase):
         )
         return source_specs
 
+    def test_locked_timepoint_publish_keeps_normal_freshness_hard_stop(self):
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "coinglass.png"
+            source.write_bytes(b"immutable evidence")
+            stale_ts = datetime.now().timestamp() - 5 * 60 * 60
+            os.utime(source, (stale_ts, stale_ts))
+            specs = {
+                "coinglass": {
+                    "path": str(source),
+                    "max_age_minutes": 240,
+                }
+            }
+
+            with self.assertRaisesRegex(SystemExit, "SOURCE FRESHNESS FAILED"):
+                publish_report.enforce_source_freshness(specs)
+
+    def test_locked_timepoint_publish_requires_hash_bound_lock(self):
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "coinglass.png"
+            source.write_bytes(b"immutable evidence")
+            specs = {"coinglass": {"path": str(source)}}
+
+            with self.assertRaisesRegex(ValueError, "hash-bound analysis lock"):
+                publish_report.enforce_source_freshness(
+                    specs,
+                    allow_locked_timepoint_publish=True,
+                    locked_timepoint_reason=(
+                        "User explicitly requested locked timepoint delivery"
+                    ),
+                    report_sha256="a" * 64,
+                    source_binding={
+                        "capture_manifest_sha256": "b" * 64,
+                        "evidence_snapshot_root": "runtime_state/evidence/run",
+                    },
+                )
+
+    def test_locked_timepoint_publish_records_audited_override(self):
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "coinglass.png"
+            source.write_bytes(b"immutable evidence")
+            stale_ts = datetime.now().timestamp() - 5 * 60 * 60
+            os.utime(source, (stale_ts, stale_ts))
+            specs = {
+                "coinglass": {
+                    "path": str(source),
+                    "max_age_minutes": 240,
+                }
+            }
+            report_sha = "a" * 64
+            capture_sha = "b" * 64
+
+            result = publish_report.enforce_source_freshness(
+                specs,
+                allow_locked_timepoint_publish=True,
+                locked_timepoint_reason=(
+                    "User explicitly requested the immutable midday time-slice "
+                    "without recapture"
+                ),
+                analysis_lock={
+                    "commit_id": "c" * 64,
+                    "report_sha256": report_sha,
+                },
+                source_binding={
+                    "capture_manifest_sha256": capture_sha,
+                    "evidence_snapshot_root": "runtime_state/evidence/run",
+                },
+                report_sha256=report_sha,
+            )
+
+            self.assertEqual(result["status"], "authorized_locked_timepoint")
+            self.assertFalse(result["freshness_passed"])
+            self.assertTrue(result["override_used"])
+            self.assertEqual(result["capture_manifest_sha256"], capture_sha)
+            self.assertGreater(
+                result["source_ages"]["coinglass"]["age_minutes"], 240
+            )
+
     def _strict_daily_combined_text(self, date: str = "2026-07-05", slot: str = "morning") -> str:
         slot_cn = {"morning": "早间", "midday": "午间", "evening": "晚间"}[slot]
         maker_strategy = (
@@ -874,7 +951,7 @@ class PublishEvidenceTests(unittest.TestCase):
             if slot == "evening"
             else ""
         )
-        final_boundary = "独立边界：本报告判断仅来自当次六源、门禁与心力事实。"
+        final_boundary = "独立边界：本报告判断仅来自当次六源与开仓前状态门禁。"
         return "\n".join(
             [
                 f"# 2026.7.5 {slot_cn}日报",
@@ -1256,6 +1333,31 @@ class PublishEvidenceTests(unittest.TestCase):
             self.assertNotIn("source_specs", payload_obj)
             self.assertEqual(payload_obj["image_paths"], [])
 
+    def test_review_builder_rejects_post_retirement_generation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-09"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_evening_combined.md"
+            report.write_text(
+                self._strict_daily_combined_text(date, "evening"),
+                encoding="utf-8",
+            )
+            report_rel = f"outputs/{date}_evening_combined.md"
+            manifest_dir = root / "runtime_state" / date
+            manifest_dir.mkdir(parents=True)
+            manifest = manifest_dir / "evening_independent_review.json"
+            manifest.write_text(
+                json.dumps(
+                    self._review_manifest(date, report_rel, sha256_file(report)),
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "retired"):
+                review_payload_builder.build_review_payload(manifest, root=root)
+
     def test_daily_payload_builder_derives_payload_from_combined_and_snapshot(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -1283,7 +1385,7 @@ class PublishEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(
                 daily_payload_builder.block_plain_text(payload["children"][-1]),
-                "独立边界：本报告判断仅来自当次六源、门禁与心力事实。",
+                "独立边界：本报告判断仅来自当次六源与开仓前状态门禁。",
             )
             self.assertEqual(payload["payload_source"]["status"] if "status" in payload["payload_source"] else None, None)
             validated = daily_payload_builder.validate_payload_derivation(
@@ -1295,6 +1397,30 @@ class PublishEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(validated["status"], "passed")
             self.assertEqual(validated["kind"], "combined_md_to_notion_payload")
+
+    def test_daily_payload_builder_normalizes_maker_label_subheading(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(
+                self._strict_daily_combined_text(date, slot).replace(
+                    "\nBTC（策略）：", "\n### BTC（策略）：", 1
+                ),
+                encoding="utf-8",
+            )
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+
+            payload = daily_payload_builder.build_daily_payload(report, root=root)
+
+            self.assertEqual(
+                daily_payload_builder.block_plain_text(payload["children"][15]),
+                "BTC（策略）：执行概率 45%（已执行 0%）　胜率 61%",
+            )
 
     def test_publish_rejects_strict_daily_payload_not_derived_from_combined(self):
         with tempfile.TemporaryDirectory() as td:

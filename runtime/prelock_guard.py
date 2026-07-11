@@ -91,6 +91,7 @@ def _is_current_slot_generated_runtime_state(
         f"runtime_state/{trading_date}/delivery_{slot}.json",
         f"runtime_state/{trading_date}/publish_{slot}.json",
         f"runtime_state/{trading_date}/publish_payload_{slot}.json",
+        f"runtime_state/{trading_date}/report_preflight_{slot}.json",
         f"runtime_state/{trading_date}/render_{slot}.json",
         f"runtime_state/{trading_date}/word_qa_{slot}.json",
     }
@@ -159,6 +160,7 @@ def _prelock_broad_prior_judgment_paths(root: Path) -> Iterable[Path]:
             "evening_independent_review.json",
             "notion_*.json",
             "publish_payload_*.json",
+            "report_preflight_*.json",
         )
         for date_dir in runtime_root.iterdir():
             if not date_dir.is_dir() or date_dir.name.startswith("."):

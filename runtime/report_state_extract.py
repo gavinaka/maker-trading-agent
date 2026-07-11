@@ -9,7 +9,14 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from outputs.daily_payload_builder import parse_daily_text_contract
 
 
 REQUIRED_SOURCE_MARKERS = {
@@ -44,11 +51,50 @@ def _number(pattern: str, text: str) -> float | None:
     return int(parsed) if parsed.is_integer() else parsed
 
 
-def extract_report_state(text: str) -> dict:
-    orderflow_line = _match(
-        r"盘口（合约）：\s*\n([^\n]+)",
+SLOT_BY_CN = {"早间": "morning", "午间": "midday", "晚间": "evening"}
+
+
+def _strip_label(value: str, label: str) -> str:
+    return re.sub(rf"^{re.escape(label)}\s*[：:]?\s*", "", value).strip()
+
+
+def _infer_report_identity(text: str) -> tuple[str, str] | None:
+    match = re.search(
+        r"^#\s+(20\d{2})\.(\d{1,2})\.(\d{1,2})\s+(早间|午间|晚间)日报\s*$",
         text,
-        "",
+        re.MULTILINE,
+    )
+    if not match:
+        return None
+    year, month, day, slot_cn = match.groups()
+    return f"{year}-{int(month):02d}-{int(day):02d}", SLOT_BY_CN[slot_cn]
+
+
+def extract_report_state(
+    text: str,
+    trading_date: str | None = None,
+    slot: str | None = None,
+) -> dict:
+    explicit_identity = trading_date is not None or slot is not None
+    if explicit_identity and (not trading_date or not slot):
+        raise ValueError("trading_date and slot must be supplied together")
+    identity = (trading_date, slot) if explicit_identity else _infer_report_identity(text)
+    contract = None
+    if identity:
+        try:
+            contract = parse_daily_text_contract(
+                text.splitlines(),
+                str(identity[0]),
+                str(identity[1]),
+            )
+        except ValueError:
+            if explicit_identity:
+                raise
+
+    orderflow_line = (
+        contract["orderflow_text"]
+        if contract
+        else _match(r"盘口（合约）：\s*\n([^\n]+)", text, "")
     )
     maker_section = _match(
         r"## ② Maker 计划\s*\n(.*?)(?=\n## ③|\Z)",
@@ -56,11 +102,36 @@ def extract_report_state(text: str) -> dict:
         "",
         re.S,
     )
-    strategy = _match(
-        r"\n策略：\s*\n(.*?)(?=\n## ②|\Z)",
-        text,
-        "",
-        re.S,
+    strategy = (
+        contract["strategy"]
+        if contract
+        else _match(r"\n策略：\s*\n(.*?)(?=\n## ②|\Z)", text, "", re.S)
+    )
+    fundamentals = (
+        _strip_label(contract["fundamentals"], "基本面")
+        if contract
+        else _match(r"基本面：([^\n]+)", text, "")
+    )
+    trend_summary = (
+        _strip_label(contract["trend_confirmation"], "趋势确认")
+        if contract
+        else _match(r"趋势确认：([^\n]+)", text, "")
+    )
+    support_resistance = contract["support_resistance"] if contract else text
+    daily_summary = (
+        _strip_label(contract["daily_line"], "日线级别")
+        if contract
+        else _match(r"日线级别[　 ]*([^\n]+)", text, "")
+    )
+    hourly_summary = (
+        _strip_label(contract["hourly_line"], "小时级别")
+        if contract
+        else _match(r"小时级别[　 ]*([^\n]+)", text, "")
+    )
+    cannot_do = (
+        _strip_label(contract["cannot_do"], "不能做")
+        if contract
+        else _match(r"不能做：([^\n]+)", text, "")
     )
     return {
         "notion_state": {
@@ -70,7 +141,7 @@ def extract_report_state(text: str) -> dict:
             "reuse_policy": "post_analysis_audit_only",
             "features": {
                 "fundamentals": {
-                    "summary": _match(r"基本面：([^\n]+)", text, ""),
+                    "summary": fundamentals,
                 },
                 "orderflow": {
                     "cvd": _match(r"CVD(上升|下降|横盘)", orderflow_line),
@@ -85,17 +156,17 @@ def extract_report_state(text: str) -> dict:
                     "raw": orderflow_line,
                 },
                 "trend_regime": {
-                    "summary": _match(r"趋势确认：([^\n]+)", text, ""),
+                    "summary": trend_summary,
                 },
                 "liquidity": {
-                    "support": _match(r"日内支撑：([^\s　]+)", text, ""),
-                    "resistance": _match(r"日内压力：([^\s　]+)", text, ""),
+                    "support": _match(r"日内支撑：([^\s　]+)", support_resistance, ""),
+                    "resistance": _match(r"日内压力：([^\s　]+)", support_resistance, ""),
                 },
                 "chart_1d": {
-                    "summary": _match(r"日线级别[　 ]*([^\n]+)", text, ""),
+                    "summary": daily_summary,
                 },
                 "chart_1h": {
-                    "summary": _match(r"小时级别[　 ]*([^\n]+)", text, ""),
+                    "summary": hourly_summary,
                 },
             },
             "scores": {
@@ -124,7 +195,7 @@ def extract_report_state(text: str) -> dict:
             },
         },
         "decision": {
-            "cannot_do": _match(r"不能做：([^\n]+)", text, ""),
+            "cannot_do": cannot_do,
             "main_account": {"strategy": strategy},
             "maker": {"raw": maker_section},
         },

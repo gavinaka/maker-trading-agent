@@ -19,4 +19,5 @@
 - 采集产物应按 slot 或 capture id 版本化保存，不能只保留会被后续采集覆盖的共享文件。
 - transition／analysis lock 应记录不可变的来源路径与 SHA-256。
 - publish freshness 应读取锁内来源清单并核对哈希；发现共享文件已被后续时段覆盖时，读取 slot 快照，不得借新文件 mtime 放行。
+- 默认发布始终保留 240 分钟实时可执行源硬门。若用户明确要求继续交付已锁定时点报告，只能通过 `publish_report.py --allow-locked-timepoint-publish --locked-timepoint-reason <reason>` 执行；该通道必须机械验证 analysis lock、报告 hash、capture manifest hash 与 immutable snapshot，并在 publish manifest 保留原 freshness 失败和用户授权原因。
 - 跨时段只允许在各自分析锁完成后做“事后漂移对照”，不得回写前序样本。

@@ -1,9 +1,92 @@
+## 2026-07-11 早间最终交付
+<!-- generated-delivery-evidence:2026-07-11:morning:39afda35-a098-8142-b881-e45e766b7d42 -->
+- 最终唯一存活页：`39afda35-a098-8142-b881-e45e766b7d42`
+- 发布时间：`2026-07-11T08:43:23+08:00`
+- report_sha256：`b7cba644444208fb4181e30fa708e806f186268c50b24125a561010ca3f4f702`
+- docx_sha256：`3a646a2e3c51eab773650035cf2cdda86f27966f5a509603d631d0b8c2403397`
+- render_manifest：`runtime_state/2026-07-11/render_morning.json`
+- word_qa_manifest：`runtime_state/2026-07-11/word_qa_morning.json`
+- publish_manifest：`runtime_state/2026-07-11/publish_morning.json`
+- Word 视觉 QA PASS
+- 冻结 verifier PASS
+
 # 上下文台账 / Context Log
 
 > 跨窗口对话连续性档案。每次会话收尾时,把当天要点追加到这里。
 > 新窗口开始时,我会先读这个文件 + `memory/MEMORY.md`,即可接上之前进度。
 > 规则:倒序追加(最新在上);只记录事实与决策,不复制长对话原文。
 > 📦 滚动归档:本文件仅保留最近约 10 天活档;更早块迁入 `archive/context_log_*.md`(S0 不读)。当活档超出约 10 天时,把超期最旧块整段移入对应归档文件并在底部更新指针。当前已归档:2026-05-29 → 06-10(会话 #1–#24)见 `archive/context_log_2026-05-29_to_06-10.md`。
+
+---
+
+## 2026-07-10（会话 #80 · 晚间日报自动化 · 六源独立分析与交付）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 晚报工作流，未触发、等待、代跑或输出外置准确性评估，也未生成晚间独立审查页面、manifest 或 payload。automation key=`daily-2026-07-10-evening`，workflow lease 贯穿采集、prepare、推理、分析锁、渲染、发布与交付。
+- 六源经 `capture_delta.js --slot evening` 完整刷新，未触发 full fallback；不可变证据快照=`runtime_state/2026-07-10/evidence/evening/572cc608-92a4-4f00-999c-12cff45fbc83`，capture manifest=`runtime_state/2026-07-10/captures/evening/conservative_delta_572cc608-92a4-4f00-999c-12cff45fbc83.json`。BlockBeats、Coinglass、Exocharts、FedWatch、Farside BTC ETF Flow、TradingView 全部有效。
+- 先完成 `runtime_state/2026-07-10/reasoning_work_evening.md` 与 `reasoning_readiness_evening.json`，再生成正式 `outputs/2026-07-10_evening_combined.md`。发布前为满足 frozen payload 的确定性标签结构执行同槽 reissue，只调整 Markdown 标签与段落形态，复用同一 immutable capture，未改变六源推理、评分、胜率或风险数学。最终报告 SHA-256=`066fae2e7f3795199bc994aa4028729f8dfb148bc7e2abb1406c58488edde6ae`；分析锁 commit_id=`6e8ada171f4654a5c3ad82416a78f05cfe5efdcfc64933bd1375ceee39a01551`。
+- canonical Word=`outputs/2026-07-10_evening_render.docx`，DOCX SHA-256=`75f7d85b396003897dad40211664d25f91b71f1ae048a1232ab2e54f8385f2bd`，render manifest=`runtime_state/2026-07-10/render_evening.json`。Word COM + Poppler 导出 5 页并逐页检查，无空白、乱码、重叠、截断、溢出或裸 Markdown；Word 视觉 QA PASS，manifest=`runtime_state/2026-07-10/word_qa_evening.json`。
+- 三张 BlockBeats 卡由 `outputs/2026-07-10_evening_cards.json` 经参数化入口生成；Daily payload=`outputs/2026-07-10_evening_publish_payload.json`。Notion 最终唯一存活页=`399fda35-a098-8176-961f-d90f1af61bf4`，北京时间 `2026-07-10T20:42:36+08:00` 发布；publish manifest=`runtime_state/2026-07-10/publish_evening.json`。
+- 发布验证全部通过：source freshness、REPORT LINT、payload source/source binding、29 块冻结结构（26 文本块+3 图）、语义槽位、语义配色、FROZEN GOLD VERIFY 与 LIVE PAGE UNIQUENESS 均 PASS。
+
+### B. 独立判断
+- 晚报基于本时段六源从零重新分析，不复用早报或午报派生判断。主账户在短线结构与基本面冲突时保持等待，不在压力区追涨，也不因局部背离直接追价。
+- Maker 只允许在本报告定义的压力边缘使用左侧限价与严格止损；盘口、盘面、胜率和 5x 风险收益已由 `runtime/decision_contract.py` 机械复算并绑定 pre-MD readiness。成交前取消、成交后止损、两层防守与 TP1/TP2 仓位账互不混用。
+
+### C. 锁后连续性与交付边界
+- 锁后完成 prior-plan continuity 核对：前序 Maker 记录已关闭，无活跃 Maker 持仓；若外部仍残留旧挂单，执行层先撤旧再只保留本报告这一张系统 Maker 单。该连续性核对未反向修改锁定判断。
+- 默认未执行 Git commit。未创建或发布晚间独立审查页面、manifest 或 payload；外置准确性评估不属于本任务且未被触发。
+- 本块写入后运行 `session_runner.py deliver --date 2026-07-10 --slot evening --page-id 399fda35-a098-8176-961f-d90f1af61bf4`，形成最终 `runtime_state/2026-07-10/delivery_evening.json`，随后关闭 workflow lease 与 automation gate，并执行 host usage 导入。
+
+---
+
+## 2026-07-10（会话 #79 · 早间日报自动化 · 观望不挂单）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 早报工作流，未触发、串联或输出外部报告流程。北京时间 2026-07-10 早报 automation 以 key=`daily-2026-07-10-morning` 成功 claim，并持有 workflow lease 贯穿采集、prepare、推理、分析锁、渲染、发布与交付。
+- 六源经 `capture_all.js --slot morning` 完整采集并绑定不可变快照 `runtime_state/2026-07-10/evidence/morning/6acec960-b27c-4819-b9dd-d54108dd886a`；capture manifest=`runtime_state/2026-07-10/captures/morning/full_base_6acec960-b27c-4819-b9dd-d54108dd886a.json`。BlockBeats、Coinglass、Exocharts、FedWatch、Farside BTC ETF Flow、TradingView 全部有效；第一次外层采集等待超时后子进程停止，确认无 immutable manifest 且原 PID 已退出后只清除 stale capture lock，并在同一 lease 下重新完成一次完整采集。
+- 先写 `runtime_state/2026-07-10/reasoning_work_morning.md` 并运行 `certify-reasoning` 形成 pre-MD readiness，随后产出正式 `outputs/2026-07-10_morning_combined.md`。报告 SHA-256=`c449958a5ae7d8c73de8ad9c477e89832b6b398fd1704b18d04be0d58aac56a9`；分析锁 `runtime_state/2026-07-10/analysis_lock_morning.json` 的 commit_id=`35c2b334e1727caa1411ecd0db238f5966ee64ccc2782ab48ddb5874d34423c8`。
+- canonical Word `outputs/2026-07-10_morning_render.docx` 经两次幂等渲染后完成，DOCX SHA-256=`fcebecf6979e3d03b08d48a6f70ab146477803de3041aec58ab4fbe4fd19cb61`，render manifest=`runtime_state/2026-07-10/render_morning.json`。第二次 Word COM + Poppler 导出 7 页并逐页检查，无空白、乱码、重叠、截断、溢出或裸 Markdown；Word 视觉 QA PASS，manifest=`runtime_state/2026-07-10/word_qa_morning.json`。
+- BlockBeats 三张卡由 `outputs/2026-07-10_morning_cards.json` 参数化生成；Daily payload 由 locked combined 机械生成 `outputs/2026-07-10_morning_publish_payload.json`。
+- Notion 早间日报最终唯一存活页 `399fda35-a098-81f6-9915-cc14bf64d174`，北京时间 `2026-07-10T08:45:40+08:00` 发布。publish manifest=`runtime_state/2026-07-10/publish_morning.json`，attempt manifest=`runtime_state/2026-07-10/publish_attempts/morning/20260710T084540476001+0800_success_cda3113454e5.json`。
+- 发布验证：REPORT LINT PASS；payload source 与六源 source binding PASS；25 个冻结正文块 + 3 图落库 PASS；FROZEN GOLD VERIFY PASS；LIVE PAGE UNIQUENESS PASS；独立复跑 `notion_verify_against_yesterday.py` 仍为 PASS。
+
+### B. 独立判断
+- 主结论：观望、不挂单。不能在约 63,232 追多，也不在支撑上方直接追空；中线保持偏空观察，等待 65,500-66,000 高周期压力区明确拒绝，或日线重新跌破 61,830 后再确认下行；站稳 66,000 则撤销偏空预案。
+- 基本面中性偏空且价格已部分兑现：Farside 最新可用日 2026-07-09 Total=-37.4 US$m；FedWatch 2026-07-29 不变概率 74.9%、加息 25.1%、降息 0.0%；BlockBeats 12 小时重要快讯候选 30 条、selected top3 正好 3 条。
+- 盘口四维为 CVD下降、价格下降、资金费率下降但仍为正、OI下降；盘口 40/70。盘面 18/30，总分 58/100，绝对胜率 58%，执行概率 62% 仅代表触达条件概率，不构成下单许可。日内支撑 62,500-62,800，压力 63,700-64,000。
+
+### C. 锁后连续性、修复与风险记录
+- 锁后复核 Notion：主账户当前一笔 BTC 空单，名义仓位 450 美元、5x、入场 62,600、止损 64,600、TP1 60,600；按当前系统公式，入场至止损的杠杆后风险约 15.97%，与该记录声称的“3%以内”不一致。该事实只作锁后风险记录，未反向修改本时段独立判断。Maker 库仅有 2025 年遗留的三条 `持仓中` 状态，无 2026-07-10 新 Maker 持仓。
+- 修复两个确定性产物兼容缺陷：`outputs/render_from_combined.py` 增加 `####` 标题渲染，避免 Word 出现裸 Markdown；`outputs/daily_payload_builder.py` 仅规范化 Maker 标签行的 `###` 展示标记，保持 locked combined 内容与哈希不变。`py -m unittest tests.test_artifact_pipeline` 共 47 项通过。
+- `runtime/prelock_safe_search.py` 仍缺失；因此锁前按要求尝试该入口失败后没有退回裸搜索。Word QA、冻结 verifier、unique page、source binding 均 PASS；本块写入后运行 `session_runner.py deliver` 形成最终 `runtime_state/2026-07-10/delivery_morning.json` 并关闭 workflow lease/automation gate。
+
+---
+
+## 2026-07-09（会话 #78 · 早间日报自动化 · 观望不追空）
+
+### A. 最终产出与发布
+- 本轮只执行本仓库 `daily-report` 早报工作流，未触发、串联、读取或输出外部聚合流程。北京时间 2026-07-09 早报 automation 以 key=`daily-2026-07-09-morning` 成功 claim，并持有 workflow lease 贯穿采集、prepare、推理、锁定、渲染、发布与交付。
+- 六源经 `capture_all.js --slot morning` 完整采集并绑定不可变快照 `runtime_state/2026-07-09/evidence/morning/e251231a-1924-4b77-a70f-486b78c49330`；采集 manifest=`runtime_state/2026-07-09/captures/morning/full_base_e251231a-1924-4b77-a70f-486b78c49330.json`。BlockBeats、Coinglass、Exocharts、FedWatch、Farside BTC ETF Flow、TradingView 全部有效，Farside 标题为 `Bitcoin ETF Flow (US$m)` 且 Total 列可解析。
+- 先写 `runtime_state/2026-07-09/reasoning_work_morning.md` 并运行 `certify-reasoning` 形成 pre-MD readiness，随后产出正式 `outputs/2026-07-09_morning_combined.md`。报告 SHA-256=`40328e4164d75154238cc9e4c77c5d261a358baac12a6c2a988a02501f7e7ed1`；分析锁 `runtime_state/2026-07-09/analysis_lock_morning.json` 的 commit_id=`5399d7785b12b479dd9273b2374f2122723a1510b7fde61944c7daf525dab9a6`。
+- `report_lint` 0 HARD、3 WARN（combined/appendix 长度与价格锚点低于旧金标表面代理下限，均为 WARN only，不为过门补字数）。本轮修复 `outputs/report_lint.py` 的 Maker 防守校验：当 Maker 明确为观望且无新增挂单时，不再要求不存在的防守触发价。
+- canonical Word `outputs/2026-07-09_morning_render.docx` 已生成，DOCX SHA-256=`4ce1e652011b0c9e120fcad4ba177ab1cd3533abd696911a8d2d02807bc4ad04`。render manifest=`runtime_state/2026-07-09/render_morning.json`。Word COM + Poppler 导出 7 页 QA 图片并逐页检查，无空白、乱码、重叠、截断或裸 Markdown 标题；Word 视觉 QA PASS，Word QA manifest=`runtime_state/2026-07-09/word_qa_morning.json`。
+- BlockBeats 三张卡通过参数化入口生成：`outputs/2026-07-09_morning_cards.json` 与 `outputs/blockbeats/2026-07-09_morning_*.png`。Daily payload 由 `outputs/daily_payload_builder.py` 从 locked combined 机械生成 `outputs/2026-07-09_morning_publish_payload.json`。
+- Notion 早间日报最终唯一存活页 `398fda35-a098-81b3-8771-f53eebc77f39`，北京时间 `2026-07-09T11:46:45+08:00` 发布。publish manifest=`runtime_state/2026-07-09/publish_morning.json`，attempt manifest=`runtime_state/2026-07-09/publish_attempts/morning/20260709T114645156283+0800_success_308b8a3c3ebb.json`。
+- 发布验证：REPORT LINT PASS；payload_source status=passed；source binding 指向本次 capture manifest 与 evidence snapshot root；冻结 verifier PASS；FROZEN GOLD VERIFY PASS；LIVE PAGE UNIQUENESS PASS；Word 视觉 QA PASS。
+
+### B. 独立判断
+- 本次早报基于 2026-07-09 早间完整六源重新分析，主结论为观望，不在 61,700 附近追空，也不在未重新站回 63,200 前追多。
+- 基本面中性偏空：BlockBeats 12 小时重要快讯入选 Binance 与美国司法部配合变化、美联储通胀分歧、韩国央行利率预期；FedWatch 2026-07-29 不变概率 70.6%、加息 29.4%、降息 0.0%；Farside 最新可用日 2026-07-08 Total 为 -25.8 US$m，前一日 +21.5 US$m，近 5 日合计 +188.9 US$m。
+- 盘口与盘面：Coinglass 显示价格约 61,800、CVD -4.471K、资金费率 0.0034 为正、OI 56.187K；Exocharts 最新日 O 62,205.4、H 62,560.2、L 61,616.1、C 61,738、Delta -6.2M、CVD -29M、POC 61,698。价格低于 1H SMA20 62,063.52 与 4H SMA20 63,032.34，上方 62,600-62,900、63,200 为压力，下方 61,300-61,600 为近端支撑。
+- 评分：盘口 40/70，盘面 21/30，总分 61/100，胜率 58%。Maker 计划为观望、无新增挂单；只有等待 62,600-63,200 反抽失败，或重新站回 63,200 后改变评估，才进入下一步动作。
+- 不能做：在 61,300-61,600 支撑附近低位追空；也不能在未站回 63,200 前把反抽当作确认多头。
+
+### C. 锁后连续性与风险记录
+- 锁后复核 Notion Trading Check：主库 total=76、active_or_pending=0；Maker 库 total=243、active_or_pending=0。因此本早报不存在需要继承或撤销的未完成旧计划。
+- 执行中发现 `runtime/prelock_safe_search.py` 缺失，锁前搜索入口无法运行；因此锁前未做裸全仓库搜索。另有一次锁前 Notion 查询意外暴露当天手写计划子页标题，已按污染事件记录，未用于本次分析结论；后续同槽重跑仍以完整六源、pre-MD reasoning、`lock-analysis` 与真实发布证据闭环为准。
+- Word 视觉 QA PASS；冻结 verifier PASS；unique page PASS；source binding PASS；context_log 已在 render、Word-QA、publish 证据真实存在后写入。
+- 本块写入后运行 `session_runner.py deliver --date 2026-07-09 --slot morning --page-id 398fda35-a098-81b3-8771-f53eebc77f39 --frozen-verifier-pass --word-visual-qa-pass --unique-page-pass`，形成最终 `runtime_state/2026-07-09/delivery_morning.json` 并关闭 workflow lease/automation gate。
 
 ---
 
@@ -1430,3 +1513,33 @@
 ---
 
 > 📦 更早记录（2026-06-10 及之前 · 会话 #1–#24）已滚动归档 → `sessions/archive/context_log_2026-05-29_to_06-10.md`
+## 2026-07-08 早间日报
+- Notion 最终页=`397fda35-a098-8176-aa34-e4c06a62e37f`，published_at=`2026-07-08T11:51:37+08:00`，冻结 verifier PASS。
+- 报告 SHA-256=`3f8df82d6c2794b7c95eb1aa875a8158fa1499a9ac436caa7beeeec54c62eb17`，Word SHA-256=`d44c41cd9935f49206f2ed62a3876419c10dfeabeb02d7c4d821602ed9604e6d`。
+- render manifest=`runtime_state/2026-07-08/render_morning.json`，Word QA manifest=`runtime_state/2026-07-08/word_qa_morning.json`，publish manifest=`runtime_state/2026-07-08/publish_morning.json`。
+- Word 视觉 QA PASS；source binding 与 delivery manifest 已记录在 `runtime_state/2026-07-08/delivery_morning.json`。
+
+## 2026-07-08 午间日报
+- Notion 最终页=`397fda35-a098-81d0-9dc9-dbd217a612f5`，published_at=`2026-07-08T16:19:05+08:00`，冻结 verifier PASS，唯一页 PASS。
+- 报告 SHA-256=`ca7dd5f2808f2ddfe95b79367923b5d0f64af8f7cad40fbb1c99d2697c907e9b`，Word SHA-256=`c19a24760426352b6af04f007af19b9fd7a7f65d170f3c7a7c6c55cc48f73153`。
+- render manifest=`runtime_state/2026-07-08/render_midday.json`，Word QA manifest=`runtime_state/2026-07-08/word_qa_midday.json`，publish manifest=`runtime_state/2026-07-08/publish_midday.json`。
+- Word 视觉 QA PASS；source binding 与 publish manifest 已记录在 `runtime_state/2026-07-08/publish_midday.json`。
+
+## 2026-07-08 晚间日报
+- Notion 最终页=`397fda35-a098-81d4-b1fd-ce2dab740c0f`，published_at=`2026-07-08T20:37:46+08:00`，冻结 verifier PASS，唯一页 PASS。
+- 晚间独立审查页=`397fda35-a098-819a-8ed8-e376fb23d9aa`，published_at=`2026-07-08T20:39:54+08:00`，review verifier PASS。
+- 报告 SHA-256=`c18e634c8ec8e5e83acc5134d1796b002c2b0b992e96c6eb82ea91b44cfb5265`，Word SHA-256=`b148e20374d8311c589cefa858451f429053c9ae4a8dcefc2ecd1ef39bd66cab`。
+- render manifest=`runtime_state/2026-07-08/render_evening.json`，Word QA manifest=`runtime_state/2026-07-08/word_qa_evening.json`，publish manifest=`runtime_state/2026-07-08/publish_evening.json`。
+- Word 视觉 QA PASS；source binding 与 publish manifest 已记录在 `runtime_state/2026-07-08/publish_evening.json`。
+## 2026-07-10 午间日报最终交付
+- Notion page id：`399fda35-a098-819b-9884-cc658418c5a0`
+- 发布时间：`2026-07-10T19:35:50+08:00`
+- 冻结 verifier：PASS（exit code 0）
+- 同前缀唯一存活页：PASS
+- Word 视觉 QA PASS
+- report SHA-256：`af126f8716e608b1a4f7a7c75ddeadb8138ba4f77c78544e18fb26b5515efe04`
+- DOCX SHA-256：`d9e547e2b2593112fafd0d888f1844ac4f81ba0de105b544b87ce77ad4d3cc78`
+- render manifest：`runtime_state/2026-07-10/render_midday.json`
+- Word QA manifest：`runtime_state/2026-07-10/word_qa_midday.json`
+- publish manifest：`runtime_state/2026-07-10/publish_midday.json`
+- 证据时间锁：北京时间 14:10–14:19；用户明确授权 locked-timepoint delivery，publish manifest 保留原 freshness 失败及 immutable snapshot 绑定。

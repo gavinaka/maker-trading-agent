@@ -11,7 +11,7 @@ metadata:
 
 **Why**：2026-06-03 用户连续纠错（漏配图→漏块类型→漏字体颜色），原因是「反应式补丁」。要求**深度修稳定性**：用脚本机械比对，过不了就不算完成。
 
-> 🟥 **结构金标=2026.6.2 冻结模板**（块类型序列/块数/配图位置长期对照 6/2、不对照"昨日"，防错误逐日传播）。金标 page_id 在 verifier `GOLD` 字典：morning `373fda35…c457` / evening `373fda35…e9d2` / review `373fda35…3e01`。
+> 🟥 **结构金标=2026.6.2 冻结模板**（块类型序列/块数/配图位置长期对照 6/2、不对照"昨日"，防错误逐日传播）。活跃日报只使用 morning/midday/evening 金标；review 分支仅供历史页面兼容复验，不得创建新页面。
 > 🟥🟥 **配色权威 ≠ 金标颜色**（2026-06-03 用户拍板·关键修正）。金标自身配色不一致（同一个「中性偏空」早间金标涂红、晚间金标涂橙），**绑死金标颜色会把语义涂错**（典型：解读结论「中性偏空」被机械对成红＝看着像利空＝"渲染不到位"）。改为：**配色按【情绪词→颜色】确定性唯一规则**，早晚统一一套，由 `outputs/report_colors.py` 逐 run 校验。
 
 ## 唯一色规则（用户书面约定·长期标准·见 report_colors.py；**2026-06-12 用户迭代：中性偏多→绿、中性偏空→红、其余不变**）
@@ -28,11 +28,11 @@ metadata:
 3. **事务式 staging 发布**：snapshot全部旧同名前缀页→唯一staging标题建新页→上传三图→落库检查→改最终标题。准备阶段失败只归档staging、旧页保留。
 4. **改最终标题后立即跑结构+配色双门**（脚本默认对照 6/2 金标）：
    ```
-   $env:NOTION_TOKEN=...; py outputs/notion_verify_against_yesterday.py <今日page_id> morning|evening|review
+   $env:NOTION_TOKEN=...; py outputs/notion_verify_against_yesterday.py <今日page_id> morning|midday|evening
    ```
-   - 门⓪ 标题：子页标题抹日期后须**逐字对齐金标格式**（防漏后缀漂移，如「🌙…晚间日报**（20:00 评分点）**」、「🌅…早间日报（11:00 评分点）」、「🔍…晚间独立审查（倒推）」）。标题含 emoji，打印前用 `encode('gbk','ignore')` 剔除否则 PS 崩。
+   - 门⓪ 标题：子页标题抹日期后须**逐字对齐金标格式**（防漏后缀漂移，如「🌙…晚间日报**（20:00 评分点）**」、「🌅…早间日报（11:00 评分点）」、「🌇…午间日报（15:30 评分点）」）。标题含 emoji，打印前用 `encode('gbk','ignore')` 剔除否则 PS 崩。
    - 门① 结构：块类型序列 + 块数 + 图片数 vs 6/2 金标。
-   - 门①b 语义配色（morning/evening·review 跳过=用分析配色）：`report_colors.audit_page` 逐 run 按情绪词唯一规则校验。
+   - 门①b 语义配色（morning/midday/evening）：`report_colors.audit_page` 逐 run 按情绪词唯一规则校验。
    - **`[PASS]`（标题 + 结构对齐 + 配色符合规则）且进程退出码0才算完成**；`[FAIL]`/异常必须退出非零并回滚staging。标题漂移直接 `PATCH /v1/pages/{id}` 改 title property。
 4. **门①通过后才提交替换**：归档snapshot中的全部旧页→检查同前缀恰好一个存活页且为新page id。清旧失败保留已验证新页并硬停，禁止回滚新页造成全失。
 5. **配色错配可一键自动修**（按规范色就地 PATCH，免重建整页）：

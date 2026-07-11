@@ -67,8 +67,12 @@ const PATTERNS = {
   macroCore: /(美联储|FOMC|FedWatch|降息|加息|利率|联邦基金利率|CPI|PCE|通胀|非农|失业率|就业|美债|QT|QE|央行|货币政策|核心PCE)/i,
   macroDollar: /(美元指数|美元流动性|美元(?:走强|走弱|走高|走低|回落|反弹|坚挺|疲软|维持稳定|保持坚挺))/i,
   macroDollarBody: /(美元指数|美元流动性|DXY|美元(?:目前|仍|仍将|将|继续|短线|日内|隔夜|整体|大幅|小幅)(?:走强|走弱|走高|走低|回落|反弹|坚挺|疲软|维持稳定|保持坚挺))/i,
-  macroLiquidityContext: /(美联储|FOMC|美元|美债|央行|利率|QT|QE|货币政策|降息|加息|通胀|CPI|PCE|非农|就业)/i,
-  geopolitics: /(战争|冲突|制裁|外交|选举|伊朗|以色列|俄罗斯|乌克兰|中东|白宫|国会|财政部|司法部|特朗普)/i,
+  // A bare currency unit such as “亿美元” is not macro context. Dollar
+  // context must describe DXY/USD direction or liquidity explicitly.
+  macroLiquidityContext: /(美联储|FOMC|美元指数|美元流动性|DXY|美债|央行|利率|QT|QE|货币政策|降息|加息|通胀|CPI|PCE|非农|就业)/i,
+  // Country/person names alone do not make an item geopolitical. Require an
+  // actual conflict, sanctions, diplomacy, election, or military event.
+  geopolitics: /(战争|冲突|制裁|外交|选举|军事行动|军事目标|袭击|打击|停火|交火|开战|封锁|空袭|导弹|局势升级)/i,
   regulatory: /(SEC|CFTC|监管|立法|法案|执法|MiCA|司法部|财政部|批准.{0,12}ETF|拒绝.{0,12}ETF|ETF.{0,12}批准|ETF.{0,12}拒绝|稳定币.{0,12}法案|数字资产.{0,12}政策)/i,
   btcEtfFlow: /((BTC|比特币|Bitcoin).{0,24}(ETF|净流入|净流出)|ETF.{0,24}(BTC|比特币|Bitcoin)|现货比特币ETF|IBIT|GBTC|FBTC|ARKB|Farside)/i,
   exchangeEvent: /(交易所|上币|宕机|Coinbase|Kraken|Bybit|OKX|Binance(?!\s*广场))/i,
@@ -82,6 +86,13 @@ const PATTERNS = {
 
 function has(pattern, text) {
   return pattern.test(text);
+}
+
+function hasNearby(first, second, text, maxChars = 32) {
+  const flags = 'is';
+  const forward = new RegExp(`(?:${first.source}).{0,${maxChars}}(?:${second.source})`, flags);
+  const reverse = new RegExp(`(?:${second.source}).{0,${maxChars}}(?:${first.source})`, flags);
+  return forward.test(text) || reverse.test(text);
 }
 
 function clampScore(score, maxScore) {
@@ -144,7 +155,7 @@ export function classifyImpact(row, nowMs, windowHours = DEFAULT_WINDOW_HOURS) {
   const hasNonCryptoSectorTitle = has(PATTERNS.nonCryptoSectorTitle, title) && !has(PATTERNS.btc, title);
   const isMemeOnly = hasMeme && !hasBtc && !has(PATTERNS.btcEtfFlow, text);
   const isSecondarySectorStory = (isPersonalStory || hasNonCryptoSectorTitle) && !hasBtc && !has(PATTERNS.btcEtfFlow, text);
-  const macroLiquidity = /流动性/.test(text) && has(PATTERNS.macroLiquidityContext, text);
+  const macroLiquidity = hasNearby(/流动性/i, PATTERNS.macroLiquidityContext, text);
   const macroDollar = has(PATTERNS.macroDollar, title) || has(PATTERNS.macroDollarBody, text);
   const macroPolicy = !isSecondarySectorStory && (
     has(PATTERNS.macroCore, title)

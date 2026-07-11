@@ -8,6 +8,7 @@ from pathlib import Path
 
 from runtime.delta_engine import compare_snapshots, scan_source_snapshot
 from runtime.dependency_graph import (
+    active_post_lock_nodes,
     affected_nodes,
     required_analysis_nodes,
     required_post_lock_nodes,
@@ -527,10 +528,16 @@ class DependencyTests(unittest.TestCase):
             self.assertIn(node, nodes)
         self.assertEqual(
             required_post_lock_nodes("evening"),
-            {
-                "post_lock:prior_plan_continuity",
-                "post_lock:evening_independent_review",
-            },
+            {"post_lock:prior_plan_continuity"},
+        )
+        self.assertEqual(
+            active_post_lock_nodes(
+                {
+                    "post_lock:prior_plan_continuity",
+                    "post_lock:evening_independent_review",
+                }
+            ),
+            {"post_lock:prior_plan_continuity"},
         )
 
     def test_decision_is_not_carried_in_resolved_shared_state(self):

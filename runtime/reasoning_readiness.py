@@ -15,13 +15,16 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from runtime.decision_contract import validate_contract_file
 from runtime.state_store import atomic_json_write
 
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICY = "pre_md_reasoning_depth_certified_no_posthoc_rationale"
 STRICT_FROM = date(2026, 7, 6)
+REPORT_PREFLIGHT_STRICT_FROM = date(2026, 7, 11)
 EXEMPT_SLOT = ("2026-07-06", "morning")
+DECISION_CONTRACT_FIRST_SLOT = ("2026-07-10", "evening")
 CONTRACT_RELATIVE = "scoring/reasoning_depth_checklist.md"
 
 REQUIRED_SECTIONS = {
@@ -105,6 +108,17 @@ def reasoning_readiness_required(trading_date: str, slot: str) -> bool:
     if (trading_date, slot) == EXEMPT_SLOT:
         return False
     return date.fromisoformat(trading_date) >= STRICT_FROM
+
+
+def report_preflight_required(trading_date: str) -> bool:
+    return date.fromisoformat(trading_date) >= REPORT_PREFLIGHT_STRICT_FROM
+
+
+def decision_contract_required(trading_date: str, slot: str) -> bool:
+    return (trading_date, {"morning": 0, "midday": 1, "evening": 2}[slot]) >= (
+        DECISION_CONTRACT_FIRST_SLOT[0],
+        {"morning": 0, "midday": 1, "evening": 2}[DECISION_CONTRACT_FIRST_SLOT[1]],
+    )
 
 
 def _assert_inside_runtime_state(path: Path, trading_date: str, root: Path) -> None:
@@ -201,6 +215,7 @@ def build_reasoning_readiness_manifest(
     work_file: Path,
     capture_manifest_path: Path,
     transition_path: Path,
+    decision_contract_path: Path | None = None,
     root: Path = ROOT,
 ) -> tuple[dict[str, Any], Path]:
     root = root.resolve()
@@ -212,6 +227,14 @@ def build_reasoning_readiness_manifest(
     _assert_inside_runtime_state(work, trading_date, root)
     work_validation = validate_reasoning_work_file(work)
     _validate_capture_matches_transition(trading_date, slot, capture, transition, root)
+    decision_record = None
+    if decision_contract_path is not None:
+        decision = decision_contract_path.resolve()
+        _assert_inside_runtime_state(decision, trading_date, root)
+        validate_contract_file(decision, trading_date, slot)
+        decision_record = _file_record(decision, root)
+    elif decision_contract_required(trading_date, slot):
+        raise ValueError("decision contract is required before reasoning certification")
     target = _manifest_path(trading_date, slot, root)
     payload: dict[str, Any] = {
         "schema_version": "1.0",
@@ -228,6 +251,7 @@ def build_reasoning_readiness_manifest(
             "six_source_capture_complete",
             "source_accuracy_verified",
             "max_reasoning_depth_calibrated",
+            "decision_math_contract_validated",
             "reasoning_readiness_manifest_ready",
             "formal_combined_md_drafting",
             "analysis_lock",
@@ -247,6 +271,8 @@ def build_reasoning_readiness_manifest(
         "golden_reasoning_manifest": _file_record(golden, root),
         "contract": _file_record(contract, root),
     }
+    if decision_record is not None:
+        payload["decision_contract"] = decision_record
     atomic_json_write(target, payload)
     return payload, target
 
@@ -277,13 +303,18 @@ def validate_reasoning_readiness_manifest(
     if payload.get("policy") != POLICY:
         raise ValueError("reasoning readiness policy mismatch")
     records: dict[str, Path] = {}
-    for key in (
+    record_keys = [
         "work_file",
         "capture_manifest",
         "transition",
         "golden_reasoning_manifest",
         "contract",
-    ):
+    ]
+    if "decision_contract" in payload:
+        record_keys.append("decision_contract")
+    elif decision_contract_required(trading_date, slot):
+        raise ValueError("reasoning readiness missing decision contract")
+    for key in record_keys:
         record = payload.get(key) or {}
         path_text = record.get("path")
         if not path_text:
@@ -310,6 +341,8 @@ def validate_reasoning_readiness_manifest(
     )
     work = records["work_file"]
     validate_reasoning_work_file(work)
+    if "decision_contract" in records:
+        validate_contract_file(records["decision_contract"], trading_date, slot)
     if report_path is not None:
         report = report_path.resolve()
         if not report.is_file():
@@ -372,4 +405,52 @@ def validate_locked_report_for_output(
     if validation.get("reasoning_readiness_policy") != POLICY:
         raise ValueError("formal report output blocked: reasoning readiness policy mismatch")
     validate_reasoning_readiness_manifest(trading_date, slot, report, root=root)
+    if report_preflight_required(trading_date):
+        if validation.get("report_preflight_required") is not True:
+            raise ValueError(
+                "formal report output blocked: analysis lock lacks report preflight requirement"
+            )
+        if validation.get("payload_derivation_pre_lock") is not True:
+            raise ValueError(
+                "formal report output blocked: payload derivation was not proven pre-lock"
+            )
+        preflight_path = (
+            root / "runtime_state" / trading_date / f"report_preflight_{slot}.json"
+        ).resolve()
+        recorded_path = validation.get("report_preflight_manifest")
+        if not recorded_path or Path(str(recorded_path)).resolve() != preflight_path:
+            raise ValueError(
+                "formal report output blocked: report preflight path mismatch"
+            )
+        if not preflight_path.is_file():
+            raise ValueError(
+                "formal report output blocked: report preflight manifest is missing"
+            )
+        if validation.get("report_preflight_manifest_sha256") != _sha256_file(
+            preflight_path
+        ):
+            raise ValueError(
+                "formal report output blocked: report preflight manifest changed after lock"
+            )
+        preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+        preflight_checks = preflight.get("checks")
+        checks = {
+            "schema": preflight.get("schema_version") == "daily-report-preflight-v1",
+            "date": preflight.get("trading_date") == trading_date,
+            "slot": preflight.get("slot") == slot,
+            "report_path": Path(str(preflight.get("report_path", ""))).resolve()
+            == report,
+            "report_hash": preflight.get("report_sha256") == lock.get("report_sha256"),
+            "payload_hash": preflight.get("payload_preview_sha256")
+            == validation.get("payload_preview_sha256"),
+            "all_preflight_checks": isinstance(preflight_checks, dict)
+            and bool(preflight_checks)
+            and all(preflight_checks.values()),
+        }
+        failed = sorted(name for name, passed in checks.items() if not passed)
+        if failed:
+            raise ValueError(
+                "formal report output blocked: invalid report preflight binding: "
+                + ", ".join(failed)
+            )
     return lock

@@ -17,7 +17,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from runtime.context_pack import ensure_context_pack
-from runtime.delivery_evidence import validate_delivery_evidence
+from runtime.dependency_graph import active_post_lock_nodes
+from runtime.delivery_evidence import record_delivery_context, validate_delivery_evidence
 from runtime.golden_reasoning import (
     build_golden_reasoning_manifest,
     validate_golden_reasoning_manifest,
@@ -30,6 +31,7 @@ from runtime.prelock_guard import (
 )
 from runtime.reasoning_readiness import (
     build_reasoning_readiness_manifest,
+    report_preflight_required,
     validate_reasoning_readiness_manifest,
 )
 from runtime.report_retention import configured_keep_days, run_retention_cleanup
@@ -48,12 +50,28 @@ from runtime.workflow_lease import (
     complete_lease,
     recover_lease,
 )
+from outputs.daily_payload_builder import build_daily_payload
 from outputs.report_structure_gate import assert_combined_structure
 
 
 PAGE_ID = re.compile(
     r"^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
     re.I,
+)
+REPORT_PREFLIGHT_BINDING_FIELDS = (
+    "schema_version",
+    "trading_date",
+    "slot",
+    "report_path",
+    "report_sha256",
+    "report_state_sha256",
+    "payload_preview_sha256",
+    "payload_source_sha256",
+    "children_signature_sha256",
+    "source_specs_sha256",
+    "image_paths_sha256",
+    "image_count",
+    "checks",
 )
 
 
@@ -70,6 +88,17 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_json(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def commit_identifier(
@@ -99,6 +128,94 @@ def run_report_lint(report: Path) -> None:
 def validate_report_structure(report: Path, trading_date: str, slot: str) -> None:
     lines = report.read_text(encoding="utf-8").splitlines()
     assert_combined_structure(lines, trading_date, slot)
+
+
+def validate_report_preflight(
+    report: Path,
+    trading_date: str,
+    slot: str,
+) -> tuple[dict, dict, Path, Path]:
+    """Validate every deterministic consumer before the analysis lock.
+
+    This gate intentionally does not evaluate or rewrite business reasoning.
+    It verifies that the already-certified report can be parsed by the lock,
+    rendered/published by the payload builder, and bound to current evidence
+    without requiring a post-lock format reissue.
+    """
+    report = report.resolve()
+    _, readiness_target = validate_reasoning_readiness_manifest(
+        trading_date,
+        slot,
+        report,
+    )
+    _, golden_target = validate_golden_reasoning_manifest(
+        trading_date,
+        slot,
+        report,
+    )
+    validate_report_structure(report, trading_date, slot)
+    run_report_lint(report)
+    text = report.read_text(encoding="utf-8")
+    updates = extract_report_state(
+        text,
+        trading_date=trading_date,
+        slot=slot,
+    )
+    omissions = validate_report_state(text, updates)
+    if omissions:
+        raise ValueError(
+            "report preflight blocked by incomplete state extraction: "
+            + ", ".join(omissions)
+        )
+    payload_preview = build_daily_payload(report, root=ROOT)
+    payload_source = payload_preview.get("payload_source")
+    if not isinstance(payload_source, dict):
+        raise ValueError("report preflight payload is missing payload_source")
+    manifest = {
+        "schema_version": "daily-report-preflight-v1",
+        "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "trading_date": trading_date,
+        "slot": slot,
+        "report_path": str(report),
+        "report_sha256": sha256_file(report),
+        "report_state_sha256": sha256_json(updates),
+        "payload_preview_sha256": sha256_json(payload_preview),
+        "payload_source_sha256": sha256_json(payload_source),
+        "children_signature_sha256": payload_source.get(
+            "children_signature_sha256"
+        ),
+        "source_specs_sha256": payload_source.get("source_specs_sha256"),
+        "image_paths_sha256": payload_source.get("image_paths_sha256"),
+        "image_count": len(payload_preview.get("image_paths", [])),
+        "checks": {
+            "reasoning_readiness_pre_md": readiness_target is not None,
+            "golden_reasoning_manifest": golden_target is not None,
+            "report_structure": True,
+            "report_lint": True,
+            "report_state": True,
+            "daily_payload_derivation": True,
+            "source_binding_inputs": True,
+            "blockbeats_cards": len(payload_preview.get("image_paths", [])) == 3,
+        },
+    }
+    failed = sorted(name for name, passed in manifest["checks"].items() if not passed)
+    if failed:
+        raise ValueError("report preflight checks failed: " + ", ".join(failed))
+    return manifest, updates, readiness_target, golden_target
+
+
+def assert_report_preflight_matches(expected: dict, actual: dict) -> None:
+    mismatches = [
+        key
+        for key in REPORT_PREFLIGHT_BINDING_FIELDS
+        if expected.get(key) != actual.get(key)
+    ]
+    if mismatches:
+        raise ValueError(
+            "report preflight manifest is stale or inconsistent: "
+            + ", ".join(mismatches)
+            + "; rerun preflight-report before lock-analysis"
+        )
 
 
 def add_usage_arguments(parser: argparse.ArgumentParser) -> None:
@@ -214,6 +331,15 @@ def main() -> int:
     add_lease_argument(lock_analysis)
     add_usage_arguments(lock_analysis)
 
+    preflight_report = sub.add_parser("preflight-report")
+    preflight_report.add_argument("--date", required=True)
+    preflight_report.add_argument(
+        "--slot", required=True, choices=("morning", "midday", "evening")
+    )
+    preflight_report.add_argument("--report", required=True, type=Path)
+    add_lease_argument(preflight_report)
+    add_usage_arguments(preflight_report)
+
     certify = sub.add_parser("certify-reasoning")
     certify.add_argument("--date", required=True)
     certify.add_argument(
@@ -221,6 +347,7 @@ def main() -> int:
     )
     certify.add_argument("--work-file", required=True, type=Path)
     certify.add_argument("--capture-manifest", required=True, type=Path)
+    certify.add_argument("--decision-contract", type=Path)
     certify.add_argument(
         "--confirm-six-source-accuracy",
         action="store_true",
@@ -265,10 +392,6 @@ def main() -> int:
         required=True,
     )
     finalize.add_argument(
-        "--confirm-evening-independent-review",
-        action="store_true",
-    )
-    finalize.add_argument(
         "--confirm-max-through-post-lock",
         action="store_true",
         required=True,
@@ -303,6 +426,15 @@ def main() -> int:
     deliver.add_argument("--retention-keep-days", type=int, default=configured_keep_days())
     add_lease_argument(deliver)
     add_usage_arguments(deliver)
+
+    record_delivery = sub.add_parser("record-delivery-evidence")
+    record_delivery.add_argument("--date", required=True)
+    record_delivery.add_argument(
+        "--slot", required=True, choices=("morning", "midday", "evening")
+    )
+    record_delivery.add_argument("--page-id", required=True)
+    add_lease_argument(record_delivery)
+    add_usage_arguments(record_delivery)
 
     args = parser.parse_args()
     started = time.perf_counter()
@@ -415,6 +547,68 @@ def main() -> int:
     transition_path = directory / f"transition_{args.slot}.json"
     transition = load_object(transition_path)
 
+    if args.command == "record-delivery-evidence":
+        assert_no_active_prelock_guard(args.date, args.slot)
+        if not PAGE_ID.fullmatch(args.page_id):
+            raise ValueError("invalid Notion page id")
+        current = load_object(directory / "current.json")
+        if current.get("slot") != args.slot:
+            raise ValueError("context evidence blocked before matching state commit")
+        payload = record_delivery_context(
+            args.date,
+            args.slot,
+            args.page_id,
+            current=current,
+        )
+        append_usage(
+            trading_date=args.date,
+            slot=args.slot,
+            phase="context_log",
+            status="success",
+            event_id=f"{current['commit_id']}:context_log:{args.page_id}",
+            duration_ms=round((time.perf_counter() - started) * 1000),
+            details=payload,
+            **usage_values(args),
+        )
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0
+
+    if args.command == "preflight-report":
+        report = args.report.resolve()
+        payload, _, _, _ = validate_report_preflight(
+            report,
+            args.date,
+            args.slot,
+        )
+        target = directory / f"report_preflight_{args.slot}.json"
+        existing = load_json(target)
+        if existing:
+            try:
+                assert_report_preflight_matches(existing, payload)
+                payload = existing
+            except ValueError:
+                atomic_json_write(target, payload)
+        else:
+            atomic_json_write(target, payload)
+        append_usage(
+            trading_date=args.date,
+            slot=args.slot,
+            phase="report_preflight",
+            status="success",
+            event_id=f"{payload['report_sha256']}:report_preflight",
+            duration_ms=round((time.perf_counter() - started) * 1000),
+            details={
+                "report_preflight": str(target),
+                "report_sha256": payload["report_sha256"],
+                "payload_preview_sha256": payload["payload_preview_sha256"],
+                "image_count": payload["image_count"],
+                "reasoning_gates_revalidated": True,
+            },
+            **usage_values(args),
+        )
+        print(json.dumps({"report_preflight": str(target), **payload}, ensure_ascii=False))
+        return 0
+
     if args.command == "certify-reasoning":
         if not (
             args.confirm_six_source_accuracy
@@ -431,6 +625,7 @@ def main() -> int:
             work_file=args.work_file,
             capture_manifest_path=args.capture_manifest,
             transition_path=transition_path,
+            decision_contract_path=args.decision_contract,
         )
         append_usage(
             trading_date=args.date,
@@ -446,6 +641,7 @@ def main() -> int:
                 "reasoning_readiness": str(target),
                 "work_file": payload["work_file"]["path"],
                 "policy": payload["policy"],
+                "decision_contract": payload.get("decision_contract"),
             },
             **usage_values(args),
         )
@@ -454,26 +650,20 @@ def main() -> int:
 
     if args.command == "lock-analysis":
         report = args.report.resolve()
-        _, readiness_target = validate_reasoning_readiness_manifest(
+        preflight, updates, readiness_target, golden_target = validate_report_preflight(
+            report,
             args.date,
             args.slot,
-            report,
         )
-        _, golden_target = validate_golden_reasoning_manifest(
-            args.date,
-            args.slot,
-            report,
-        )
-        validate_report_structure(report, args.date, args.slot)
-        run_report_lint(report)
-        text = report.read_text(encoding="utf-8")
-        updates = extract_report_state(text)
-        omissions = validate_report_state(text, updates)
-        if omissions:
+        preflight_target = directory / f"report_preflight_{args.slot}.json"
+        existing_preflight = load_json(preflight_target)
+        if report_preflight_required(args.date) and not existing_preflight:
             raise ValueError(
-                "analysis lock blocked by incomplete report: " + ", ".join(omissions)
+                "analysis lock requires a successful preflight-report manifest"
             )
-        report_sha256 = sha256_file(report)
+        if existing_preflight:
+            assert_report_preflight_matches(existing_preflight, preflight)
+        report_sha256 = preflight["report_sha256"]
         commit_id = commit_identifier(
             args.date,
             args.slot,
@@ -515,6 +705,15 @@ def main() -> int:
                     if readiness_target is not None
                     else None
                 ),
+                "report_preflight_required": report_preflight_required(args.date),
+                "report_preflight_manifest": (
+                    str(preflight_target) if existing_preflight else None
+                ),
+                "report_preflight_manifest_sha256": (
+                    sha256_file(preflight_target) if existing_preflight else None
+                ),
+                "payload_preview_sha256": preflight["payload_preview_sha256"],
+                "payload_derivation_pre_lock": True,
             },
             "operator_confirmations": {
                 "five_source_validation": args.confirm_five_source_validation,
@@ -574,14 +773,15 @@ def main() -> int:
         assert_no_active_prelock_guard(args.date, args.slot)
         target = directory / f"analysis_lock_{args.slot}.json"
         analysis_lock = load_object(target)
-        required_post_lock = set(transition.get("post_lock_nodes", []))
+        original_post_lock = set(transition.get("post_lock_nodes", []))
+        required_post_lock = active_post_lock_nodes(original_post_lock)
+        # Same-slot recovery may reuse a transition prepared before the external
+        # evaluator cutover.  The retired review node must not keep that run
+        # permanently unfinalizable.
+        if required_post_lock != original_post_lock:
+            transition["post_lock_nodes"] = sorted(required_post_lock)
+            atomic_json_write(transition_path, transition)
         completed_post_lock = {"post_lock:prior_plan_continuity"}
-        if args.slot == "evening":
-            if not args.confirm_evening_independent_review:
-                raise ValueError(
-                    "evening post-lock finalization requires independent review"
-                )
-            completed_post_lock.add("post_lock:evening_independent_review")
         if completed_post_lock != required_post_lock:
             raise ValueError(
                 "post-lock node mismatch: "

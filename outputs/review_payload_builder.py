@@ -44,6 +44,7 @@ from review_contract import (
 
 
 BUILDER_NAME = "review_payload_builder"
+REVIEW_RETIREMENT_DATE = "2026-07-09"
 BUILDER_VERSION = "1.0"
 
 
@@ -398,6 +399,11 @@ def build_review_payload(manifest_path: Path, *, root: Path = ROOT) -> dict[str,
     if manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION:
         raise ValueError(f"review manifest must use {MANIFEST_SCHEMA_VERSION}")
     trading_date = str(manifest.get("trading_date", ""))
+    if trading_date >= REVIEW_RETIREMENT_DATE:
+        raise RuntimeError(
+            "evening independent review generation retired on 2026-07-09; "
+            "use the external Trading accuracy evaluator"
+        )
     report_rel = str(manifest.get("report_path", ""))
     report = _resolve(report_rel, root)
     report_hash = sha256_file(report)

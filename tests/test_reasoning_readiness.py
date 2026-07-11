@@ -9,6 +9,7 @@ from pathlib import Path
 
 from runtime.reasoning_readiness import (
     build_reasoning_readiness_manifest,
+    decision_contract_required,
     reasoning_readiness_required,
     validate_locked_report_for_output,
     validate_reasoning_readiness_manifest,
@@ -77,6 +78,23 @@ class ReasoningReadinessTests(unittest.TestCase):
         self.assertFalse(reasoning_readiness_required("2026-07-06", "morning"))
         self.assertTrue(reasoning_readiness_required("2026-07-06", "midday"))
         self.assertTrue(reasoning_readiness_required("2026-07-06", "evening"))
+        self.assertFalse(decision_contract_required("2026-07-10", "midday"))
+        self.assertTrue(decision_contract_required("2026-07-10", "evening"))
+        self.assertTrue(decision_contract_required("2026-07-11", "morning"))
+
+    def test_decision_contract_is_required_from_cutover(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            paths = self._seed_root(root, "2026-07-10", "evening")
+            with self.assertRaisesRegex(ValueError, "decision contract is required"):
+                build_reasoning_readiness_manifest(
+                    "2026-07-10",
+                    "evening",
+                    work_file=paths["work"],
+                    capture_manifest_path=paths["capture"],
+                    transition_path=paths["transition"],
+                    root=root,
+                )
 
     def test_readiness_manifest_must_precede_formal_report(self):
         with tempfile.TemporaryDirectory() as td:

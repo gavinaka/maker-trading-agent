@@ -216,6 +216,12 @@ def _maker_lines(lines: list[str], slot: str) -> tuple[list[str], list[str]]:
         raise ValueError("Maker section missing heading: ### 防守计划")
 
     before_defense = _nonempty(maker_section[:defense_index])
+    # The combined Markdown may render the Maker strategy label as a visual
+    # subheading. Notion's frozen daily shape expects the label text itself,
+    # so remove only that Markdown presentation marker while preserving the
+    # source content and payload-source signature checks.
+    if before_defense and before_defense[0].startswith("### "):
+        before_defense[0] = before_defense[0][4:].strip()
     after_defense = _nonempty(maker_section[defense_index + 1 :])
     if len(before_defense) != 4:
         raise ValueError("Maker section before 防守计划 must contain BTC/strategy/TP/SL")
@@ -236,33 +242,63 @@ def _maker_lines(lines: list[str], slot: str) -> tuple[list[str], list[str]]:
     return before_defense, after_defense
 
 
-def daily_text_values_from_combined(lines: list[str], trading_date: str, slot: str) -> list[str]:
+def parse_daily_text_contract(
+    lines: list[str],
+    trading_date: str,
+    slot: str,
+) -> dict:
+    """Parse the canonical combined report once for all downstream consumers.
+
+    This is the shared textual contract for payload construction and runtime
+    state extraction.  Consumers must not maintain a second set of legacy
+    heading/label assumptions.
+    """
     assert_combined_structure(lines, trading_date, slot)
     orderflow_label, orderflow_text = _technical_lines(lines)
     interpretation, chart_label, daily_line, hourly_line = _interpretation_lines(lines)
     maker_main, defense = _maker_lines(lines, slot)
+    return {
+        "opening_quote": _first_blockquote(lines),
+        "cannot_do": _cannot_do_line(lines),
+        "fundamentals": _one_line_section(lines, "基本面"),
+        "orderflow_label": orderflow_label,
+        "orderflow_text": orderflow_text,
+        "interpretation": interpretation,
+        "chart_label": chart_label,
+        "daily_line": daily_line,
+        "hourly_line": hourly_line,
+        "trend_confirmation": _one_line_section(lines, "趋势确认"),
+        "support_resistance": _one_line_section(lines, "日内支撑/压力"),
+        "strategy": _strategy_line(lines),
+        "maker_main": maker_main,
+        "defense": defense,
+    }
+
+
+def daily_text_values_from_combined(lines: list[str], trading_date: str, slot: str) -> list[str]:
+    contract = parse_daily_text_contract(lines, trading_date, slot)
     values = [
-        _first_blockquote(lines),
-        _cannot_do_line(lines),
-        _one_line_section(lines, "基本面"),
+        contract["opening_quote"],
+        contract["cannot_do"],
+        contract["fundamentals"],
         "技术面",
-        orderflow_label,
-        orderflow_text,
-        interpretation,
-        chart_label,
-        daily_line,
-        hourly_line,
-        _one_line_section(lines, "趋势确认"),
-        _one_line_section(lines, "日内支撑/压力"),
+        contract["orderflow_label"],
+        contract["orderflow_text"],
+        contract["interpretation"],
+        contract["chart_label"],
+        contract["daily_line"],
+        contract["hourly_line"],
+        contract["trend_confirmation"],
+        contract["support_resistance"],
         "策略",
-        _strategy_line(lines),
+        contract["strategy"],
         "<divider>",
-        maker_main[0],
-        maker_main[1],
-        maker_main[2],
-        maker_main[3],
+        contract["maker_main"][0],
+        contract["maker_main"][1],
+        contract["maker_main"][2],
+        contract["maker_main"][3],
         "防守计划",
-        *defense,
+        *contract["defense"],
     ]
     expected = len(DAILY_PAYLOAD_TYPES_BY_SLOT[slot])
     if len(values) != expected:

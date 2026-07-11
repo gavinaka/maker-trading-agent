@@ -217,6 +217,10 @@ def render(combined_path, out_path, *, source_title=None):
             continue
         if s.startswith("> "):                       # 作者自查 → 小号注释
             emit_paragraph(doc, s[2:], size=9)
+        elif s.startswith("#### "):                   # 附录四级标题
+            p = doc.add_paragraph(style="Heading 3")
+            r = p.add_run(plain_markdown(s[5:]))
+            setfont(r, size=11, bold=True, color=HEADING_BLUE)
         elif s.startswith("### "):                    # 子标题
             p = doc.add_paragraph(style="Heading 2")
             r = p.add_run(plain_markdown(s[4:]))

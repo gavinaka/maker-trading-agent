@@ -5,23 +5,19 @@ import unittest
 from outputs import report_lint
 
 
-def _golden_quality_sample(*, thick: bool) -> list[str]:
-    if not thick:
+def _golden_quality_sample(*, complete: bool) -> list[str]:
+    if not complete:
         return """
 # 2026.6.27 早间日报
 ## ③ 后附
 BlockBeats 给出事件，rubric 只写一次，60,000。
 """.splitlines()
-    price_refs = " ".join(f"{60000 + index:,}" for index in range(130))
-    filler = "承重推理链条" * 1800
     return f"""
 # 2026.6.25 早间日报
 ## ③ 后附
 BlockBeats Exocharts Coinglass FedWatch TradingView
 胜率 rubric 锚点从 60 出发，盘口次因 +2，盘面次因 -1，真实落值 61，高于 60 门槛。
 总分 rubric 由 Coinglass CVD/OI、Exocharts Delta、TradingView VRVP/VAH/VAL/POC 和 SMA20 合成。
-{price_refs}
-{filler}
 """.splitlines()
 
 
@@ -96,11 +92,11 @@ TP2：60,920，清理剩余仓位。
         hits = report_lint.exocharts_ohlc_check(lines)
         self.assertTrue(hits)
 
-    def test_golden_quality_floor_accepts_synthetic_thick_benchmark(self):
-        self.assertEqual(report_lint.golden_quality_check(_golden_quality_sample(thick=True)), [])
+    def test_golden_quality_accepts_semantically_complete_compact_sample(self):
+        self.assertEqual(report_lint.golden_quality_check(_golden_quality_sample(complete=True)), [])
 
-    def test_golden_quality_floor_rejects_synthetic_quality_cliff(self):
-        hits = report_lint.golden_quality_check(_golden_quality_sample(thick=False))
+    def test_golden_quality_rejects_missing_sources_and_rubric(self):
+        hits = report_lint.golden_quality_check(_golden_quality_sample(complete=False))
         self.assertTrue(hits)
         self.assertTrue(any("golden-quality" in desc for _, desc, _, _ in hits))
 

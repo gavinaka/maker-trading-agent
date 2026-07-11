@@ -38,7 +38,7 @@
 
 ```
 1. 门禁：emotional_agent.gate_check()
-   ├─ 读「开仓前门禁 / 心力监控」当日行（由昨晚链 C 写入）
+   ├─ 只读当天 Notion「开仓前状态门禁」行及其主观结论
    └─ ⛔ 门禁=关闭 / 主观=不可交易 → 硬停：直接跳 Step 7 只出"门禁关闭·今日观望"，
         **不写任何计划（主账户/Maker 都不写）**
 
@@ -97,13 +97,13 @@
 
 # 链 C：晚间反思·复盘（~23:00，按用户工作流四件套顺序）
 
-> 顺序权威 `sessions/日报SOP.md` §0.0 晚间。心智自控/心力在此**写入**（早间链 A 门禁只读）。
+> 顺序权威 `sessions/日报SOP.md` §0.0 晚间。心智自控/心力在此**作为当天结束后的 review 写入**，与早间门禁数据流完全隔离。
 
 ```
 1. emotional_agent.write_diary() → 心智自控日记表
 
 2. emotional_agent.write_monitor() → 心力监控模块
-   └─ 写 state/risk_state.state_gate.*（供**次日早间链 A Step1 门禁**读取）
+   └─ 仅写 review；不得写入或覆盖 `state/risk_state.state_gate.*`
 
 3. clean_sample.check() → 50 笔结晶/洁净样本系统进度更新
    └─ 写 outputs/<today>_check_records.json
@@ -149,7 +149,7 @@
   "risk_checks_completed":          // 实际开仓时由 risk_agent 写
   "review_completed":               // 链 C Step 4 后
   "data_collection_done":           // 链 A Step 2 后 / 链 B Step 1 后
-  "emotional_check_done":           // 早间链 A Step1 门禁读取后；写入在晚间链 C Step1-2
+  "emotional_check_done":           // 早间链 A Step1 当天开仓前状态门禁读取并校验后
 }
 ```
 
