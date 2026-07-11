@@ -52,7 +52,7 @@
 ---
 
 ## 0. 开场（每次会话固定）
-1. 运行 `context_pack.py`，先核对生成包中的 `authority_sha256`、`authority_manifest`、`authority_read_plan` 与 `read_policy.prelock_safe_read_policy`。只固定读取 `read_policy.mandatory_guardrails_always_read` 列出的硬门文件；其余权威文件按当前阶段展开读取。技能入口已完整读取的 `.agents/skills/daily-report/SKILL.md` 不得在 `workflow_entry` 重复加载；分析评分必须依次完整读取 `analysis_orderflow`、`analysis_chart_winrate`、`analysis_agents` 三包，三包合集等于原完整分析权威，不得漏任一包。每个 `phase_contract` 输出必须 `complete=true` 且未超过宿主安全字节门，截断或超限立即硬停并修正 phase 划分，禁止以节省 token 为由删方法。若权威摘要意外变化、阶段边界不清或相关文件缺失，则读取受影响权威文件并硬停确认。分析锁定前禁止直接读取 `sessions/context_log.md`、`sessions/archive/**`、`memory/MEMORY.md`、旧 `outputs/**`、旧 `runtime_state/**`、`reviews/**`、`.prelock_quarantine/**`、前序报告、`analysis_*.json` 或 `decision_*.json`；禁止裸全仓库 `rg` 搜索 pre-lock 事实，只能按 context pack 明确路径读取或使用 `runtime/prelock_read_policy.py` 的 safe rg excludes。
+1. 运行 `context_pack.py`，先核对生成包中的 `authority_sha256`、`authority_manifest`、`authority_read_plan` 与 `read_policy.prelock_safe_read_policy`。只固定读取 `read_policy.mandatory_guardrails_always_read` 列出的硬门文件；其余权威文件按当前阶段展开读取。技能入口已完整读取的 `.agents/skills/daily-report/SKILL.md` 不得在 `workflow_entry` 重复加载；`workflow_entry` 及后续每个 phase 统一通过有界传输读取：先运行 `runtime/phase_contract.py ... --phase <phase> --emit-part 1`，从 JSON 头取得 `part_count` 与 `bundle_sha256`，再把剩余序号各读取一次。每片必须有匹配的 BEGIN/END 标记、相同 bundle 哈希与总片数、从 1 连续到 `part_count` 的唯一序号，且 `part_bytes<=28672`；缺片、重复、乱序、超限、哈希不一致或截断立即硬停。同一 part 禁止重读，也禁止随后直接读取持久化 bundle 或源文件。分析评分必须依次完整读取 `analysis_orderflow`、`analysis_chart_winrate`、`analysis_agents` 三个逻辑包，三包合集等于原完整分析权威，不得漏任一包；传输分片只解决宿主容量，不得删减或缩短任何方法文件。每个逻辑 bundle 必须 `complete=true` 且不超过逻辑字节门。若权威摘要意外变化、阶段边界不清或相关文件缺失，则硬停进入维护，禁止临时绕过。分析锁定前禁止直接读取 `sessions/context_log.md`、`sessions/archive/**`、`memory/MEMORY.md`、旧 `outputs/**`、旧 `runtime_state/**`、`reviews/**`、`.prelock_quarantine/**`、前序报告、`analysis_*.json` 或 `decision_*.json`；禁止裸全仓库 `rg` 搜索 pre-lock 事实，只能按 context pack 明确路径读取或使用 `runtime/prelock_read_policy.py` 的 safe rg excludes。
 2. 确认今天出早报(🌅链A)、午报(🌇新增·同早报全骨架)还是晚报(🌙链B)。
 3. 不再拉取 Chrome 扩展 schema；六源统一走本仓库 Playwright 采集器，Notion REST 走 PowerShell。
 4. **分析锁定前不读两库交易Check 实际持仓**。禁止沿用上次 state，也禁止用 Notion 已开/已平、已成交比例、缺均价、缺止损等改变 Maker/主账户独立判断。持仓校准只能在 `lock-analysis` 成功后作为单独操作校准执行。
@@ -170,7 +170,7 @@
 1. **不并行重复调用**：一个动作发 1 次，看结果再决定下一步。禁止"先多发几个保险"。
 2. **不发探针**：不要 `echo probe` / 重复 `list_connected_browsers` 试连接。
 3. **已知会失败的不试**：MCP-notion、python3、Chrome 扩展采集日报源。
-4. **不重复 Read** 同一文件；Edit/Write 成功即生效，不回读验证。
+4. **不重复 Read** 同一文件或同一 transport part；逻辑 bundle 只按 `phase_contract` 声明的唯一连续分片读取，Edit/Write 成功即生效，不回读验证。
 5. **读 Notion 抽字段，不 dump 全量 JSON**。
 6. 临时中转文件（`sessions/_*.txt`）用完即删。
 
@@ -205,6 +205,8 @@
 - render manifest、Word QA manifest（`status=passed`）、publish manifest、线上 verifier＋唯一存活页全部形成后，必须用 `session_runner.py record-delivery-evidence` 原子生成 `context_log.md` 的最终 page id、发布时间、report/docx hash、三份 manifest 路径和 PASS 证据块（倒序，新日期块在顶）；禁止手写机械标签。命令会先验证真实证据，再写入并立即调用同一 delivery evidence validator 回读；`context_log` 与 delivery 的时间必须晚于真实 DOCX／PDF／PNG／视觉审核证据，禁止在证据出现前声明 PASS。
 - 每份报告采集前必须持有 `begin-session` 整链租约；午报/晚报仅在前一时段 delivery 完整后才能开始。deliver 机械核对 DOCX/QA/publish/context_log 哈希闭环后才释放；中断用带原因的 abandon/recover，禁止自动抢过期锁。
 - 若同一日期/时段的六源采集已经成功生成不可变 manifest，但后续 hard stop 已把原 lease 关闭，不得手改 manifest、不得复制 evidence、不得伪造 lease。只能通过 `session_runner.py recover-session --date <date> --slot <slot> --from-lease-id <capturing_lease_id> --reason <明确原因>` 建立带 `recovered_from_workflow_lease` 的新 lease，然后用新 token 对同一旧 manifest 运行 `prepare`；`prepare` 必须在 transition 中记录 `capture_lease_recovery`。归档 lease、日期、时段、manifest 任一不匹配则硬停并重新采集。
+- 生产 Gate/Lease 与 authority 维护窗口必须通过 `runtime/authority_mutex.py` 双向互斥：维护者只有在无 active Gate/Lease 时才能 claim；maintenance lock 存在时生产启动必须硬停。禁止手删锁文件或绕过 token release；维护验证结束后必须释放。若维护进程硬停并遗失 token，只能在重新确认无 active Gate/Lease、获得明确授权并记录孤儿锁证据后，先运行 `authority_mutex.py request-recovery --reason <明确原因>` 取得 challenge 与精确 lock SHA，等待机械强制的 5 分钟冷却期，再次确认锁仍为孤儿且文件未变，最后运行 `authority_mutex.py recover --challenge <challenge> --expected-lock-sha256 <sha> --confirm-orphaned`。禁止即时 recover；claim/release/request/recover 均写入不含 token 的审计日志。
+- 自 2026-07-11 晚报起，`certify-reasoning` 后、写正式 MD 前必须运行 `session_runner.py prepare-report-contract`，把工具从同一 decision contract 生成的门禁、评分/胜率、风险验算三行原样且各一次写成独立行；门禁摘要不得夹带元数据，禁止手算变体。正式 MD、cards 和三张图形成后、`preflight-report` 前必须运行 `session_runner.py certify-draft`，把 report/cards/三图/capture/readiness/golden/report-contract 全部逐文件 hash 绑定。恢复时只有这套认证且未漂移的同日期同时段产物可被保留；preflight 必须复验并绑定两个 manifest 哈希，缺失或任一漂移即硬停。
 - 每阶段通过 `runtime/usage_logger.py` 记录耗时、重试、真实全量回退及宿主真实提供的 token；宿主不提供 token 时写 `null`，严禁估造。至少覆盖 `render_docx`、`word_export`、`visual_qa`、`publish`、`delivery`。Token 优化只评价机械层，分析层以质量和 MAX 合规为先。
 - 更新 memory（若有新坑/决策）。
 - ❌ 默认不 commit；**仅当用户明确要求才 commit**，且推送脚本里的 Notion token 必须读环境变量、绝不硬编码进库。

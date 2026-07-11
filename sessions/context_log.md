@@ -1,3 +1,15 @@
+## 2026-07-11 午间最终交付
+<!-- generated-delivery-evidence:2026-07-11:midday:39afda35-a098-81bc-b001-f43151115836 -->
+- 最终唯一存活页：`39afda35-a098-81bc-b001-f43151115836`
+- 发布时间：`2026-07-11T17:16:52+08:00`
+- report_sha256：`785183a2416708217a418e1f0b11f71d9d9f20bd707a7b01871f80949edce09a`
+- docx_sha256：`6fa3fcea5a9488e54a6d12619b9327fc5055552017fc87e93f3a626c715d289d`
+- render_manifest：`runtime_state/2026-07-11/render_midday.json`
+- word_qa_manifest：`runtime_state/2026-07-11/word_qa_midday.json`
+- publish_manifest：`runtime_state/2026-07-11/publish_midday.json`
+- Word 视觉 QA PASS
+- 冻结 verifier PASS
+
 ## 2026-07-11 早间最终交付
 <!-- generated-delivery-evidence:2026-07-11:morning:39afda35-a098-8142-b881-e45e766b7d42 -->
 - 最终唯一存活页：`39afda35-a098-8142-b881-e45e766b7d42`

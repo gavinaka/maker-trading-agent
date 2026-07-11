@@ -107,6 +107,66 @@ class ReportPreflightTests(unittest.TestCase):
                         "evening",
                     )
 
+    def test_evening_cutover_requires_hash_bound_canonical_contract_and_draft(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = root / "2026-07-11_evening_combined.md"
+            report.write_text("# deterministic fixture\n", encoding="utf-8")
+            contract = root / "report_contract_evening.json"
+            draft = root / "draft_recovery_evening.json"
+            contract.write_text("{}\n", encoding="utf-8")
+            draft.write_text("{}\n", encoding="utf-8")
+            payload_preview = {
+                "image_paths": ["one.png", "two.png", "three.png"],
+                "payload_source": {
+                    "children_signature_sha256": "1" * 64,
+                    "source_specs_sha256": "2" * 64,
+                    "image_paths_sha256": "3" * 64,
+                },
+            }
+            with mock.patch.object(
+                session_runner,
+                "validate_reasoning_readiness_manifest",
+                return_value=({}, Path("readiness.json")),
+            ), mock.patch.object(
+                session_runner,
+                "validate_golden_reasoning_manifest",
+                return_value=({}, Path("golden.json")),
+            ), mock.patch.object(
+                session_runner,
+                "validate_report_contract_manifest",
+                return_value=({}, contract),
+            ) as contract_gate, mock.patch.object(
+                session_runner,
+                "validate_draft_recovery_manifest",
+                return_value=({}, draft),
+            ) as draft_gate, mock.patch.object(
+                session_runner, "validate_report_structure"
+            ), mock.patch.object(
+                session_runner, "run_report_lint"
+            ), mock.patch.object(
+                session_runner, "extract_report_state", return_value=COMPLETE_STATE
+            ), mock.patch.object(
+                session_runner, "validate_report_state", return_value=[]
+            ), mock.patch.object(
+                session_runner, "build_daily_payload", return_value=payload_preview
+            ):
+                manifest, _, _, _ = session_runner.validate_report_preflight(
+                    report, "2026-07-11", "evening"
+                )
+            contract_gate.assert_called_once()
+            draft_gate.assert_called_once()
+            self.assertEqual(
+                manifest["report_contract_manifest_sha256"],
+                hashlib.sha256(contract.read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                manifest["draft_recovery_manifest_sha256"],
+                hashlib.sha256(draft.read_bytes()).hexdigest(),
+            )
+            self.assertTrue(manifest["checks"]["canonical_report_contract"])
+            self.assertTrue(manifest["checks"]["draft_recovery_binding"])
+
     def test_preflight_binding_rejects_report_or_payload_drift(self):
         expected = {
             key: ({"passed": True} if key == "checks" else "same")

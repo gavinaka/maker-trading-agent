@@ -1160,6 +1160,110 @@ class DependencyTests(unittest.TestCase):
                 new_lease_id,
             )
 
+    def test_prepare_refreshes_recovery_binding_in_comparable_transition(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            seed_logic_files(root)
+            trading_date = "2026-06-30"
+            seed_inbox(root / "data_sources" / "inbox" / trading_date)
+            directory = root / "runtime_state" / trading_date
+            capture_dir = directory / "captures" / "morning"
+            capture_dir.mkdir(parents=True)
+            old_lease_id = "1" * 64
+            new_lease_id = "2" * 64
+            capture = capture_dir / ("full_base_" + "a" * 32 + ".json")
+            capture.write_text(
+                json.dumps(
+                    {
+                        "date": trading_date,
+                        "slot": "morning",
+                        "mode": "full_base",
+                        "run_id": "a" * 32,
+                        "workflow_lease_id": old_lease_id,
+                        "completed_at": "2026-06-30T00:00:00Z",
+                        "evidence_snapshot": seed_evidence_snapshot(
+                            root, trading_date, "morning", "a" * 32
+                        ),
+                        "success": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            original, target = prepare_transition(
+                trading_date,
+                "morning",
+                root=root,
+                max_reasoning_confirmed=True,
+                capture_manifest_path=capture,
+                workflow_lease_id=old_lease_id,
+            )
+            self.assertNotIn("capture_lease_recovery", original)
+
+            with self.assertRaisesRegex(ValueError, "workflow_lease"):
+                prepare_transition(
+                    trading_date,
+                    "morning",
+                    root=root,
+                    max_reasoning_confirmed=True,
+                    capture_manifest_path=capture,
+                    workflow_lease_id=new_lease_id,
+                    recovered_from_workflow_lease={
+                        "trading_date": trading_date,
+                        "slot": "morning",
+                        "lease_id": "3" * 64,
+                        "status": "abandoned",
+                        "closed_at": "2026-06-30T00:05:00+00:00",
+                        "recovery_reason": "resume after hard stop",
+                    },
+                )
+            self.assertNotIn(
+                "capture_lease_recovery",
+                json.loads(target.read_text(encoding="utf-8")),
+            )
+
+            recovery = {
+                "trading_date": trading_date,
+                "slot": "morning",
+                "lease_id": old_lease_id,
+                "status": "abandoned",
+                "closed_at": "2026-06-30T00:05:00+00:00",
+                "recovery_reason": "resume after hard stop",
+            }
+            refreshed, _ = prepare_transition(
+                trading_date,
+                "morning",
+                root=root,
+                max_reasoning_confirmed=True,
+                capture_manifest_path=capture,
+                workflow_lease_id=new_lease_id,
+                recovered_from_workflow_lease=recovery,
+            )
+            self.assertTrue(refreshed["recovery_binding_refreshed"])
+            self.assertNotIn("idempotent_reuse", refreshed)
+            persisted = json.loads(target.read_text(encoding="utf-8"))
+            self.assertNotIn("recovery_binding_refreshed", persisted)
+            self.assertEqual(
+                persisted["capture_lease_recovery"]["captured_workflow_lease_id"],
+                old_lease_id,
+            )
+            self.assertEqual(
+                persisted["capture_lease_recovery"]["active_workflow_lease_id"],
+                new_lease_id,
+            )
+
+            before_retry = target.read_bytes()
+            reused, _ = prepare_transition(
+                trading_date,
+                "morning",
+                root=root,
+                max_reasoning_confirmed=True,
+                capture_manifest_path=capture,
+                workflow_lease_id=new_lease_id,
+                recovered_from_workflow_lease=recovery,
+            )
+            self.assertTrue(reused["idempotent_reuse"])
+            self.assertEqual(target.read_bytes(), before_retry)
+
     def test_delta_full_fallback_requires_hash_bound_full_manifest(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

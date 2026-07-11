@@ -613,8 +613,19 @@ def prepare_transition(
             and existing.get("analysis_policy") == transition["analysis_policy"]
         )
         if comparable:
-            existing["idempotent_reuse"] = True
-            return existing, target
+            existing_recovery = existing.get("capture_lease_recovery")
+            if existing_recovery == capture_lease_recovery:
+                reused = copy.deepcopy(existing)
+                reused["idempotent_reuse"] = True
+                return reused, target
+            if capture_lease_recovery is not None:
+                rebound = copy.deepcopy(existing)
+                rebound["capture_lease_recovery"] = capture_lease_recovery
+                rebound.pop("idempotent_reuse", None)
+                atomic_json_write(target, rebound)
+                refreshed = copy.deepcopy(rebound)
+                refreshed["recovery_binding_refreshed"] = True
+                return refreshed, target
         raise ValueError(
             "a different transition is already prepared; use explicit replacement "
             "after verifying that no analysis is in progress"

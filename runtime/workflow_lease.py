@@ -17,6 +17,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from runtime.authority_mutex import production_start_guard
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SLOTS = ("morning", "midday", "evening")
@@ -384,7 +386,7 @@ def _assert_not_already_delivered(trading_date: str, slot: str, root: Path) -> N
         )
 
 
-def begin_lease(
+def _begin_lease_under_mutex(
     trading_date: str,
     slot: str,
     *,
@@ -440,6 +442,24 @@ def begin_lease(
         )
     _append_audit(root, audit_payload)
     return payload
+
+
+def begin_lease(
+    trading_date: str,
+    slot: str,
+    *,
+    root: Path = ROOT,
+    skip_prior_delivery_reason: str | None = None,
+    recovered_from_workflow_lease: dict | None = None,
+) -> dict:
+    with production_start_guard(root):
+        return _begin_lease_under_mutex(
+            trading_date,
+            slot,
+            root=root,
+            skip_prior_delivery_reason=skip_prior_delivery_reason,
+            recovered_from_workflow_lease=recovered_from_workflow_lease,
+        )
 
 
 def assert_lease(

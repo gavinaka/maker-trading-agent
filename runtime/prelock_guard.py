@@ -76,6 +76,31 @@ def _is_current_slot_generated_output(relative: str, trading_date: str, slot: st
     }
 
 
+def _is_current_slot_recovery_artifact(
+    relative: str,
+    trading_date: str,
+    slot: str,
+) -> bool:
+    """Return artifacts that may survive pre-lock only for certified recovery.
+
+    These files are created after the current slot's independent reasoning has
+    already been certified.  They remain hidden during every ordinary prepare;
+    the caller must explicitly opt in after validating the existing readiness
+    manifest against the requested immutable capture.
+    """
+    if relative in {
+        f"runtime_state/{trading_date}/decision_input_{slot}.json",
+        f"runtime_state/{trading_date}/decision_contract_{slot}.json",
+        f"outputs/{trading_date}_{slot}_cards.json",
+        f"outputs/{trading_date}_{slot}_combined.md",
+    }:
+        return True
+    return (
+        relative.startswith(f"outputs/blockbeats/{trading_date}_{slot}_")
+        and relative.lower().endswith(".png")
+    )
+
+
 def _is_current_slot_generated_runtime_state(
     relative: str,
     trading_date: str,
@@ -174,6 +199,7 @@ def prelock_guard_targets(
     slot: str,
     *,
     root: Path = ROOT,
+    preserve_certified_recovery_artifacts: bool = False,
 ) -> list[Path]:
     """Return existing files that must be hidden before independent analysis."""
     targets: list[Path] = []
@@ -204,6 +230,12 @@ def prelock_guard_targets(
             f"runtime_state/{trading_date}/usage.jsonl",
         }
         if relative in current_runtime_allowed:
+            continue
+        if preserve_certified_recovery_artifacts and _is_current_slot_recovery_artifact(
+            relative,
+            trading_date,
+            slot,
+        ):
             continue
         if relative.startswith(
             f"runtime_state/{trading_date}/captures/{slot}/"
@@ -236,6 +268,7 @@ def activate_prelock_guard(
     slot: str,
     *,
     root: Path = ROOT,
+    preserve_certified_recovery_artifacts: bool = False,
 ) -> tuple[dict, Path]:
     """Move prior-judgment artifacts into a slot-local quarantine.
 
@@ -248,7 +281,14 @@ def activate_prelock_guard(
         return existing, manifest_path
 
     entries = []
-    for target in prelock_guard_targets(trading_date, slot, root=root):
+    for target in prelock_guard_targets(
+        trading_date,
+        slot,
+        root=root,
+        preserve_certified_recovery_artifacts=(
+            preserve_certified_recovery_artifacts
+        ),
+    ):
         relative = _safe_relative(target, root)
         quarantine = _quarantine_path(root, trading_date, slot, relative)
         if quarantine.exists():
@@ -272,6 +312,9 @@ def activate_prelock_guard(
         "trading_date": trading_date,
         "slot": slot,
         "policy": "pre_analysis_prior_judgment_files_quarantined_until_lock",
+        "certified_recovery_artifacts_preserved": bool(
+            preserve_certified_recovery_artifacts
+        ),
         "safe_read_policy": prelock_policy_manifest(
             trading_date,
             slot,

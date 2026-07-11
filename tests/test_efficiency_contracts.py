@@ -12,11 +12,17 @@ from runtime.host_usage_import import summarize_session
 from runtime.context_pack import authority_manifest, authority_read_plan
 from runtime.phase_contract import (
     BEGIN_BUNDLE_MARKER,
+    BEGIN_PART_MARKER,
     END_BUNDLE_MARKER,
+    END_PART_MARKER,
     MAX_PHASE_BUNDLE_BYTES,
+    MAX_TRANSPORT_OUTPUT_BYTES,
+    MAX_TRANSPORT_PART_BYTES,
     build_phase_contract,
+    format_phase_part_output,
     format_phase_output,
     render_phase_contract,
+    split_phase_transport,
 )
 from runtime.state_store import LOGIC_FILES
 
@@ -69,7 +75,64 @@ class EfficiencyContractTests(unittest.TestCase):
         self.assertTrue(output.rstrip().endswith(END_BUNDLE_MARKER))
         self.assertEqual(output.count("full authority"), 1)
 
-    def test_live_phase_plan_is_complete_and_each_bundle_fits_host_limit(self):
+    def test_large_full_bundle_requires_bounded_transport_parts(self):
+        payload = {
+            "schema_version": "authority-phase-contract-v2",
+            "complete": True,
+            "bundle_bytes": MAX_TRANSPORT_OUTPUT_BYTES,
+        }
+        rendered = "界" * MAX_TRANSPORT_OUTPUT_BYTES
+        with self.assertRaisesRegex(ValueError, "use --emit-part"):
+            format_phase_output(payload, rendered, emit_bundle=True)
+
+    def test_transport_parts_are_lossless_bounded_and_hash_bound(self):
+        rendered = ("完整权威\n" * 12000) + "END"
+        payload = {
+            "schema_version": "authority-phase-contract-v2",
+            "complete": True,
+            "bundle_bytes": len(rendered.encode("utf-8")),
+        }
+        parts = split_phase_transport(rendered)
+        self.assertEqual("".join(parts), rendered)
+        self.assertGreater(len(parts), 1)
+        for part in parts[:-1]:
+            self.assertTrue(part.endswith("\n"))
+        bundle_hashes = set()
+        for index, part in enumerate(parts, start=1):
+            self.assertLessEqual(len(part.encode("utf-8")), MAX_TRANSPORT_PART_BYTES)
+            output = format_phase_part_output(payload, rendered, part_index=index)
+            header = json.loads(output.splitlines()[0])
+            bundle_hashes.add(header["bundle_sha256"])
+            self.assertEqual(header["part_index"], index)
+            self.assertEqual(header["part_count"], len(parts))
+            self.assertEqual(header["part_bytes"], len(part.encode("utf-8")))
+            self.assertLessEqual(len(output.encode("utf-8")), MAX_TRANSPORT_OUTPUT_BYTES)
+            self.assertIn(BEGIN_PART_MARKER.format(index=index, count=len(parts)), output)
+            self.assertTrue(output.endswith(END_PART_MARKER.format(index=index, count=len(parts))))
+        self.assertEqual(len(bundle_hashes), 1)
+        with self.assertRaises(ValueError):
+            format_phase_part_output(payload, rendered, part_index=0)
+        with self.assertRaises(ValueError):
+            format_phase_part_output(payload, rendered, part_index=len(parts) + 1)
+
+    def test_transport_handles_empty_and_overlong_multibyte_lines(self):
+        self.assertEqual(split_phase_transport(""), [""])
+        with self.assertRaises(ValueError):
+            split_phase_transport("authority", max_part_bytes=0)
+
+        rendered = "界" * (MAX_TRANSPORT_PART_BYTES + 7)
+        parts = split_phase_transport(rendered)
+        self.assertGreater(len(parts), 1)
+        self.assertEqual("".join(parts), rendered)
+        for part in parts:
+            self.assertLessEqual(len(part.encode("utf-8")), MAX_TRANSPORT_PART_BYTES)
+
+        boundary = ("a" * MAX_TRANSPORT_PART_BYTES) + "\nnext"
+        boundary_parts = split_phase_transport(boundary)
+        self.assertEqual("".join(boundary_parts), boundary)
+        self.assertEqual(len(boundary_parts[0].encode("utf-8")), MAX_TRANSPORT_PART_BYTES)
+
+    def test_live_phase_plan_is_complete_and_each_transport_part_fits_host_limit(self):
         plan = authority_read_plan()
         self.assertNotIn("analysis_scoring", plan)
         self.assertEqual(
@@ -109,6 +172,12 @@ class EfficiencyContractTests(unittest.TestCase):
             self.assertTrue(payload["complete"])
             self.assertLessEqual(payload["bundle_bytes"], MAX_PHASE_BUNDLE_BYTES)
             self.assertEqual(payload["bundle_bytes"], len(rendered.encode("utf-8")))
+            parts = split_phase_transport(rendered)
+            self.assertEqual("".join(parts), rendered)
+            for index, part in enumerate(parts, start=1):
+                self.assertLessEqual(len(part.encode("utf-8")), MAX_TRANSPORT_PART_BYTES)
+                output = format_phase_part_output(payload, rendered, part_index=index)
+                self.assertLessEqual(len(output.encode("utf-8")), MAX_TRANSPORT_OUTPUT_BYTES)
             for relative in payload["source_files"]:
                 self.assertEqual(rendered.count(f"## {relative}"), 1)
 

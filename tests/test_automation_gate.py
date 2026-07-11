@@ -12,8 +12,10 @@ import runtime.automation_gate as gate
 
 class AutomationGateTests(unittest.TestCase):
     def test_claim_blocks_duplicate_and_complete_marks_done(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(
-            gate, "GATE_DIR", Path(directory)
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(gate, "ROOT", Path(directory)),
+            patch.object(gate, "GATE_DIR", Path(directory) / "gate"),
         ):
             args = Namespace(
                 key="daily-2026-06-30-morning",
@@ -63,7 +65,10 @@ class AutomationGateTests(unittest.TestCase):
                 ],
             )
 
-            with patch.object(gate, "GATE_DIR", root / "gate"):
+            with (
+                patch.object(gate, "ROOT", root),
+                patch.object(gate, "GATE_DIR", root / "gate"),
+            ):
                 with redirect_stdout(StringIO()):
                     self.assertEqual(gate.claim(args), 0)
 

@@ -17,6 +17,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from runtime.context_pack import ensure_context_pack
+from runtime.decision_contract import build_contract, validate_contract_file
+from runtime.draft_recovery import (
+    certify_draft_recovery,
+    validate_draft_recovery_manifest,
+    validate_recovery_draft_artifacts,
+)
 from runtime.dependency_graph import active_post_lock_nodes
 from runtime.delivery_evidence import record_delivery_context, validate_delivery_evidence
 from runtime.golden_reasoning import (
@@ -30,11 +36,18 @@ from runtime.prelock_guard import (
     restore_prelock_guard,
 )
 from runtime.reasoning_readiness import (
+    POLICY as REASONING_READINESS_POLICY,
     build_reasoning_readiness_manifest,
     report_preflight_required,
+    validate_reasoning_work_file,
     validate_reasoning_readiness_manifest,
 )
 from runtime.report_retention import configured_keep_days, run_retention_cleanup
+from runtime.report_contract import (
+    report_contract_required,
+    validate_report_contract_manifest,
+    write_report_contract,
+)
 from runtime.report_state_extract import extract_report_state, validate_report_state
 from runtime.state_store import (
     atomic_json_write,
@@ -71,6 +84,8 @@ REPORT_PREFLIGHT_BINDING_FIELDS = (
     "source_specs_sha256",
     "image_paths_sha256",
     "image_count",
+    "report_contract_manifest_sha256",
+    "draft_recovery_manifest_sha256",
     "checks",
 )
 
@@ -130,6 +145,152 @@ def validate_report_structure(report: Path, trading_date: str, slot: str) -> Non
     assert_combined_structure(lines, trading_date, slot)
 
 
+def _certified_recovery_artifacts_available(
+    trading_date: str,
+    slot: str,
+    capture_manifest_path: Path,
+    lease: dict,
+) -> bool:
+    """Allow current-slot artifacts only after their old readiness validates.
+
+    Validation intentionally runs before ``prepare_transition`` refreshes the
+    active recovery Lease in ``transition_<slot>.json``.  A missing or stale
+    readiness simply falls back to the ordinary contamination guard.
+    """
+    recovered = lease.get("recovered_from_workflow_lease")
+    if not isinstance(recovered, dict):
+        return False
+    try:
+        readiness_path = (
+            ROOT
+            / "runtime_state"
+            / trading_date
+            / f"reasoning_readiness_{slot}.json"
+        )
+        readiness = load_json(readiness_path)
+        if not isinstance(readiness, dict):
+            return False
+        if (
+            readiness.get("status") != "ready"
+            or readiness.get("trading_date") != trading_date
+            or readiness.get("slot") != slot
+            or readiness.get("policy") != REASONING_READINESS_POLICY
+        ):
+            return False
+
+        def verified_record(key: str, *, verify_hash: bool = True) -> Path:
+            record = readiness.get(key)
+            if not isinstance(record, dict) or not record.get("path"):
+                raise ValueError(f"recovery readiness missing {key}")
+            path = Path(str(record["path"]))
+            if not path.is_absolute():
+                path = ROOT / path
+            path = path.resolve()
+            path.relative_to(ROOT.resolve())
+            if not path.is_file() or (
+                verify_hash and record.get("sha256") != sha256_file(path)
+            ):
+                raise ValueError(f"recovery readiness changed {key}")
+            return path
+
+        work = verified_record("work_file")
+        recorded_capture = verified_record("capture_manifest")
+        golden = verified_record("golden_reasoning_manifest", verify_hash=False)
+        verified_record("contract")
+        decision = verified_record("decision_contract")
+        if recorded_capture != capture_manifest_path.resolve():
+            return False
+        validate_reasoning_work_file(work)
+        decision_payload = validate_contract_file(decision, trading_date, slot)
+        decision_input_path = (
+            ROOT
+            / "runtime_state"
+            / trading_date
+            / f"decision_input_{slot}.json"
+        )
+        decision_input = load_json(decision_input_path)
+        if not isinstance(decision_input, dict):
+            return False
+        if build_contract(decision_input) != decision_payload:
+            return False
+        golden_payload = load_json(golden)
+        if not isinstance(golden_payload, dict):
+            return False
+        if (
+            golden_payload.get("status") != "ready"
+            or golden_payload.get("policy")
+            != "pre_write_reasoning_alignment_not_posthoc_output_padding"
+            or golden_payload.get("historical_sample_runtime_use") != "forbidden"
+            or golden_payload.get("trading_date") != trading_date
+            or golden_payload.get("slot") != slot
+        ):
+            return False
+
+        transition_record = readiness.get("transition")
+        if not isinstance(transition_record, dict) or not transition_record.get("path"):
+            return False
+        recorded_transition = Path(str(transition_record["path"]))
+        if not recorded_transition.is_absolute():
+            recorded_transition = ROOT / recorded_transition
+        recorded_transition = recorded_transition.resolve()
+        recorded_transition.relative_to(ROOT.resolve())
+        transition = load_json(recorded_transition)
+        recovery = transition.get("capture_lease_recovery") if transition else None
+        transition_capture = transition.get("capture_manifest") if transition else None
+        transition_capture_path = None
+        if isinstance(transition_capture, dict) and transition_capture.get("path"):
+            transition_capture_path = Path(str(transition_capture["path"]))
+            if not transition_capture_path.is_absolute():
+                transition_capture_path = recorded_transition.parent / transition_capture_path
+            transition_capture_path = transition_capture_path.resolve()
+        golden_capture = golden_payload.get("capture_manifest")
+        golden_transition = golden_payload.get("transition")
+        golden_contract = golden_payload.get("contract")
+        if (
+            not isinstance(golden_capture, dict)
+            or not isinstance(golden_transition, dict)
+            or not isinstance(golden_contract, dict)
+        ):
+            return False
+        golden_capture_path = Path(str(golden_capture.get("path", "")))
+        if not golden_capture_path.is_absolute():
+            golden_capture_path = ROOT / golden_capture_path
+        golden_transition_path = Path(str(golden_transition.get("path", "")))
+        if not golden_transition_path.is_absolute():
+            golden_transition_path = ROOT / golden_transition_path
+        golden_contract_path = Path(str(golden_contract.get("path", "")))
+        if not golden_contract_path.is_absolute():
+            golden_contract_path = ROOT / golden_contract_path
+        golden_contract_path = golden_contract_path.resolve()
+        golden_contract_path.relative_to(ROOT.resolve())
+        reasoning_valid = bool(
+            transition.get("trading_date") == trading_date
+            and transition.get("slot") == slot
+            and isinstance(recovery, dict)
+            and recovery.get("captured_workflow_lease_id") == recovered.get("lease_id")
+            and isinstance(transition_capture, dict)
+            and transition_capture_path == recorded_capture
+            and transition_capture.get("sha256") == sha256_file(recorded_capture)
+            and golden_capture_path.resolve() == recorded_capture
+            and golden_capture.get("sha256") == sha256_file(recorded_capture)
+            and golden_transition_path.resolve() == recorded_transition
+            and golden_transition.get("sha256") == sha256_file(recorded_transition)
+            and golden_contract_path.is_file()
+            and golden_contract.get("sha256") == sha256_file(golden_contract_path)
+        )
+        if not reasoning_valid:
+            return False
+        validate_recovery_draft_artifacts(
+            trading_date,
+            slot,
+            capture_manifest_path,
+            root=ROOT,
+        )
+        return True
+    except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+        return False
+
+
 def validate_report_preflight(
     report: Path,
     trading_date: str,
@@ -167,6 +328,15 @@ def validate_report_preflight(
             "report preflight blocked by incomplete state extraction: "
             + ", ".join(omissions)
         )
+    report_contract_target = None
+    draft_recovery_target = None
+    if report_contract_required(trading_date, slot):
+        _, report_contract_target = validate_report_contract_manifest(
+            trading_date, slot, report, root=ROOT
+        )
+        _, draft_recovery_target = validate_draft_recovery_manifest(
+            trading_date, slot, report, root=ROOT
+        )
     payload_preview = build_daily_payload(report, root=ROOT)
     payload_source = payload_preview.get("payload_source")
     if not isinstance(payload_source, dict):
@@ -187,6 +357,12 @@ def validate_report_preflight(
         "source_specs_sha256": payload_source.get("source_specs_sha256"),
         "image_paths_sha256": payload_source.get("image_paths_sha256"),
         "image_count": len(payload_preview.get("image_paths", [])),
+        "report_contract_manifest_sha256": (
+            sha256_file(report_contract_target) if report_contract_target else None
+        ),
+        "draft_recovery_manifest_sha256": (
+            sha256_file(draft_recovery_target) if draft_recovery_target else None
+        ),
         "checks": {
             "reasoning_readiness_pre_md": readiness_target is not None,
             "golden_reasoning_manifest": golden_target is not None,
@@ -196,6 +372,16 @@ def validate_report_preflight(
             "daily_payload_derivation": True,
             "source_binding_inputs": True,
             "blockbeats_cards": len(payload_preview.get("image_paths", [])) == 3,
+            "canonical_report_contract": (
+                report_contract_target is not None
+                if report_contract_required(trading_date, slot)
+                else True
+            ),
+            "draft_recovery_binding": (
+                draft_recovery_target is not None
+                if report_contract_required(trading_date, slot)
+                else True
+            ),
         },
     }
     failed = sorted(name for name, passed in manifest["checks"].items() if not passed)
@@ -340,6 +526,27 @@ def main() -> int:
     add_lease_argument(preflight_report)
     add_usage_arguments(preflight_report)
 
+    prepare_report_contract = sub.add_parser("prepare-report-contract")
+    prepare_report_contract.add_argument("--date", required=True)
+    prepare_report_contract.add_argument(
+        "--slot", required=True, choices=("morning", "midday", "evening")
+    )
+    prepare_report_contract.add_argument("--gate-summary", required=True)
+    prepare_report_contract.add_argument("--decision-contract", required=True, type=Path)
+    prepare_report_contract.add_argument("--leverage", default="5")
+    add_lease_argument(prepare_report_contract)
+    add_usage_arguments(prepare_report_contract)
+
+    certify_draft = sub.add_parser("certify-draft")
+    certify_draft.add_argument("--date", required=True)
+    certify_draft.add_argument(
+        "--slot", required=True, choices=("morning", "midday", "evening")
+    )
+    certify_draft.add_argument("--report", required=True, type=Path)
+    certify_draft.add_argument("--cards", required=True, type=Path)
+    add_lease_argument(certify_draft)
+    add_usage_arguments(certify_draft)
+
     certify = sub.add_parser("certify-reasoning")
     certify.add_argument("--date", required=True)
     certify.add_argument(
@@ -469,6 +676,14 @@ def main() -> int:
     lease = assert_lease(args.date, args.slot, args.lease_token)
 
     if args.command == "prepare":
+        preserve_certified_recovery_artifacts = (
+            _certified_recovery_artifacts_available(
+                args.date,
+                args.slot,
+                args.capture_manifest,
+                lease,
+            )
+        )
         _, context_target, context_reused = ensure_context_pack(args.date, args.slot)
         delta_manifest = load_json(args.capture_manifest.resolve())
         full_recollection_performed = bool(
@@ -511,7 +726,13 @@ def main() -> int:
             capture_manifest_path=args.capture_manifest,
             transition_path=target,
         )
-        guard_payload, guard_target = activate_prelock_guard(args.date, args.slot)
+        guard_payload, guard_target = activate_prelock_guard(
+            args.date,
+            args.slot,
+            preserve_certified_recovery_artifacts=(
+                preserve_certified_recovery_artifacts
+            ),
+        )
         event_id = (
             f"{args.date}:{args.slot}:prepare:{transition['state_version']}:"
             f"{hashlib.sha256(json.dumps(transition['sources'], sort_keys=True).encode()).hexdigest()}"
@@ -538,6 +759,9 @@ def main() -> int:
                 "prelock_guard_quarantined_files": len(
                     guard_payload.get("entries", [])
                 ),
+                "certified_recovery_artifacts_preserved": (
+                    preserve_certified_recovery_artifacts
+                ),
             },
             **usage_values(args),
         )
@@ -546,6 +770,49 @@ def main() -> int:
 
     transition_path = directory / f"transition_{args.slot}.json"
     transition = load_object(transition_path)
+
+    if args.command == "prepare-report-contract":
+        payload, target = write_report_contract(
+            args.date,
+            args.slot,
+            gate_summary=args.gate_summary,
+            decision_contract_path=args.decision_contract,
+            leverage=args.leverage,
+            root=ROOT,
+        )
+        append_usage(
+            trading_date=args.date,
+            slot=args.slot,
+            phase="report_contract",
+            status="success",
+            event_id=f"{args.date}:{args.slot}:report_contract:{payload['manifest_sha256']}",
+            duration_ms=round((time.perf_counter() - started) * 1000),
+            details={"report_contract": str(target), "lines": payload["lines"]},
+            **usage_values(args),
+        )
+        print(json.dumps({"report_contract": str(target), **payload}, ensure_ascii=False))
+        return 0
+
+    if args.command == "certify-draft":
+        payload, target = certify_draft_recovery(
+            args.date,
+            args.slot,
+            report=args.report,
+            cards=args.cards,
+            root=ROOT,
+        )
+        append_usage(
+            trading_date=args.date,
+            slot=args.slot,
+            phase="draft_recovery",
+            status="success",
+            event_id=f"{args.date}:{args.slot}:draft:{payload['report']['sha256']}",
+            duration_ms=round((time.perf_counter() - started) * 1000),
+            details={"draft_recovery": str(target), "report": payload["report"]},
+            **usage_values(args),
+        )
+        print(json.dumps({"draft_recovery": str(target), **payload}, ensure_ascii=False))
+        return 0
 
     if args.command == "record-delivery-evidence":
         assert_no_active_prelock_guard(args.date, args.slot)

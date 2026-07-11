@@ -11,6 +11,8 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from runtime.authority_mutex import production_start_guard
+
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE_DIR = ROOT / "runtime_state" / "automation_gate"
@@ -61,7 +63,7 @@ def external_done(path: Path | None, required_flags: list[str]) -> bool:
     return bool(payload) and all(payload.get(flag) is True for flag in required_flags)
 
 
-def claim(args: argparse.Namespace) -> int:
+def _claim_under_mutex(args: argparse.Namespace, key: str) -> int:
     key = validate_key(args.key)
     lock_path, done_path = paths(key)
     external_path = Path(args.done_file).resolve() if args.done_file else None
@@ -119,6 +121,17 @@ def claim(args: argparse.Namespace) -> int:
             return 0
 
     raise RuntimeError("could not claim automation gate")
+
+
+def claim(args: argparse.Namespace) -> int:
+    key = validate_key(args.key)
+    lock_path, done_path = paths(key)
+    external_path = Path(args.done_file).resolve() if args.done_file else None
+    if done_path.is_file() or external_done(external_path, args.require_json_flag):
+        print(json.dumps({"status": "done", "key": key}, ensure_ascii=False))
+        return EXIT_DONE
+    with production_start_guard(ROOT):
+        return _claim_under_mutex(args, key)
 
 
 def assert_owner(lock_path: Path, token: str) -> dict:

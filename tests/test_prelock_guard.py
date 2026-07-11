@@ -154,6 +154,45 @@ class PrelockGuardTests(unittest.TestCase):
             for path in prior + current_allowed:
                 self.assertTrue(path.exists(), path)
 
+    def test_certified_recovery_preserves_only_current_slot_recovery_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            current = [
+                root / "runtime_state" / "2026-07-07" / "decision_input_midday.json",
+                root / "runtime_state" / "2026-07-07" / "decision_contract_midday.json",
+                root / "outputs" / "2026-07-07_midday_cards.json",
+                root / "outputs" / "2026-07-07_midday_combined.md",
+                root / "outputs" / "blockbeats" / "2026-07-07_midday_01.png",
+            ]
+            still_quarantined = [
+                root / "runtime_state" / "2026-07-07" / "decision_contract_morning.json",
+                root / "runtime_state" / "2026-07-06" / "decision_contract_evening.json",
+                root / "outputs" / "2026-07-07_midday_render.docx",
+                root / "outputs" / "2026-07-07_morning_combined.md",
+            ]
+            for path in current + still_quarantined:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("payload\n", encoding="utf-8")
+
+            ordinary_targets = {
+                path.relative_to(root).as_posix()
+                for path in prelock_guard_targets("2026-07-07", "midday", root=root)
+            }
+            for path in current:
+                self.assertIn(path.relative_to(root).as_posix(), ordinary_targets)
+
+            payload, _ = activate_prelock_guard(
+                "2026-07-07",
+                "midday",
+                root=root,
+                preserve_certified_recovery_artifacts=True,
+            )
+            self.assertTrue(payload["certified_recovery_artifacts_preserved"])
+            for path in current:
+                self.assertTrue(path.exists(), path)
+            for path in still_quarantined:
+                self.assertFalse(path.exists(), path)
+
     def test_restore_tolerates_regenerated_python_cache_collision(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
