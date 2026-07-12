@@ -47,12 +47,22 @@
     "analysis_policy": {
       "type": "object",
       "required": [
-        "reasoning_effort",
-        "max_reasoning_confirmed",
         "use_highest_available_model",
         "full_analysis_recompute",
         "prior_decision_access",
         "reuse_prior_analysis"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "workflow_depth",
+            "full_workflow_depth_confirmed",
+            "minimum_host_reasoning_effort"
+          ]
+        },
+        {
+          "required": ["reasoning_effort", "max_reasoning_confirmed"]
+        }
       ]
     },
     "full_fallback_used": {"type": "boolean"},

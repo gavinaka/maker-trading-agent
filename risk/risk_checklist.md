@@ -25,7 +25,7 @@
 ### 1. 是否记录交易计划
 
 **判定**：
-* `outputs/<today>_maker_morning.md` 或 `_maker_evening.md` 中含 `[有计划]` 段
+* 本 slot 的 `decision_contract_<slot>.json` 与 canonical combined 中同时存在可执行 Maker 计划
 * 计划必含：方向 / 价格区间 / 仓位 / 入场方式 / 止盈 / 止损 / 浮盈防守 / 取消价格
 * 缺任一字段 → 第 1 项 ✗
 
@@ -43,19 +43,19 @@
 | BTC | Main 中线 | $2000 - $4000（分批构建总额） | 5x |
 
 * `request.size_usd ∉ 区间` → ✗
-* `request.leverage != 5` → ✗（除非用户在 metadata 明确 override 且情绪/状态全绿）
+* `request.leverage != 5` → ✗；日报计划不允许通过 metadata、情绪或历史状态绕过
 * Maker 单日交易数 > 3 → ✗
 
-**数据源**：`state/maker_state.json.position_rules` + `main_account_state.json.risk_management`
+**数据源**：当前 `scoring/scoring_contract.json` 的账户约束 + 本 slot hash-bound `decision_contract_<slot>.json`；历史 `state/*.json` 禁止作为当前风险真值。
 
 ---
 
 ### 3. 是否满足开单双门槛（总评分 + 胜率）
 
 **判定**（两门槛并列·任一不过即不开）：
-* 门槛① `state/score_state.json.current_score.total_score >= 65`（盘口 70 只允许 C19/C22/C56/C59 经整体证据确认为真极端）AND
+* 门槛① 本 slot `decision_contract` 机械复算的总评分 `>= 65`（盘口 70 只允许 C19/C22/C56/C59 经整体证据确认为真极端）AND
 * 门槛② `plan.win_rate >= 60`（胜率自估 ≥60%·2026-06-16 升级为硬门槛）AND
-* `outputs/<today>_footprint_<HHMM>.json` 存在且 `data_quality != "partial"`
+* 本 slot `reasoning_contract` 的六源观察均绑定当前不可变 capture，且不存在缺失或无效核心源
 
 **禁止**：评分未达 65 或 胜率未达 60% 强行开仓（V004 / V011 违规）；用执行概率 <50% 否决开仓（执行概率为软参考·非门槛·只调挂价）。
 
@@ -75,21 +75,19 @@
 ### 5. 是否在规定交易时间内
 
 **判定**（GMT+8 北京时间）：
-* 早间执行窗口：**09:00 - 12:00**（早间计划生效）
-* 晚间执行窗口：**19:00 - 22:00**（晚间计划生效）
-* 午盘观察期：**14:00 - 18:00** → 减少新开仓
-* 其他时段 → ✗
-
-**例外**：C19/C22/C56/C59 真极端已认证 + 用户在 metadata 标 `time_window_override:true`
+* 早／午／晚报告分别绑定本 slot 的真实采集时间、证据新鲜度和计划有效窗口
+* 计划不得在来源超过新鲜度门后继续作为实时可执行计划
+* 后一时段 canonical 计划交付后，前一时段未成交计划必须按 continuity contract 明确撤销、保留或替换
+* 禁止以旧的固定“两报告执行窗口”或 metadata override 绕过当前三时段状态机
 
 ---
 
 ### 6. 是否严格按入场信号执行
 
 **判定**：
-* 当前价 ∈ 计划入场区间 ±0.5%
-* 入场方式（左/右侧）与计划一致
-* 分批比例符合计划（标准 50%+50%，特殊 100%）
+* `single` 只允许单一精确价；`ladder` 只允许 2–5 档且比例合计 100%；`conditional_zone` 明确不是订单
+* 入场方式与计划一致，只有实际触发或限价成交后才算执行
+* 价格尚未到达 Maker 边缘属于“挂单等待”，不得改成市价追单，也不得伪报已执行
 
 **禁止**：
 * 未击中入场点强行追单（V014 违规）
@@ -143,12 +141,9 @@ if not risk_checklist_pass:
 
 ---
 
-## 与 risk_agent 的对应
+## 与生产决策门的对应
 
-risk_agent **Gate 2** 严格执行本清单 7 项。
-任一 ✗ → `decision: deny` + `reason: "Gate 2 - 第N项未通过"`
-
-详见 `agents/risk_agent.md` Gate 2 章节。
+`runtime/decision_contract.py`、`runtime/report_contract.py` 与 `certify-reasoning` 共同重放本清单；任一项失败即拒绝进入 canonical report。历史 risk Agent 仅作参考设计，不得进入生产 authority。
 
 ---
 
@@ -162,7 +157,7 @@ risk_agent **Gate 2** 严格执行本清单 7 项。
 | 2026.3.11 | V011 情绪加单 | 第 1 / 第 6 项 |
 | 2026.4.1 | V012 未取消策略 | 第 6 项（取消价已触发未执行） |
 
-→ 完整违规库见 `agents/penalty_agent.md`。
+→ 违规分类以 `governance/major_violations.md` 与 `governance/penalty_system.md` 为准；历史 Agent 文件不参与生产判断。
 
 ---
 

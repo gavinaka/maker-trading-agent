@@ -36,7 +36,7 @@ MANDATORY_GUARDRAIL_NAMES = (
     "memory_report_evidence_time_lock",
     "golden_reasoning",
 )
-ALWAYS_READ_BYTE_BUDGET = 30 * 1024
+ALWAYS_READ_BYTE_BUDGET = 40 * 1024
 AUTHORITY_READ_PLAN = {
     "always_read": MANDATORY_GUARDRAIL_NAMES,
     "workflow_entry": (
@@ -50,8 +50,6 @@ AUTHORITY_READ_PLAN = {
         "memory_five_sources_complete_or_halt",
     ),
     "analysis_orderflow": (
-        "reasoning_depth",
-        "scoring_contract",
         "scoring_system",
         "orderflow",
         "orderflow_scoring",
@@ -66,9 +64,8 @@ AUTHORITY_READ_PLAN = {
         "cannot_do",
     ),
     "analysis_agents": (
-        "news_agent",
-        "scoring_agent",
-        "footprint_agent",
+        "reasoning_depth",
+        "scoring_contract",
     ),
     "risk_and_execution": (
         "risk",
@@ -78,8 +75,6 @@ AUTHORITY_READ_PLAN = {
         "leverage",
         "position_management",
         "state_gate",
-        "risk_agent",
-        "emotional_agent",
     ),
     "render_publish_post_lock": (
         "memory_report_chinese_only_narrative",
@@ -87,9 +82,6 @@ AUTHORITY_READ_PLAN = {
         "memory_basemian_news_cards",
         "memory_push_report_to_ai_agent_plan",
         "memory_report_template_alignment",
-        "output_agent",
-        "review_agent",
-        "penalty_agent",
         "review_principles",
         "execution_philosophy",
     ),
@@ -258,8 +250,9 @@ def build_context_pack(
         "authority_read_plan": authority_read_plan(),
         "authority_read_budget": authority_read_budget(root),
         "analysis_policy": {
-            "reasoning_effort": "max",
-            "max_reasoning_confirmation_required": True,
+            "workflow_depth": "full",
+            "full_workflow_depth_confirmation_required": True,
+            "minimum_host_reasoning_effort": "high",
             "use_highest_available_model": True,
             "full_analysis_recompute": True,
             "reuse_prior_features_scores_or_decisions": False,

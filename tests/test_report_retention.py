@@ -5,8 +5,10 @@ from datetime import date, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 
 from runtime.report_retention import collect_actions, execute_actions, run_retention_cleanup
+from runtime import report_retention
 
 
 def _write(path: Path, text: str = "x") -> Path:
@@ -38,6 +40,13 @@ class ReportRetentionTests(unittest.TestCase):
 
             for name in ("captures", "evidence", "publish_attempts", "word_qa"):
                 _write(root / "runtime_state" / "2026-07-04" / name / "artifact.json")
+            _write(root / "runtime_state" / "2026-07-04" / "visual_crops" / "crop.png")
+            old_quality_audit = _write(
+                root / "runtime_state" / "quality_audit" / "pages" / "page.png"
+            )
+            _touch_mtime(old_quality_audit, "2026-07-04")
+            _touch_mtime(old_quality_audit.parent, "2026-07-04")
+            _touch_mtime(old_quality_audit.parent.parent, "2026-07-04")
             _write(root / "runtime_state" / "2026-07-04" / "delivery_midday.json")
             _write(root / "runtime_state" / "2026-07-05" / "evidence" / "artifact.json")
             _write(root / "runtime_state" / "automation_gate" / "daily-2026-07-04.done")
@@ -60,6 +69,8 @@ class ReportRetentionTests(unittest.TestCase):
             self.assertIn("runtime_state/2026-07-04/evidence", paths)
             self.assertIn("runtime_state/2026-07-04/publish_attempts", paths)
             self.assertIn("runtime_state/2026-07-04/word_qa", paths)
+            self.assertIn("runtime_state/2026-07-04/visual_crops", paths)
+            self.assertIn("runtime_state/quality_audit", paths)
 
             self.assertNotIn("data_sources/inbox/2026-07-05", paths)
             self.assertNotIn("outputs/blockbeats/2026-07-05_midday_1.png", paths)
@@ -132,6 +143,28 @@ class ReportRetentionTests(unittest.TestCase):
             )
 
             self.assertNotIn("outputs/_legacy_push.py", {item.path for item in actions})
+
+    def test_human_readable_cli_prints_payload_actions(self) -> None:
+        payload = {
+            "mode": "dry-run",
+            "cutoff": "2026-07-11",
+            "count": 1,
+            "bytes": 7,
+            "actions": [
+                {
+                    "kind": "runtime_state_heavy",
+                    "path": "runtime_state/old/crops",
+                    "bytes": 7,
+                    "reason": "expired",
+                }
+            ],
+        }
+        with mock.patch.object(report_retention, "run_retention_cleanup", return_value=payload):
+            with mock.patch("sys.argv", ["report_retention.py"]):
+                with mock.patch("builtins.print") as output:
+                    self.assertEqual(report_retention.main(), 0)
+        rendered = "\n".join(str(call.args[0]) for call in output.call_args_list)
+        self.assertIn("runtime_state/old/crops", rendered)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,6 @@ __pycache__/
 
 # Node / Playwright 浏览器采集工具
 tools/browser_capture/node_modules/
-tools/browser_capture/package-lock.json
 
 # 日报运营产物（生成物 / 一次性脚本，不纳入版本）
 # 注：保留 outputs/ 下的复用工具（report_lint.py / report_colors.py /

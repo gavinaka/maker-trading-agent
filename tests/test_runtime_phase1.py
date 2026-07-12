@@ -58,9 +58,13 @@ OLD
                 ["38efda35-a098-810c-b9c3-cdf448a9d226"],
             )
             self.assertTrue(payload["analysis_policy"]["full_analysis_recompute"])
-            self.assertEqual(payload["analysis_policy"]["reasoning_effort"], "max")
+            self.assertEqual(payload["analysis_policy"]["workflow_depth"], "full")
             self.assertTrue(
-                payload["analysis_policy"]["max_reasoning_confirmation_required"]
+                payload["analysis_policy"]["full_workflow_depth_confirmation_required"]
+            )
+            self.assertEqual(
+                payload["analysis_policy"]["minimum_host_reasoning_effort"],
+                "high",
             )
             self.assertRegex(payload["authority_sha256"], r"^[0-9a-f]{64}$")
             self.assertEqual(
@@ -79,13 +83,11 @@ OLD
                 "risk/risk_checklist.md",
                 payload["authoritative_runtime_files"],
             )
-            self.assertIn(
-                "agents/review_agent.md",
-                payload["authoritative_runtime_files"],
-            )
-            self.assertIn(
-                "agents/footprint_agent.md",
-                payload["authoritative_runtime_files"],
+            self.assertFalse(
+                any(
+                    relative.startswith("agents/") or relative.startswith("state/")
+                    for relative in payload["authoritative_runtime_files"]
+                )
             )
             self.assertFalse(payload["read_policy"]["load_full_context_log"])
             self.assertTrue(payload["read_policy"]["load_authority_digest_first"])
@@ -121,6 +123,13 @@ OLD
             self.assertFalse(reused)
             self.assertEqual(second_target, target)
             self.assertNotEqual(second["authority_sha256"], payload["authority_sha256"])
+
+    def test_live_authority_budget_has_headroom(self):
+        budget = authority_read_budget()
+        self.assertLessEqual(
+            budget["total_bytes"],
+            int(budget["budget_bytes"] * 0.85),
+        )
 
     def test_missing_referenced_memory_hard_stops_context_pack(self):
         with tempfile.TemporaryDirectory() as td:

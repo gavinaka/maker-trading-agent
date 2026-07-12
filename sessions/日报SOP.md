@@ -7,6 +7,7 @@
 > 🟥 **宪法级·第一优先级（除用户拍板的系统逻辑外最高优先）：报告必须完全对齐用户 Notion 实际模板字段**（字段名/顺序/含义全对）。出稿前对照用户最近 Notion 条目逐字段核，**严禁臆造/混用字段**（如把"止损"标成"取消价"）。模板对齐错误=宪法级违规、误导执行+二次返工耗 token。详见 §3 渲染规则与 `memory/report-template-alignment.md`。
 > 🟥 **一次锁死铁律（2026-06-01 用户带情绪强调）：锁模板/逻辑时样本不足，就在同一次里随机抽查 2 年内最多 20 个 Notion 样本补足，一次核到 100% 再落地；禁止半验证上线后反复改 skill 浪费用户 token。** 见 `memory/verify-once-sufficient-samples.md`。
 > 🟥 **Claude Code → Codex 平移硬门（2026-07-04）**：旧 `.claude/skills/daily-report/SKILL.md` 是本机兼容镜像，不是 Codex committed 权威；旧入口中的关键 guardrail 必须由本 SOP、`.agents/skills/daily-report/SKILL.md` 与 `runtime/context_pack.py` 承载。每次 Codex 跑日报必须读取并执行：`memory/independent-report-no-user-reference.md`、`memory/precise-numbers-no-fuzzy.md`、`memory/report-chinese-only-narrative.md`、`memory/notion-publish-checklist.md`、`memory/stability-contract.md`。缺任一项或只存在于 `.claude/` 即硬停同步，不得继续出稿。
+> 🟥 **运行权威聚焦门（2026-07-12）**：`agents/` + `state/` 继续保留为历史参考设计，但不得进入 `LOGIC_FILES`、authority manifest 或 phase bundle。兼容阶段名 `analysis_agents` 只承载当前 `reasoning_depth + scoring_contract` 综合契约，不再装载旧 Agent I/O、旧状态快照、旧两报告路径或旧输出命令。
 
 ---
 
@@ -103,7 +104,7 @@
 - ② Exocharts：BTCUSD 日线 footprint → 读 POC / Delta / CVD / 日波幅。
 - ③ Coinglass：BTCUSDT **1h** → 读 CVD / 价格 / 资金费率 / OI 四维。
   - **读取法（2026-05-31 修正）**：CVD / 价格 / OI 三维起始点取该面板**最近一个阶段性高点或低点**，按趋势线斜率读 **上升 / 横盘 / 下降**（不用 24h% 等绝对阈值，不要求精确数值）；起始点优先用截图上手绘的趋势线。
-  - **资金费率例外**：仍读零轴正负（正 / 负 / 近零），作为 C01–C81 第四维与强弱修正；方向必须先由 CVD+价格+OI 得出，资金费率不得单变量翻向。详见 `agents/footprint_agent.md` §统一读取法。
+  - **资金费率例外**：仍读零轴正负（正 / 负 / 近零），作为 C01–C81 第四维与强弱修正；方向必须先由 CVD+价格+OI 得出，资金费率不得单变量翻向。当前权威为 `scoring/orderflow_methodology.md` 与 `scoring/scoring_contract.json`。
 - ④ FedWatch：下次 FOMC 概率表 + 1日/1周/1月变化。
 - ⑤ TradingView：**15m**（盘面执行最终 Check，入场把关）。若用户给 4H 先用着，但提醒补 15m。
 
@@ -128,7 +129,7 @@
 ---
 
 ## 2.5 渲染规则（2026-05-31 据 5 月 17 天手写样本落地 · 低风险组）
-> 详见 `outputs/2026-05_日报逻辑优化.md`。以下为已确认落地项。
+> 相关历史归纳已移入 pre-lock 禁读归档区。以下只保留已确认落地项；生产不得读取历史文档作为当前市场事实输入。
 > 🪦 **"判断口径满 20 次对照再定"对照实验已废止（2026-06-10 用户拍板）**：原依赖出稿读用户手写判断累积计数，已被 5/31「独立成稿铁律」切断停滞。用户已在 Notion 建独立栏目作对照数据源，样本够后再让系统读取（届时另设读取方案，不沿用旧的出稿累积对照）。本条不再产生出稿约束。
 
 1. **「不能做」字段 = 禁止追当下最拥挤的一边**，**不再机械抄持仓方向**（17 天证实系统性错误）。
@@ -158,7 +159,7 @@
 8. **框架优先级按账户分流**（权威：`constitution/trading_constitution.md` §一·补）：
    - **日内 Maker：盘口>盘面>基本面** —— 方向由盘口70+盘面30 定，基本面只作风险否决/降频，**不打方向盘**。
    - **中线主账户：基本面>盘面>盘口** —— 中线大方向以基本面先导，盘面定入场区，盘口仅择时微调（禁据盘口短期背离推翻中线方向）。注：「不能做」不属中线，是当天 Maker 末位收口结论（见本节第 1 条）。
-   - **基本面内部：政治(地缘/升降息/监管立法)>行业资讯**；Tier1 政治主导方向，Tier2 行业不得翻转（详见 `agents/news_agent.md`）。
+   - **基本面内部：政治(地缘/升降息/监管立法)>行业资讯**；Tier1 政治主导方向，Tier2 行业不得翻转（当前权威为 `data_sources/blockbeats_rules.md` 与 `scoring/scoring_contract.json`）。
 
 ## 3. 评分（70+30）与出稿
 - 盘口 70（C01–C81 客观骨架 + 综合方法论精细整数评分；仅 C19/C22/C56/C59 为极端候选，真极端70、接近极端60，非极端≤60）+ 盘面 30（支撑阻力10/流动性猎杀10/SMA20·5/量价3/斐波/趋势线2；只评机会质量、与方向无关）。

@@ -2,8 +2,8 @@
 
 > 权威：系统自估"胜率"的唯一口径。胜率＝**开仓前的前瞻确信度分级**（plan-time conviction），**非回测命中率**。
 > 🟥 **统计诚实边界（2026-07-12）**：机器字段固定为 `plan_time_conviction`，报告固定标注“计划时置信度，非回测命中率”。在具有充足、独立、带真实结局且定义一致的样本并完成校准检验前，`calibrated_probability=false`、`calibration_status=insufficient_outcome_samples`；禁止把自估百分比解释为真实命中概率、稳定收益率或模型已校准证明。
-> 来源：2026 年 1–5 月用户真实样本 55 个倒推归纳（详见 `outputs/2026_胜率判断分析.md`）。
-> 接口：本方法论产出的胜率喂入 [开单双门槛](score_thresholds.md) 的 **门槛②（胜率 ≥60%）** 与 `agents/risk_agent.md` Gate5。
+> 来源：2026 年 1–5 月用户真实样本 55 个倒推归纳；历史原稿已移入 pre-lock 禁读归档区，不得作为当前市场事实输入。
+> 接口：本方法论产出的计划时置信度喂入 [开单双门槛](score_thresholds.md) 的 **门槛②（≥60%）**，并由 `runtime/decision_contract.py` 机械复算。
 
 ---
 
@@ -52,5 +52,5 @@
 
 ## 6. grep 闭环（落地核验点）
 - 本文件 = 胜率自估唯一权威。
-- 引用方须一致（口径＝门槛②胜率自估≥60%·真实估值·不锁固定档）：`agents/risk_agent.md` Gate5（门槛②读 plan.win_rate·估法见本文件）、`constitution/maker_principles.md`+`execution/maker_execution.md`（执行标准·胜率≥60%硬门槛指向本文件）、`scoring/score_thresholds.md`（门槛②）、`.claude/skills/daily-report/SKILL.md` §2（出稿自估口径）、`README.md` 评分文件清单。🟥 引用方若残留"三档/实际开单从不<70/估<70即观望"旧表述＝待订正（2026-06-17 口径变更）。
-- 样本与归纳详见 `outputs/2026_胜率判断分析.md`。
+- 引用方须一致（口径＝门槛②计划时置信度≥60%·真实估值·不锁固定档）：`constitution/maker_principles.md`、`execution/maker_execution.md`、`scoring/score_thresholds.md`、`runtime/decision_contract.py` 与 committed daily-report 入口。历史 `agents/`、`.claude/` 或 README 示例不得覆盖。🟥 任一活跃引用残留"三档/实际开单从不<70/估<70即观望"即为阻断性漂移。
+- 历史样本原稿仅供维护审计；生产报告只使用当前 slot 证据。

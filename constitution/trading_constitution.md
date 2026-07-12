@@ -148,7 +148,7 @@ BTC（策略）：[同上格式]
 十六、输出规范（每日日报）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-格式：记事本（.txt）  ⚠️【已迭代·2026-05/06】当前交付 = .docx（python-docx）+ Notion 子页（🌅/🌙/🔍），见 agents/output_agent.md 与 /daily-report skill；原 .txt 桌面合并已停用。
+格式：记事本（.txt）  ⚠️【已迭代】当前交付 = canonical `.docx` + Notion 三时段子页（🌅/🌇/🌙），以 committed daily-report SKILL 与 `sessions/日报SOP.md` 为准；原 `.txt` 桌面合并及历史 output Agent 路径均已停用。
 保存位置：桌面
 文件命名：[日期]_交易计划.txt（建议）
 

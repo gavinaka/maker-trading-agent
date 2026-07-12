@@ -924,7 +924,7 @@ def main() -> int:
         )
         if host_capability_path is not None and host_capability is not None:
             transition["host_capability"] = file_record(host_capability_path)
-            transition["analysis_policy"]["max_reasoning_provenance"] = (
+            transition["analysis_policy"]["workflow_depth_provenance"] = (
                 "session_jsonl_host_capability_manifest"
             )
             transition["analysis_policy"]["actual_model"] = host_capability["model"]

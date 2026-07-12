@@ -432,9 +432,9 @@ class DependencyTests(unittest.TestCase):
             "post_lock_completed_nodes": sorted(required_post_lock_nodes(slot)),
         }
 
-    def test_prepare_hard_stops_without_max_reasoning_confirmation(self):
+    def test_prepare_hard_stops_without_full_workflow_depth_confirmation(self):
         with tempfile.TemporaryDirectory() as td:
-            with self.assertRaisesRegex(ValueError, "MAX reasoning"):
+            with self.assertRaisesRegex(ValueError, "full workflow depth"):
                 prepare_transition(
                     "2026-06-30",
                     "morning",
@@ -442,7 +442,7 @@ class DependencyTests(unittest.TestCase):
                     max_reasoning_confirmed=False,
                 )
 
-    def test_prepare_records_max_confirmation_without_exposing_parent_state(self):
+    def test_prepare_records_full_workflow_depth_without_exposing_parent_state(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             seed_logic_files(root)
@@ -455,7 +455,11 @@ class DependencyTests(unittest.TestCase):
                 max_reasoning_confirmed=True,
             )
             self.assertTrue(
-                transition["analysis_policy"]["max_reasoning_confirmed"]
+                transition["analysis_policy"]["full_workflow_depth_confirmed"]
+            )
+            self.assertEqual(
+                transition["analysis_policy"]["minimum_host_reasoning_effort"],
+                "high",
             )
             self.assertNotIn("parent_state", transition)
 

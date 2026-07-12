@@ -73,14 +73,6 @@ LOGIC_FILES = {
     "cannot_do": "constitution/cannot_do_mapping.md",
     "review_principles": "constitution/review_principles.md",
     "execution_philosophy": "constitution/execution_philosophy.md",
-    "news_agent": "agents/news_agent.md",
-    "scoring_agent": "agents/scoring_agent.md",
-    "risk_agent": "agents/risk_agent.md",
-    "output_agent": "agents/output_agent.md",
-    "review_agent": "agents/review_agent.md",
-    "emotional_agent": "agents/emotional_agent.md",
-    "footprint_agent": "agents/footprint_agent.md",
-    "penalty_agent": "agents/penalty_agent.md",
 }
 
 
@@ -358,7 +350,7 @@ def prepare_transition(
         raise ValueError(f"unsupported slot: {slot}")
     if not max_reasoning_confirmed:
         raise ValueError(
-            "MAX reasoning must be confirmed before preparing analysis"
+            "full workflow depth must be confirmed before preparing analysis"
         )
     directory = state_dir(trading_date, root)
     parent = load_json(directory / "current.json")
@@ -580,8 +572,9 @@ def prepare_transition(
         "invalidated_nodes": sorted(invalidated),
         "post_lock_nodes": sorted(required_post_lock_nodes(slot)),
         "analysis_policy": {
-            "reasoning_effort": "max",
-            "max_reasoning_confirmed": True,
+            "workflow_depth": "full",
+            "full_workflow_depth_confirmed": True,
+            "minimum_host_reasoning_effort": "high",
             "use_highest_available_model": True,
             "full_analysis_recompute": True,
             "prior_decision_access": "post_analysis_lock_only",
@@ -678,11 +671,16 @@ def commit_transition(
             + ", ".join(sorted(missing_sources))
         )
     analysis_policy = transition.get("analysis_policy", {})
-    if (
-        analysis_policy.get("reasoning_effort") != "max"
-        or not analysis_policy.get("max_reasoning_confirmed")
-    ):
-        raise ValueError("commit blocked without confirmed MAX reasoning")
+    full_depth_confirmed = (
+        analysis_policy.get("workflow_depth") == "full"
+        and analysis_policy.get("full_workflow_depth_confirmed") is True
+    )
+    legacy_full_depth_confirmed = (
+        analysis_policy.get("reasoning_effort") == "max"
+        and analysis_policy.get("max_reasoning_confirmed") is True
+    )
+    if not (full_depth_confirmed or legacy_full_depth_confirmed):
+        raise ValueError("commit blocked without confirmed full workflow depth")
     required = set(transition["invalidated_nodes"])
     completed = set(analysis_lock.get("completed_nodes", []))
     missing = sorted(required - completed)

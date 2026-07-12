@@ -16,8 +16,8 @@ if str(ROOT) not in sys.path:
 from runtime.context_pack import authority_manifest, authority_read_plan, authority_sha256
 
 
-MAX_PHASE_SOURCE_BYTES = 58 * 1024
-MAX_PHASE_BUNDLE_BYTES = 60 * 1024
+MAX_PHASE_SOURCE_BYTES = 72 * 1024
+MAX_PHASE_BUNDLE_BYTES = 76 * 1024
 MAX_TRANSPORT_PART_BYTES = 28 * 1024
 MAX_TRANSPORT_OUTPUT_BYTES = 32 * 1024
 BEGIN_BUNDLE_MARKER = "---BEGIN_AUTHORITY_BUNDLE---"

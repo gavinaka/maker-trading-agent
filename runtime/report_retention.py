@@ -20,7 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_KEEP_DAYS = 2
-RUNTIME_SUBDIRS = ("captures", "evidence", "publish_attempts", "word_qa")
+NON_DAILY_RUNTIME_DIRS = ("quality_audit",)
 SLOT_PATTERN = r"(morning|midday|evening)"
 ISO_DATE = re.compile(r"^20\d{2}-\d{2}-\d{2}$")
 TRANSIENT_OUTPUT = re.compile(
@@ -66,6 +66,15 @@ def path_size(path: Path) -> int:
         if child.is_file():
             total += child.stat().st_size
     return total
+
+
+def latest_modified_date(path: Path) -> date:
+    timestamps = [path.stat().st_mtime]
+    if path.is_dir():
+        timestamps.extend(
+            child.stat().st_mtime for child in path.rglob("*") if child.is_file()
+        )
+    return datetime.fromtimestamp(max(timestamps)).date()
 
 
 def relative(path: Path, root: Path) -> str:
@@ -178,17 +187,27 @@ def collect_actions(
         for date_dir in sorted(runtime_state.iterdir()):
             if not date_dir.is_dir() or not older_than_cutoff(date_dir.name, cutoff):
                 continue
-            for name in RUNTIME_SUBDIRS:
-                candidate = date_dir / name
-                if candidate.exists():
-                    actions.append(
-                        action(
-                            "runtime_state_heavy",
-                            candidate,
-                            root,
-                            f"runtime heavy artifact date is before cutoff {cutoff.isoformat()}",
-                        )
+            for candidate in sorted(path for path in date_dir.iterdir() if path.is_dir()):
+                actions.append(
+                    action(
+                        "runtime_state_heavy",
+                        candidate,
+                        root,
+                        f"runtime subdirectory date is before cutoff {cutoff.isoformat()}",
                     )
+                )
+
+        for name in NON_DAILY_RUNTIME_DIRS:
+            candidate = runtime_state / name
+            if candidate.is_dir() and latest_modified_date(candidate) < cutoff:
+                actions.append(
+                    action(
+                        "runtime_state_nondaily_transient",
+                        candidate,
+                        root,
+                        f"non-daily runtime artifact is older than cutoff {cutoff.isoformat()}",
+                    )
+                )
 
     return actions
 
@@ -310,8 +329,11 @@ def main() -> int:
             f"{payload['mode']} cutoff={payload['cutoff']} "
             f"count={payload['count']} bytes={payload['bytes']}"
         )
-        for item in actions:
-            print(f"- {item.kind}: {item.path} ({item.bytes} bytes) [{item.reason}]")
+        for item in payload["actions"]:
+            print(
+                f"- {item['kind']}: {item['path']} ({item['bytes']} bytes) "
+                f"[{item['reason']}]"
+            )
     return 0
 
 

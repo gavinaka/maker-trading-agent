@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from runtime.host_usage_import import summarize_session
+from runtime.host_usage_import import summarize_session, validate_reasoning_efforts
 from runtime.context_pack import authority_manifest, authority_read_plan
 from runtime.phase_contract import (
     BEGIN_BUNDLE_MARKER,
@@ -28,6 +28,22 @@ from runtime.state_store import LOGIC_FILES
 
 
 class EfficiencyContractTests(unittest.TestCase):
+    def test_host_usage_accepts_high_or_max_and_rejects_below_high(self):
+        for effort in ("high", "max"):
+            validate_reasoning_efforts(
+                {
+                    "reasoning_effort": effort,
+                    "reasoning_efforts_observed": [effort],
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "below the required minimum"):
+            validate_reasoning_efforts(
+                {
+                    "reasoning_effort": "high",
+                    "reasoning_efforts_observed": ["medium", "high"],
+                }
+            )
+
     def test_host_usage_sums_real_last_usage_and_counts_tools(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "Trading-System"
@@ -157,12 +173,33 @@ class EfficiencyContractTests(unittest.TestCase):
                     "trading_constitution",
                     "maker_principles",
                     "cannot_do",
-                    "news_agent",
-                    "scoring_agent",
-                    "footprint_agent",
                 )
             },
         )
+        self.assertFalse(
+            any(
+                relative.startswith("agents/") or relative.startswith("state/")
+                for paths in plan.values()
+                for relative in paths
+            )
+        )
+        live_authority = "\n".join(
+            Path(relative).read_text(encoding="utf-8-sig")
+            for paths in plan.values()
+            for relative in paths
+        )
+        for forbidden_reference in (
+            "state/score_state.json",
+            "state/maker_state.json",
+            "state/main_account_state.json",
+            "state/session_state.json",
+            "outputs/<today>_maker",
+            "outputs/<today>_footprint",
+            "agents/risk_agent.md",
+            "agents/output_agent.md",
+            "agents/news_agent.md",
+        ):
+            self.assertNotIn(forbidden_reference, live_authority)
         flattened = [path for paths in plan.values() for path in paths]
         self.assertEqual(len(flattened), len(set(flattened)))
         for phase in plan:

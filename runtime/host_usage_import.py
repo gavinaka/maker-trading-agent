@@ -13,7 +13,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from runtime.state_store import atomic_json_write
-from runtime.host_capability import required as host_capability_required
+from runtime.host_capability import (
+    DEFAULT_MINIMUM_EFFORT,
+    EFFORT_ORDER,
+    required as host_capability_required,
+)
 from runtime.host_capability import validate_manifest as validate_host_capability_manifest
 
 
@@ -92,6 +96,31 @@ def summarize_session(path: Path, *, expected_root: Path = ROOT) -> dict:
     return totals
 
 
+def validate_reasoning_efforts(
+    payload: dict,
+    *,
+    minimum_effort: str = DEFAULT_MINIMUM_EFFORT,
+) -> None:
+    minimum = str(minimum_effort).lower()
+    latest = str(payload.get("reasoning_effort", "")).lower()
+    observed = {
+        str(item).lower() for item in payload.get("reasoning_efforts_observed", [])
+    }
+    if minimum not in EFFORT_ORDER or latest not in EFFORT_ORDER or not observed:
+        raise ValueError("production thread reasoning effort is missing or unknown")
+    below_minimum = sorted(
+        effort
+        for effort in observed
+        if effort not in EFFORT_ORDER
+        or EFFORT_ORDER[effort] < EFFORT_ORDER[minimum]
+    )
+    if EFFORT_ORDER[latest] < EFFORT_ORDER[minimum] or below_minimum:
+        raise ValueError(
+            "production thread contains reasoning turns below the required minimum: "
+            f"minimum={minimum} observed={sorted(observed)}"
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", required=True)
@@ -109,8 +138,7 @@ def main() -> int:
         capability = validate_host_capability_manifest(
             capability_path, args.date, args.slot, root=ROOT
         )
-        if payload["reasoning_effort"] != "max" or set(payload["reasoning_efforts_observed"]) != {"max"}:
-            raise ValueError("production thread contains non-MAX reasoning turns")
+        validate_reasoning_efforts(payload)
         if payload["model"] != capability["model"]:
             raise ValueError("final host model differs from pre-analysis capability binding")
         payload["host_capability_manifest"] = str(capability_path.relative_to(ROOT))
