@@ -31,6 +31,7 @@ class ReasoningContractTests(unittest.TestCase):
         names = [
             "blockbeats.json",
             "coinglass.png",
+            "liqheatmap_3d.png",
             "exocharts.png",
             "fedwatch.png",
             "farside_btc_etf.json",
@@ -60,7 +61,7 @@ class ReasoningContractTests(unittest.TestCase):
         )
         observations = [
             self.obs("obs.blockbeats", "blockbeats", "structured_observation", "blockbeats.json", {"tier": 2, "event_window_hours": 12, "selected_event_count": 3}),
-            self.obs("obs.coinglass", "coinglass", "visual_judgment", "coinglass.png", {
+            self.obs("obs.coinglass", "coinglass", "visual_judgment", ["coinglass.png", "liqheatmap_3d.png"], {
                 "pivot": {"timeframe": "1h", "start_price": 100, "end_price": 103, "dominant_leg": "up", "trendline_status": "intact", "anchor_reset": False},
                 "price_direction": "up", "cvd_direction": "up", "oi_direction": "up",
                 "funding_direction": "down", "funding_sign": "near_zero",
@@ -77,6 +78,18 @@ class ReasoningContractTests(unittest.TestCase):
                 "funding_effect": "weaken",
                 "final_direction": "bullish",
                 "funding_single_variable_flip": False,
+                "liquidation_map": {
+                    "role": "auxiliary_only",
+                    "threshold": 0.85,
+                    "captured_timeframes": ["3d"],
+                    "current_price": 103,
+                    "levels": [
+                        {
+                            "side": "above", "price": 105,
+                            "timeframe": "3d", "strength": "strong",
+                        }
+                    ],
+                },
             }),
             self.obs("obs.exocharts", "exocharts", "visual_judgment", "exocharts.png", {
                 "ohlc": {"open": 100, "high": 104, "low": 99, "close": 103},
@@ -98,7 +111,6 @@ class ReasoningContractTests(unittest.TestCase):
                     "15m": {"price": 103, "sma20": 102.5, "structure": "range"},
                 },
                 "volume_profile": {"poc": 102, "value_area_position": "inside", "hvn_levels": [101, 102], "lvn_levels": [104]},
-                "liquidation_map": {"role": "auxiliary_only", "levels": [{"side": "above", "price": 105, "timeframe": "48h"}]},
             }),
         ]
         claims = [
@@ -206,6 +218,10 @@ class ReasoningContractTests(unittest.TestCase):
             },
             "volume_profile_liquidity": {
                 "claim_id": "claim.chart",
+                "liquidation_observation_id": "obs.coinglass",
+                "vrvp_primary": True,
+                "liquidation_auxiliary": True,
+                "liquidation_confirmation": "confirm",
             },
             "etf_flow_relation": {
                 "observation_id": "obs.farside", "claim_id": "claim.fundamental",
@@ -245,7 +261,7 @@ class ReasoningContractTests(unittest.TestCase):
             ("projection.appendix.pivot", "same_pivot_orderflow", ["claim.orderflow"], "盘口三问完成：主腿100到103、回调未重置锚、四维保持同一pivot。", [("obs.coinglass", "pivot.start_price"), ("obs.coinglass", "pivot.end_price")]),
             ("projection.appendix.footprint", "footprint_cross_check", ["claim.orderflow"], "足迹以POC 102、Delta 12、CVD 24和成交量1200校验盘口强弱。", [("obs.exocharts", "poc"), ("obs.exocharts", "delta"), ("obs.exocharts", "cvd"), ("obs.exocharts", "volume")]),
             ("projection.appendix.multi", "multi_timeframe_transition", ["claim.chart"], "多周期从日线103到四小时、一小时、十五分钟逐级校准，日线SMA20为98。", [("obs.tradingview", "timeframes.1d.price"), ("obs.tradingview", "timeframes.1d.sma20")]),
-            ("projection.appendix.liquidity", "volume_profile_liquidity", ["claim.chart"], "VRVP以POC 102主判，清算图105仅作为辅助印证而不单独翻向。", [("obs.tradingview", "volume_profile.poc"), ("obs.tradingview", "liquidation_map.levels.0.price")]),
+            ("projection.appendix.liquidity", "volume_profile_liquidity", ["claim.chart"], "VRVP以POC 102主判，Coinglass清算图105仅作为辅助印证而不单独翻向。", [("obs.tradingview", "volume_profile.poc"), ("obs.coinglass", "liquidation_map.levels.0.price")]),
             ("projection.appendix.etf", "etf_flow_relation", ["claim.fundamental"], "ETF最新总流量90.4与价格关系只作现货侧确认，不污染盘口评分。", [("obs.farside", "latest_total_usd_m")]),
             ("projection.appendix.accounts", "account_separation", ["claim.main", "claim.maker"], "主账户与Maker分别按各自优先级形成判断，冲突时不强制压成同一方向。", []),
             ("projection.appendix.scenarios", "scenario_tree", ["claim.maker", "claim.counter", "claim.invalidation"], "基准、最强反证和硬失效三条路径都绑定具体触发与动作。", []),
@@ -275,7 +291,7 @@ class ReasoningContractTests(unittest.TestCase):
                 if kind == "visual_judgment"
                 else None
             ),
-            "evidence_refs": [evidence],
+            "evidence_refs": evidence if isinstance(evidence, list) else [evidence],
         }
 
     @staticmethod
@@ -607,6 +623,50 @@ class ReasoningContractTests(unittest.TestCase):
             capture, payload = self.seed(root)
             payload["score"]["chart"]["score_semantics"] = "bullish_score"
             with self.assertRaisesRegex(ValueError, "opportunity_quality_not_direction"):
+                build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
+
+    def test_liquidation_map_must_be_coinglass_auxiliary_not_tradingview(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["methodology"]["volume_profile_liquidity"][
+                "liquidation_observation_id"
+            ] = "obs.tradingview"
+            with self.assertRaisesRegex(ValueError, "must reference coinglass"):
+                build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            liquidation = payload["observations"][1]["values"].pop("liquidation_map")
+            payload["observations"][5]["values"]["liquidation_map"] = liquidation
+            with self.assertRaisesRegex(ValueError, "missing required judgment value"):
+                build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
+
+    def test_liquidation_map_enforces_weekend_window_threshold_side_and_role(self):
+        mutations = (
+            (lambda value: value.update({"captured_timeframes": ["48h"]}), r"requires \['3d'\]"),
+            (lambda value: value.update({"threshold": 0.9}), "threshold must match"),
+            (
+                lambda value: value["levels"][0].update({"side": "below"}),
+                "side conflicts with current price",
+            ),
+        )
+        for mutate, message in mutations:
+            with self.subTest(message=message), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                capture, payload = self.seed(root)
+                mutate(payload["observations"][1]["values"]["liquidation_map"])
+                with self.assertRaisesRegex(ValueError, message):
+                    build_reasoning_contract(
+                        payload, capture_manifest_path=capture, root=root
+                    )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["methodology"]["volume_profile_liquidity"]["vrvp_primary"] = False
+            with self.assertRaisesRegex(ValueError, "VRVP must remain the primary"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
     def test_source_cannot_directly_support_claim_outside_its_method(self):

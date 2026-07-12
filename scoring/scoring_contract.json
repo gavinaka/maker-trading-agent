@@ -1,5 +1,5 @@
 {
-  "schema_version": "trading-scoring-contract-v2",
+  "schema_version": "trading-scoring-contract-v3",
   "maker_score": {
     "formula": "orderflow(0..70)+chart(0..30)",
     "threshold": 65,
@@ -124,6 +124,13 @@
     "fundamental_realization_states": ["realized", "partially_realized", "not_realized", "conflicted"],
     "timeframes": ["1d", "4h", "1h", "15m"],
     "liquidation_map_role": "auxiliary_only",
+    "liquidation_map_source": "coinglass",
+    "liquidation_map_threshold": 0.85,
+    "liquidation_confirmation_results": ["confirm", "weaken", "contradict", "neutral"],
+    "liquidation_capture_windows": {
+      "weekday": ["48h", "24h"],
+      "weekend": ["3d"]
+    },
     "source_roles": {
       "blockbeats": {
         "role": "fundamental_event_tier",
@@ -162,13 +169,13 @@
         "single_variable_direction_flip": false
       },
       "coinglass": {
-        "role": "same_pivot_orderflow_primary",
-        "judgment_standard": "先选主腿，再检查回调是否形成新锚点；只在同一1小时pivot内联合解释价格、CVD、OI和资金费率。",
-        "required_value_paths": ["pivot", "price_direction", "cvd_direction", "oi_direction", "funding_direction", "funding_sign", "combination_id", "effect_divergence", "price_break_status", "oi_price_context", "main_triad_direction", "main_triad_rationale", "funding_effect", "final_direction", "funding_single_variable_flip"],
-        "evaluation_sequence": ["select_dominant_leg", "check_anchor_reset", "derive_c01_c81_combination", "test_effect_divergence", "classify_oi_price_context", "derive_main_triad_direction", "apply_funding_as_modifier_only"],
-        "conflict_rule": "四维不一致时降低盘口结论强度并保留最强反证，禁止拆取单变量翻向。",
-        "missing_data_rule": "任一核心维度或pivot锚点缺失时盘口评分不可认证。",
-        "forbidden_inference": ["single_variable_direction_flip", "chart_score", "fundamental_context"],
+        "role": "same_pivot_orderflow_primary_and_liquidation_auxiliary",
+        "judgment_standard": "四面板先选主腿并检查回调是否形成新锚点，只在同一1小时pivot内联合解释价格、CVD、OI和资金费率；清算热力图是独立辅助通道，只用固定周期和0.85阈值印证TradingView VRVP猎杀概率。",
+        "required_value_paths": ["pivot", "price_direction", "cvd_direction", "oi_direction", "funding_direction", "funding_sign", "combination_id", "effect_divergence", "price_break_status", "oi_price_context", "main_triad_direction", "main_triad_rationale", "funding_effect", "final_direction", "funding_single_variable_flip", "liquidation_map"],
+        "evaluation_sequence": ["select_dominant_leg", "check_anchor_reset", "derive_c01_c81_combination", "test_effect_divergence", "classify_oi_price_context", "derive_main_triad_direction", "apply_funding_as_modifier_only", "read_liquidation_map_separately", "confirm_or_weaken_vrvp_liquidity_probability"],
+        "conflict_rule": "四维不一致时降低盘口结论强度并保留最强反证；清算图与VRVP冲突时只降低流动性猎杀置信度，禁止任一通道拆取单变量翻向。",
+        "missing_data_rule": "任一核心四维、pivot锚点或规定周期清算图缺失时推理合同不可认证；不得沿用旧图或把TradingView图冒充清算图。",
+        "forbidden_inference": ["single_variable_direction_flip", "liquidation_map_standalone_direction", "liquidation_map_orderflow_score", "liquidation_map_chart_points", "chart_score", "fundamental_context"],
         "direct_claim_types": ["orderflow_interpretation"],
         "score_bucket": "orderflow_70",
         "single_variable_direction_flip": false
@@ -187,12 +194,12 @@
       },
       "tradingview": {
         "role": "multi_timeframe_structure_and_opportunity_quality",
-        "judgment_standard": "按日线、4小时、1小时、15分钟逐级判断结构转场，再用SMA20、支撑阻力、量价、趋势工具和VRVP评价机会质量；清算地图只作辅助。",
-        "required_value_paths": ["timeframes", "volume_profile", "liquidation_map"],
-        "evaluation_sequence": ["read_1d_to_15m_transition", "evaluate_chart_components", "check_vrvp_and_aux_liquidation"],
+        "judgment_standard": "按日线、4小时、1小时、15分钟逐级判断结构转场，再用SMA20、支撑阻力、量价、趋势工具和VRVP评价方向中立的机会质量；VRVP是流动性猎杀概率主判。",
+        "required_value_paths": ["timeframes", "volume_profile"],
+        "evaluation_sequence": ["read_1d_to_15m_transition", "evaluate_chart_components", "use_vrvp_as_liquidity_primary"],
         "conflict_rule": "多周期冲突时保留周期分歧并降低机会质量，不强行合并成单一趋势。",
         "missing_data_rule": "四个周期、SMA20或结构字段不完整时盘面评分不可认证。",
-        "forbidden_inference": ["liquidation_map_standalone_flip", "orderflow_score", "fundamental_context"],
+        "forbidden_inference": ["attribute_coinglass_liquidation_map_to_tradingview", "orderflow_score", "fundamental_context"],
         "direct_claim_types": ["chart_interpretation"],
         "score_bucket": "chart_30",
         "single_variable_direction_flip": false

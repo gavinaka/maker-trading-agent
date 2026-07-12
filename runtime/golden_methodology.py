@@ -734,11 +734,43 @@ def normalize_methodology(
     profile = tv.get("volume_profile")
     if not isinstance(profile, dict):
         raise ValueError("TradingView values.volume_profile must be an object")
-    heatmap = tv.get("liquidation_map")
+    if policy.get("liquidation_map_source") != "coinglass":
+        raise ValueError("liquidation map source must be Coinglass")
+    liquidation_observation = _observation(
+        liquidity.get("liquidation_observation_id"),
+        "coinglass",
+        observations,
+        "methodology.volume_profile_liquidity.liquidation_observation_id",
+    )
+    heatmap = liquidation_observation["values"].get("liquidation_map")
     if not isinstance(heatmap, dict):
-        raise ValueError("TradingView values.liquidation_map must be an object")
+        raise ValueError("Coinglass values.liquidation_map must be an object")
     if heatmap.get("role") != policy["liquidation_map_role"]:
         raise ValueError("liquidation map must remain auxiliary_only")
+    threshold = _decimal(heatmap.get("threshold"), "Coinglass liquidation_map.threshold")
+    if threshold != _decimal(
+        policy["liquidation_map_threshold"], "liquidation map policy threshold"
+    ):
+        raise ValueError("Coinglass liquidation map threshold must match policy")
+    captured_timeframes = heatmap.get("captured_timeframes")
+    if not isinstance(captured_timeframes, list) or not captured_timeframes:
+        raise ValueError("Coinglass liquidation map requires captured_timeframes")
+    clean_timeframes = [str(item).lower() for item in captured_timeframes]
+    if len(clean_timeframes) != len(set(clean_timeframes)):
+        raise ValueError("Coinglass liquidation map timeframes must be unique")
+    observed_date = date.fromisoformat(str(liquidation_observation["observed_at"])[:10])
+    window_kind = "weekend" if observed_date.weekday() >= 5 else "weekday"
+    required_windows = [
+        str(item).lower()
+        for item in policy["liquidation_capture_windows"][window_kind]
+    ]
+    if clean_timeframes != required_windows:
+        raise ValueError(
+            f"Coinglass liquidation map requires {required_windows} on {window_kind}"
+        )
+    current_price = _decimal(
+        heatmap.get("current_price"), "Coinglass liquidation_map.current_price"
+    )
     levels = heatmap.get("levels")
     if not isinstance(levels, list) or not levels:
         raise ValueError("liquidation map requires at least one evidenced level")
@@ -746,13 +778,37 @@ def normalize_methodology(
     for index, item in enumerate(levels):
         if not isinstance(item, dict):
             raise ValueError(f"liquidation map levels[{index}] must be an object")
+        side = _enum(
+            item.get("side"), {"above", "below"},
+            f"liquidation level {index}.side",
+        )
+        price = _decimal(item.get("price"), f"liquidation level {index}.price")
+        timeframe = _enum(
+            str(item.get("timeframe", "")).lower(), set(clean_timeframes),
+            f"liquidation level {index}.timeframe",
+        )
+        if (side == "above" and price <= current_price) or (
+            side == "below" and price >= current_price
+        ):
+            raise ValueError(
+                f"liquidation level {index} side conflicts with current price"
+            )
         normalized_levels.append({
-            "side": _enum(item.get("side"), {"above", "below"}, f"liquidation level {index}.side"),
-            "price": _decimal(item.get("price"), f"liquidation level {index}.price"),
-            "timeframe": _text(item.get("timeframe"), f"liquidation level {index}.timeframe", 2),
+            "side": side,
+            "price": price,
+            "timeframe": timeframe,
+            "strength": _enum(
+                item.get("strength"), {"strong", "medium", "weak"},
+                f"liquidation level {index}.strength",
+            ),
         })
+    if liquidity.get("vrvp_primary") is not True:
+        raise ValueError("VRVP must remain the primary liquidity-hunt method")
+    if liquidity.get("liquidation_auxiliary") is not True:
+        raise ValueError("Coinglass liquidation map must remain auxiliary")
     normalized_liquidity = {
-        "observation_id": tradingview["id"],
+        "tradingview_observation_id": tradingview["id"],
+        "liquidation_observation_id": liquidation_observation["id"],
         "claim_id": _claim(
             liquidity.get("claim_id"), claims,
             "methodology.volume_profile_liquidity.claim_id", "chart_interpretation"
@@ -764,7 +820,18 @@ def normalize_methodology(
         ),
         "hvn_levels": _number_list(profile.get("hvn_levels"), "TradingView volume_profile.hvn_levels"),
         "lvn_levels": _number_list(profile.get("lvn_levels"), "TradingView volume_profile.lvn_levels"),
+        "vrvp_primary": True,
         "liquidation_map_role": policy["liquidation_map_role"],
+        "liquidation_map_source": "coinglass",
+        "liquidation_auxiliary": True,
+        "liquidation_threshold": threshold,
+        "liquidation_capture_windows": clean_timeframes,
+        "liquidation_current_price": current_price,
+        "liquidation_confirmation": _enum(
+            liquidity.get("liquidation_confirmation"),
+            set(policy["liquidation_confirmation_results"]),
+            "methodology.volume_profile_liquidity.liquidation_confirmation",
+        ),
         "liquidation_levels": normalized_levels,
     }
 

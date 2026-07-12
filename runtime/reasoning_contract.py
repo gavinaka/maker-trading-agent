@@ -133,7 +133,7 @@ def _inside(path: Path, root: Path, field: str) -> Path:
 def _load_scoring_contract(root: Path) -> tuple[dict[str, Any], Path]:
     path = root / "scoring" / "scoring_contract.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("schema_version") != "trading-scoring-contract-v2":
+    if payload.get("schema_version") != "trading-scoring-contract-v3":
         raise ValueError("unsupported scoring contract version")
     return payload, path
 

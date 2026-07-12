@@ -60,9 +60,9 @@
 - BlockBeats 的 Tier 结论必须与当前 TradingView 价格/结构形成显式 `fundamental_price_realization` 节点，状态只能是已兑现、部分兑现、未兑现或冲突；新闻方向本身不能直接成为交易方向。
 - FedWatch 必须绑定数据时点、下一次 FOMC 日期、当前概率分布及 1日/1周/1月边际，概率分布需自洽；Farside 必须绑定最新完整交易日，流入/流出标签需与带符号总值一致。
 
-- `scoring/scoring_contract.json`（`trading-scoring-contract-v2`）是机器可读单一规则源；`runtime/reasoning_contract.py` 生成 `trading-reasoning-contract-v2`。它必须复算 C01–C81、效果背离、OI/价格语义与资金费率不翻向，并将盘面30锁定为 TradingView-only、方向中立的机会质量分。
+- `scoring/scoring_contract.json`（`trading-scoring-contract-v3`）是机器可读单一规则源；`runtime/reasoning_contract.py` 生成 `trading-reasoning-contract-v2`。它必须复算 C01–C81、效果背离、OI/价格语义与资金费率不翻向，并将盘面30锁定为 TradingView-only、方向中立的机会质量分。TradingView VRVP 主判流动性猎杀概率；Coinglass 清算热力图只作独立辅助印证，不得计入盘口/盘面分或翻向。
 - 同锚三问、足迹交叉验证、四周期转换、成交量结构/猎杀、ETF 关系、账户分流、三情景树和“不能做”末位推导缺一即硬停。
-- 每个承重 claim 至少追溯到两个独立源；只写“已复核”“结构完整”等通用句不能满足证据覆盖。
+- 承重 claim 按类型执行机器合同规定的最少独立来源数：综合状态、主账户、Maker 和“不能做”至少两源；盘口必须 Coinglass+Exocharts；盘面分项只能 TradingView；反证与失效至少一项可复核来源。只写“已复核”“结构完整”等通用句不能满足证据覆盖。
 - `report_projection.items` 在正式 MD 前冻结；可见正文必须覆盖全部承重 claim 类型，③后附必须覆盖全部金标语义单元，且承重数值必须由 observation value path 绑定后原样进入文本。
 - `runtime/adversarial_review.py` 除五类检查外，还必须逐个承重 claim 绑定被挑战的 support/counter 节点和用于裁决的 resolution 节点；通用 pass 文案不能替代节点证据。
 - Notion 仍由 `combined.md` 唯一派生，但 draft/preflight 必须先验证金标可见语义没有在 Word/Notion 投影中丢失；“正文精炼”不得解释为删除推理链。
