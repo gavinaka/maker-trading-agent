@@ -14,6 +14,8 @@ from runtime.state_store import atomic_json_write
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EFFORT_ORDER = {"minimal": 0, "low": 1, "medium": 2, "high": 3, "max": 4}
+DEFAULT_MINIMUM_EFFORT = "high"
 
 
 def required(trading_date: str, slot: str) -> bool:
@@ -93,22 +95,28 @@ def build_manifest(
     slot: str,
     *,
     session_jsonl: Path,
-    required_effort: str = "max",
+    minimum_effort: str = DEFAULT_MINIMUM_EFFORT,
     root: Path = ROOT,
 ) -> dict[str, Any]:
     settings = extract_latest_settings(session_jsonl, expected_root=root)
-    if settings["reasoning_effort"] != required_effort:
+    actual_effort = str(settings["reasoning_effort"]).lower()
+    minimum_effort = str(minimum_effort).lower()
+    if actual_effort not in EFFORT_ORDER or minimum_effort not in EFFORT_ORDER:
+        raise ValueError("host reasoning effort is unknown")
+    if EFFORT_ORDER[actual_effort] < EFFORT_ORDER[minimum_effort]:
         raise ValueError(
-            "actual host reasoning effort is not the required maximum: "
-            f"actual={settings['reasoning_effort']} required={required_effort}"
+            "actual host reasoning effort is below the required minimum: "
+            f"actual={actual_effort} minimum={minimum_effort}"
         )
+    settings["reasoning_effort"] = actual_effort
     payload: dict[str, Any] = {
-        "schema_version": "codex-host-capability-v1",
+        "schema_version": "codex-host-capability-v2",
         "status": "verified",
         "trading_date": trading_date,
         "slot": slot,
         "observed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "required_effort": required_effort,
+        "minimum_effort": minimum_effort,
+        "effort_policy": "at_least_minimum",
         **settings,
     }
     payload["manifest_sha256"] = _manifest_hash(payload)
@@ -130,16 +138,17 @@ def validate_manifest(
     resolved.relative_to((root / "runtime_state" / trading_date).resolve())
     payload = json.loads(resolved.read_text(encoding="utf-8"))
     if (
-        payload.get("schema_version") != "codex-host-capability-v1"
+        payload.get("schema_version") != "codex-host-capability-v2"
         or payload.get("status") != "verified"
         or payload.get("trading_date") != trading_date
         or payload.get("slot") != slot
-        or payload.get("required_effort") != "max"
-        or payload.get("reasoning_effort") != "max"
+        or payload.get("minimum_effort") != DEFAULT_MINIMUM_EFFORT
+        or payload.get("effort_policy") != "at_least_minimum"
+        or payload.get("reasoning_effort") not in {"high", "max"}
         or not payload.get("model")
         or payload.get("manifest_sha256") != _manifest_hash(payload)
     ):
-        raise ValueError("host capability manifest is invalid or does not prove MAX")
+        raise ValueError("host capability manifest is invalid or below high effort")
     return payload
 
 
@@ -149,14 +158,18 @@ def main() -> int:
     parser.add_argument("--slot", required=True, choices=("morning", "midday", "evening"))
     parser.add_argument("--thread-id", default=os.environ.get("CODEX_THREAD_ID"))
     parser.add_argument("--session-jsonl", type=Path)
-    parser.add_argument("--required-effort", default="max", choices=("max",))
+    parser.add_argument(
+        "--minimum-effort",
+        default=DEFAULT_MINIMUM_EFFORT,
+        choices=("high", "max"),
+    )
     args = parser.parse_args()
     if not args.thread_id and args.session_jsonl is None:
         raise SystemExit("CODEX_THREAD_ID or --session-jsonl is required")
     source = args.session_jsonl or locate_session(args.thread_id)
     payload = build_manifest(
         args.date, args.slot, session_jsonl=source,
-        required_effort=args.required_effort, root=ROOT
+        minimum_effort=args.minimum_effort, root=ROOT
     )
     target = manifest_path(args.date, args.slot)
     atomic_json_write(target, payload)

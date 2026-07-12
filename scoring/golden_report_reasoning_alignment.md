@@ -16,7 +16,7 @@
 执行顺序固定为：
 
 1. 完成当次 slot 的六源采集与有效性确认。
-2. 先由 `runtime/host_capability.py` 从当前 session JSONL 绑定真实 model/effort；实际 effort 不是 `max` 即硬停。Prompt 中写 MAX 或人工布尔确认不得冒充宿主证据。
+2. 先由 `runtime/host_capability.py` 从当前 session JSONL 绑定真实 model/effort；自动化使用 `gpt-5.6-sol + high`，实际 effort 低于 `high` 即硬停，`max` 仅作兼容。Prompt 或人工布尔确认不得冒充宿主证据。
 3. 在动笔前按本契约组织推理。
 4. 在正式 MD 前写入内部 `runtime_state/<date>/reasoning_work_<slot>.md`，并通过 `session_runner.py certify-reasoning` 形成 `reasoning_readiness_<slot>.json`。
 5. `certify-reasoning` 后先建立 `reasoning_lock_<slot>.json`，锁定独立分析，再开放前序计划/实仓只读上下文并生成 `continuity_contract_<slot>.json`。

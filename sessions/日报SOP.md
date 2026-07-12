@@ -17,7 +17,7 @@
 > - **午报 15:30–16:00（欧美交接）** ＝ **新增节点·走与早报完全相同的全骨架**（六源+70/30评分+主账户plan+Maker plan，受开单双门槛），Notion 子页 `🌇`，结构门复用早间 28 块金标。**门禁沿用当日早间结论·不重读**（门禁是每日一次的硬前置）。
 > - **晚报 20:00–20:30（美盘开盘前）** ＝ 原晚间链 B（Maker 新增/更新计划 + 反思四件套），Notion 子页只新增 `🌙`。准确性评估由 `Technical expert` 在晚报交付后一小时异步执行。
 > - 🟥 **三个报告节点的内部逻辑/评分/模板/六源/门槛全部一致·零改动**——午报只是「把早报全骨架在欧美交接时段再跑一次」。
-> - 🟥🟥 **三报告各自 MAX 深度独立思考·禁复制前序判断（宪法级）**：早/午/晚每节点都从当时重新采集的完整有效六源重新验真、读图、转录、分析、评分、胜率、风险并形成决策。共享层仅复用模板、字段、块序、来源指纹规则与确定性事实元数据，禁止复用前序报告证据快照、派生特征、评分、胜率、风险或判断。采集后的所有推理节点使用最高可用模型能力与 MAX 思考预算；资源不足硬停，禁止降档、截断、只重算变化节点。分析锁定前禁止读取前序方向、分数、胜率和 Maker 结论，锁定后仅用于撤旧挂新及漂移对照。
+> - 🟥🟥 **三报告各自高深度独立思考·禁复制前序判断（宪法级）**：早/午/晚每节点都从当时重新采集的完整有效六源重新验真、读图、转录、分析、评分、胜率、风险并形成决策。共享层仅复用模板、字段、块序、来源指纹规则与确定性事实元数据，禁止复用前序报告证据快照、派生特征、评分、胜率、风险或判断。三个自动化固定使用 `gpt-5.6-sol + high`；`max` 可兼容但无强制必要。资源低于 high 时硬停，禁止降档、截断、只重算变化节点。分析锁定前禁止读取前序方向、分数、胜率和 Maker 结论，锁定后仅用于撤旧挂新及漂移对照。下文历史参数名或“MAX”字样只表示完整工作流深度，不表示 UI effort 必须为 `max`。
 > - 「11:00／15:30／20:00 评分点」是冻结模板节点标签，不是实际采集/发布时间；quote 必须写真实采集时段。发布可执行计划前动态检查源文件年龄：Coinglass／Exocharts／TradingView 四档任一超过 4 小时即硬停并重采、重评分、重出稿；禁止把过期报告晚推后继续当实时计划。
 
 > 系统前置（用户不列、我必跑）：先取得整链租约 + 采集六源 + **唯一开仓前状态门禁硬前置**。**分析锁定前禁止读取两库交易Check 实际持仓；持仓只允许锁后操作校准，且不得改变独立报告判断。** 独立报告边界见 `memory/independent-report-no-user-reference.md`。
@@ -33,7 +33,7 @@
    - → 早报工作完毕。
 
 ### 每日午报（15:30–16:00 欧美交接 · 新增节点 · 与早报同骨架）
-> 🟢 **走与早报完全一致的链 A 全骨架·逐步同上**（六源有效性确认和增量采集→完整六源 MAX 独立分析→主账户plan→70/30全量重算→Maker plan 受双门槛→「不能做」最后回填→有开仓补 Check），只两点差异：① **门禁不重读**，沿用当日早间门禁结论（关闭则午报同样只记观望）；② **Notion 子页用 `🌇 2026.M.D 午间`**，结构门 `py outputs/notion_verify_against_yesterday.py <午报page_id> midday`（midday 复用早间 28 块金标）。其余评分/模板/字段/三门收尾与早报零差异。
+> 🟢 **走与早报完全一致的链 A 全骨架·逐步同上**（六源有效性确认和增量采集→完整六源 high 深度独立分析→主账户plan→70/30全量重算→Maker plan 受双门槛→「不能做」最后回填→有开仓补 Check），只两点差异：① **门禁不重读**，沿用当日早间门禁结论（关闭则午报同样只记观望）；② **Notion 子页用 `🌇 2026.M.D 午间`**，结构门 `py outputs/notion_verify_against_yesterday.py <午报page_id> midday`（midday 复用早间 28 块金标）。其余评分/模板/字段/三门收尾与早报零差异。
 > 🟥 **「走与早报相同骨架」＝只复用模板/字段/块序，不复用前序证据或判断**：午间在采集层做保守 delta，但六源仍必须全部重新采集、重新锁定、重新通过有效性门；分析层必须读取当时完整有效六源，完整独立重做验真、读图、转录、评分、胜率、风险、情景与方向；**禁照搬早报的基本面/盘口/盘面/趋势/Maker 结论**（欧美盘已走出新行情，判断据当时证据重出、可与早报不同）。这是一次全新探索，不是把早报稿改改时间戳。
 
 ### 每日晚报（20:00–20:30 美盘开盘前 · 链 B）
@@ -70,7 +70,7 @@
 2. 早报建立来源基线；午/晚在采集层做 delta，但 delta 的含义是全六源重新采集后比较变化指纹、必要时一次 full fallback，不是跳过某个源或复用前序截图/JSON。`current.json` 仅保存来源清单、指纹和运行事实元数据。
 3. 数据源 SHA-256 与依赖图只解释“哪里发生变化”，绝不授权复用分析。三节点每次固定重算完整分析图。
 4. 分析结论与决策分别归档为 `analysis_<slot>.json`／`decision_<slot>.json`，均为 post-lock only，禁止进入下一节点分析前上下文。
-5. 采集完成后、进入源验真前必须从当前 Codex session JSONL 生成并验证 `runtime/host_capability.py` manifest，机械证明本次真实 model 与 Effort 精确为 `max`；再以 `session_runner.py prepare ... --capture-manifest <精确路径> --host-capability-manifest <精确路径> --lease-token <token>` 绑定宿主能力。禁止用 prompt 布尔值或报告正文自称 MAX；缺 manifest、effort 不是 `max`、model 不一致任一情况均硬停。从源验真至审查结束全部使用 MAX 思考预算。
+5. 采集完成后、进入源验真前必须从当前 Codex session JSONL 生成并验证 `runtime/host_capability.py` manifest，机械证明本次真实 model 为 `gpt-5.6-sol`、Effort 至少为 `high`；再以 `session_runner.py prepare ... --capture-manifest <精确路径> --host-capability-manifest <精确路径> --lease-token <token>` 绑定宿主能力。禁止用 prompt 布尔值或报告正文自称高深度；缺 manifest、effort 低于 `high`、model 不一致任一情况均硬停。从源验真至审查结束保持完整工作流推理深度。
    `prepare` 会同步启用 `runtime/prelock_guard.py`：在分析锁建立前，`sessions/context_log.md`、前序 `analysis_*.json`／`decision_*.json`、前序 combined/payload/render 输出会被临时移入 `runtime_state/<date>/.prelock_quarantine/<slot>/`，并记录 `runtime_state/<date>/prelock_guard_<slot>.json`；该 manifest 同时写入 `runtime/prelock_read_policy.py` 生成的安全读取策略。任何人工或自动化不得绕过、手动恢复或读取隔离区内容。分析锁前搜索必须使用 `py runtime/prelock_safe_search.py --date <date> --slot <slot> <pattern>`；维护审计的 `--no-ignore` 只能在非日报正式分析上下文中执行。`lock-analysis` 成功后自动恢复给锁后 prior-plan continuity 使用；`abandon-session`／`recover-session` 必须恢复后退出。
 6. 🟥 **pre-MD 推理就绪门（2026-07-06 午报起）**：正式 `outputs/<date>_<slot>_combined.md` 生成前，必须先完成内部推理工作稿 `runtime_state/<date>/reasoning_work_<slot>.md`，覆盖六源准确性、pivot/CVD/SMA20/VRVP 承重点、盘口/盘面/总分合成链、胜率 rubric 链、方向反证/失效路径、风险验算。随后运行 `session_runner.py certify-reasoning --date <date> --slot <slot> --work-file runtime_state/<date>/reasoning_work_<slot>.md --capture-manifest <精确路径> --lease-token <token> --confirm-six-source-accuracy --confirm-critical-data-calibrated --confirm-score-winrate-risk-refutation --confirm-no-formal-md-written --confirm-no-posthoc-reasoning --confirm-max-reasoning`。缺 readiness 或 readiness 晚于 MD，`lock-analysis`、Word render、Notion publish 全部硬停。
    2026-07-10 晚报起，还必须先用 `runtime/decision_contract.py` 生成 `runtime_state/<date>/decision_contract_<slot>.json`，并在 `certify-reasoning` 追加 `--decision-contract <路径>`；盘口 70 + 盘面 30、胜率锚点加调整、Maker 入场/止损/TP1 风险收益必须机械一致。

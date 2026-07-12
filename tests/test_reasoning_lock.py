@@ -29,7 +29,7 @@ class ReasoningLockTests(unittest.TestCase):
             root = Path(td)
             records, readiness_path = self.seed(root)
             readiness = dict(records)
-            host = {"model": "gpt-test", "reasoning_effort": "max"}
+            host = {"model": "gpt-test", "reasoning_effort": "high"}
             with patch.object(
                 reasoning_lock,
                 "validate_reasoning_readiness_manifest",
@@ -54,7 +54,7 @@ class ReasoningLockTests(unittest.TestCase):
                         target, self.DATE, self.SLOT, root=root
                     )
 
-    def test_non_max_host_cannot_create_independent_lock(self):
+    def test_below_high_host_cannot_create_independent_lock(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             records, readiness_path = self.seed(root)
@@ -65,9 +65,9 @@ class ReasoningLockTests(unittest.TestCase):
             ), patch.object(
                 reasoning_lock,
                 "validate_host_capability_manifest",
-                return_value={"model": "gpt-test", "reasoning_effort": "high"},
+                return_value={"model": "gpt-test", "reasoning_effort": "medium"},
             ):
-                with self.assertRaisesRegex(ValueError, "exact max"):
+                with self.assertRaisesRegex(ValueError, "at least high"):
                     reasoning_lock.write_reasoning_lock(
                         self.DATE, self.SLOT, root=root
                     )

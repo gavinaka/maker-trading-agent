@@ -575,7 +575,10 @@ def main() -> int:
     prepare.add_argument(
         "--max-reasoning-confirmed",
         action="store_true",
-        help="legacy compatibility flag; actual MAX authority comes from host capability",
+        help=(
+            "legacy compatibility flag for full workflow depth; actual host effort "
+            "must be verified at high or above"
+        ),
     )
     prepare.add_argument("--host-capability-manifest", type=Path)
     prepare.add_argument(
@@ -862,7 +865,9 @@ def main() -> int:
         host_capability = None
         if host_capability_required(args.date, args.slot):
             if args.host_capability_manifest is None:
-                raise ValueError("prepare requires a host capability manifest proving actual MAX")
+                raise ValueError(
+                    "prepare requires a host capability manifest proving at least high effort"
+                )
             host_capability_path = args.host_capability_manifest.resolve()
             host_capability = validate_host_capability_manifest(
                 host_capability_path, args.date, args.slot, root=ROOT

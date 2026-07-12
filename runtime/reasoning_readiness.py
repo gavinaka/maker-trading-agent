@@ -297,14 +297,14 @@ def build_reasoning_readiness_manifest(
         "policy": POLICY,
         "purpose": (
             "block formal combined.md/Word/Notion output until source-accurate "
-            "MAX reasoning depth is completed"
+            "full reasoning depth is completed at verified high-or-above host effort"
         ),
         "phase_order": [
             "six_source_capture_complete",
-            "exact_max_host_capability_verified",
+            "minimum_high_host_capability_verified",
             "source_accuracy_verified",
             "source_specific_judgment_methods_validated",
-            "max_reasoning_depth_calibrated",
+            "full_reasoning_depth_calibrated",
             "structured_reasoning_contract_validated",
             "isolated_adversarial_review_passed",
             "decision_math_contract_validated",
@@ -354,7 +354,7 @@ def validate_reasoning_readiness_manifest(
     target = _manifest_path(trading_date, slot, root)
     if not target.is_file():
         raise ValueError(
-            "missing pre-MD reasoning readiness manifest; complete MAX reasoning "
+            "missing pre-MD reasoning readiness manifest; complete full reasoning "
             "depth before writing combined.md"
         )
     payload = json.loads(target.read_text(encoding="utf-8"))
@@ -478,7 +478,7 @@ def validate_locked_report_for_output(
         raise ValueError("formal report output blocked: report path mismatch")
     if lock.get("max_through_analysis_confirmed") is not True:
         raise ValueError(
-            "formal report output blocked: analysis lock lacks MAX analysis confirmation"
+            "formal report output blocked: analysis lock lacks full-depth confirmation"
         )
     if lock.get("report_sha256") != _sha256_file(report):
         raise ValueError("formal report output blocked: report changed after analysis lock")

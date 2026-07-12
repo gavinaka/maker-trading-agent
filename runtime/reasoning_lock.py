@@ -79,10 +79,10 @@ def write_reasoning_lock(
     host = validate_host_capability_manifest(
         host_path, trading_date, slot, root=root
     )
-    if host.get("reasoning_effort") != "max":
-        raise ValueError("independent reasoning lock requires exact max effort")
+    if host.get("reasoning_effort") not in {"high", "max"}:
+        raise ValueError("independent reasoning lock requires at least high effort")
     payload: dict[str, Any] = {
-        "schema_version": "independent-reasoning-lock-v1",
+        "schema_version": "independent-reasoning-lock-v2",
         "status": "locked",
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "trading_date": trading_date,
@@ -90,6 +90,7 @@ def write_reasoning_lock(
         "independence_boundary": INDEPENDENCE_BOUNDARY,
         "actual_model": host["model"],
         "actual_reasoning_effort": host["reasoning_effort"],
+        "minimum_reasoning_effort": "high",
         "reasoning_readiness": _file_record(readiness_path, root),
         "inputs": records,
     }
@@ -109,12 +110,13 @@ def validate_reasoning_lock(
     resolved.relative_to((root / "runtime_state" / trading_date).resolve())
     payload = json.loads(resolved.read_text(encoding="utf-8"))
     if (
-        payload.get("schema_version") != "independent-reasoning-lock-v1"
+        payload.get("schema_version") != "independent-reasoning-lock-v2"
         or payload.get("status") != "locked"
         or payload.get("trading_date") != trading_date
         or payload.get("slot") != slot
         or payload.get("independence_boundary") != INDEPENDENCE_BOUNDARY
-        or payload.get("actual_reasoning_effort") != "max"
+        or payload.get("minimum_reasoning_effort") != "high"
+        or payload.get("actual_reasoning_effort") not in {"high", "max"}
         or payload.get("manifest_sha256") != _manifest_hash(payload)
     ):
         raise ValueError("independent reasoning lock is invalid")
