@@ -13,9 +13,9 @@
 |---|---|---|---|---|
 | 0 | **session_orchestrator** | 总调度，按时段/链触发其他 agent | session_state + 当前时刻 | 编排链 A/B/C/D 执行 |
 | 1 | **emotional_agent** | 当天开仓前状态门禁（5 项）只读校验 + 晚间 review 独立记录 | Notion 当天门禁行 | risk_state.state_gate.* 只读镜像 + emotional_log |
-| 2 | **data_collection_agent** | 5 数据源采集，A→B→C 通道降级 | session_state + collectors SOP | inbox/_manifest.json + 截图/JSON |
+| 2 | **data_collection_agent** | 六源采集，A→B→C 通道降级 | session_state + collectors SOP | inbox/_manifest.json + 截图/JSON |
 | 3 | **news_agent** | BlockBeats 12 小时候选池 + top3 校验 + sentiment | inbox/blockbeats.png + blockbeats.json | outputs/news_summary.json |
-| 4 | **footprint_agent** | 盘口 16 组合表 + 4 维状态判定 | inbox/exocharts_*.json + coinglass_*.json | outputs/footprint_<HHMM>.json |
+| 4 | **footprint_agent** | 盘口 C01–C81 客观组合 + 4维综合方法论 | inbox/exocharts_*.json + coinglass_*.json | outputs/footprint_<HHMM>.json |
 | 5 | **scoring_agent** | 盘口 70 + 盘面 30 = 总评分 | footprint 输出 + chart 数据 | state/score_state.json |
 | 6 | **risk_agent** | 7 Gate 守门（含 5 项门禁 + 7 项检核） | request + state/* | outputs/risk_decisions/*.json |
 | 7 | **output_agent** | 日报/计划渲染（图谱十/十一节模板） | state + manifest + footprint + news | outputs/*.md + 桌面 .txt |
@@ -71,7 +71,7 @@
                               ↓
   BlockBeats 截图校验 → news_summary.json
                               ↓
-  16 组合表判定 → footprint_<HHMM>.json
+  C01–C81 客观组合 + 综合方法论 → footprint_<HHMM>.json
                               ↓
   盘口 70 + 盘面 30 → score_state.json (current_score)
                               ↓
@@ -167,7 +167,7 @@ session_orchestrator.trigger(
 | emotional_agent | 禁止 AI 自动判定门禁；禁止用心智／心力 review 生成或覆盖门禁 |
 | data_collection_agent | 禁止伪造数据；禁止 BlockBeats 走通道 B |
 | news_agent | 禁止文字替代截图；禁止 AI 总结 |
-| footprint_agent | 禁止跳过 C01/C02 极端组合判定 |
+| footprint_agent | 禁止跳过 C01–C81 推导、效果背离、OI/价格语义与极端候选认证 |
 | scoring_agent | 禁止使用过期数据；禁止主观加分 |
 | risk_agent | 禁止酌情通过 Gate；禁止 user override |
 | output_agent | 禁止省略模板字段；禁止 AI 生成基本面/总结 |

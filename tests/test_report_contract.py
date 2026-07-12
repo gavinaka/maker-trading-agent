@@ -9,6 +9,9 @@ from unittest import mock
 from runtime import report_contract
 from runtime import pretrade_gate
 from runtime.report_state_extract import extract_report_state
+from runtime.decision_contract import build_contract
+from runtime.reasoning_contract import build_reasoning_contract
+from tests.test_reasoning_contract import ReasoningContractTests
 
 
 DECISION = {
@@ -130,6 +133,60 @@ class ReportContractTests(unittest.TestCase):
                     decision_contract_path=decision,
                     root=root,
                 )
+
+    def test_v3_report_uses_honest_conviction_and_all_fill_scenarios(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture, reasoning_input = ReasoningContractTests().seed(root)
+            reasoning_payload = build_reasoning_contract(
+                reasoning_input, capture_manifest_path=capture, root=root
+            )
+            state = root / "runtime_state" / "2026-07-12"
+            reasoning = state / "reasoning_contract_midday.json"
+            reasoning.write_text(
+                json.dumps(reasoning_payload, ensure_ascii=False), encoding="utf-8"
+            )
+            decision_payload = build_contract(
+                {
+                    "trading_date": "2026-07-12",
+                    "slot": "midday",
+                    "plan": {
+                        "direction": "long",
+                        "entry_mode": "ladder",
+                        "exchange": "OKX",
+                        "instrument": "BTCUSDT",
+                        "leverage": 5,
+                        "position_notional_usdt": 750,
+                        "entry_levels": [
+                            {"id": "level.a", "price": 100, "allocation_pct": 50},
+                            {"id": "level.b", "price": 100.1, "allocation_pct": 50},
+                        ],
+                        "stop": 99.5,
+                        "tp1": 102,
+                        "tp2": 103,
+                        "tp1_close_pct": 50,
+                        "tp2_close_pct": 50,
+                        "cancel_before_fill": "结构失效则撤销全部未成交挂单",
+                    },
+                },
+                reasoning_contract_path=reasoning,
+                root=root,
+            )
+            decision = state / "decision_contract_midday.json"
+            decision.write_text(
+                json.dumps(decision_payload, ensure_ascii=False), encoding="utf-8"
+            )
+            self.write_gate_binding(root, "2026-07-12", "midday")
+            payload = report_contract.build_report_contract(
+                "2026-07-12",
+                "midday",
+                decision_contract_path=decision,
+                root=root,
+            )
+            self.assertIn("计划时置信度，非回测命中率", payload["lines"]["score"])
+            self.assertIn("3种非空成交情景", payload["lines"]["risk"])
+            self.assertIn("全部情景均达到1:2.5且不高于3%", payload["lines"]["risk"])
+            self.assertNotIn("代表入场", payload["lines"]["risk"])
 
 
 if __name__ == "__main__":

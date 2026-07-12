@@ -1,0 +1,218 @@
+{
+  "schema_version": "trading-scoring-contract-v2",
+  "maker_score": {
+    "formula": "orderflow(0..70)+chart(0..30)",
+    "threshold": 65,
+    "fundamentals_in_score": false,
+    "orderflow": {
+      "method": "holistic_four_dimension_same_pivot",
+      "minimum_score": 0,
+      "maximum_score": 70,
+      "integer_only": true,
+      "manual_notion_reference_options": [10, 20, 30, 40, 50, 55, 60, 70],
+      "non_extreme_max": 60,
+      "extreme_score": 70,
+      "extreme_candidate_combinations": ["C19", "C22", "C56", "C59"],
+      "required_dimensions": [
+        "orderflow.pivot",
+        "orderflow.price_cvd",
+        "orderflow.oi",
+        "orderflow.funding",
+        "orderflow.footprint_confirmation"
+      ]
+    },
+    "chart": {
+      "method": "five_component_opportunity_quality",
+      "score_semantics": "opportunity_quality_not_direction",
+      "directional_use": false,
+      "integer_only": true,
+      "components": {
+        "chart.support_resistance": 10,
+        "chart.liquidity_hunt": 10,
+        "chart.sma20_interaction": 5,
+        "chart.volume_price": 3,
+        "chart.fibonacci_trendline": 2
+      }
+    }
+  },
+  "conviction": {
+    "metric_kind": "plan_time_conviction",
+    "threshold": 60,
+    "calibrated_probability": false,
+    "report_label": "胜率自估（计划时置信度，非回测命中率）",
+    "calibration_gate": {
+      "default_status": "insufficient_outcome_samples",
+      "required_evidence": [
+        "independent_trade_outcomes",
+        "consistent_predeclared_labels",
+        "reliability_and_brier_analysis",
+        "out_of_sample_review"
+      ]
+    }
+  },
+  "gold_methodology": {
+    "reference_policy": {
+      "ai_agent_word_range": "2026-06-22..2026-06-26",
+      "ai_agent_use": "method_reasoning_depth_only",
+      "manual_notion_use": "user_intent_field_semantics_only",
+      "historical_market_facts_forbidden": true
+    },
+    "required_semantic_units": [
+      "independent_synthesis",
+      "fundamental_price_realization",
+      "same_pivot_orderflow",
+      "footprint_cross_check",
+      "multi_timeframe_transition",
+      "volume_profile_liquidity",
+      "etf_flow_relation",
+      "account_separation",
+      "scenario_tree",
+      "cannot_do_derivation"
+    ],
+    "visible_semantic_units": [
+      "independent_synthesis",
+      "fundamental_price_realization",
+      "same_pivot_orderflow",
+      "multi_timeframe_transition",
+      "account_separation",
+      "scenario_tree",
+      "cannot_do_derivation"
+    ],
+    "visible_claim_types": [
+      "market_regime",
+      "orderflow_interpretation",
+      "chart_interpretation",
+      "main_account_thesis",
+      "maker_thesis",
+      "strongest_counterevidence",
+      "invalidation_path",
+      "cannot_do"
+    ],
+    "main_account_priority": ["fundamentals", "chart", "orderflow"],
+    "maker_priority": ["orderflow", "chart", "fundamentals"],
+    "directions": ["up", "down", "flat"],
+    "dominant_legs": ["up", "down", "range"],
+    "trendline_statuses": ["intact", "broken", "ambiguous"],
+    "funding_signs": ["positive", "negative", "near_zero"],
+    "combination_dimension_order": ["cvd", "price", "oi", "funding_sign"],
+    "combination_direction_order": ["up", "flat", "down"],
+    "combination_funding_order": ["positive", "negative", "near_zero"],
+    "effect_cvd_breaks": ["higher_high", "lower_low", "none", "ambiguous"],
+    "effect_price_confirmations": ["confirmed", "not_confirmed", "ambiguous"],
+    "effect_interpretations": ["bearish", "bullish", "none", "ambiguous"],
+    "price_break_statuses": [
+      "new_high_or_breakout",
+      "stalled_no_new_high",
+      "new_low_or_breakdown",
+      "not_applicable",
+      "ambiguous"
+    ],
+    "oi_price_contexts": [
+      "new_long_expansion",
+      "new_short_expansion",
+      "short_cover_squeeze",
+      "profit_taking_plus_spot_supply",
+      "long_liquidation",
+      "position_reduction",
+      "mixed",
+      "unclear"
+    ],
+    "triad_directions": ["bullish", "bearish", "neutral", "mixed"],
+    "funding_effects": ["strengthen", "weaken", "neutral"],
+    "cross_check_results": ["confirm", "weaken", "contradict"],
+    "price_relations": ["confirm", "weaken", "neutral"],
+    "fundamental_realization_states": ["realized", "partially_realized", "not_realized", "conflicted"],
+    "timeframes": ["1d", "4h", "1h", "15m"],
+    "liquidation_map_role": "auxiliary_only",
+    "source_roles": {
+      "blockbeats": {
+        "role": "fundamental_event_tier",
+        "judgment_standard": "先按事件是否改变流动性、监管或风险偏好分层，再由价格与盘面验证是否已实现；新闻本身不等于方向。",
+        "required_value_paths": ["tier", "event_window_hours", "selected_event_count"],
+        "evaluation_sequence": ["classify_event_tier", "bind_event_window", "cross_check_price_realization"],
+        "conflict_rule": "事件方向与价格实现冲突时保留冲突，不把新闻方向覆盖到盘面。",
+        "missing_data_rule": "无法确认事件层级或时间窗时只记录不可用，不生成方向性结论。",
+        "forbidden_inference": ["direct_price_direction", "orderflow_score", "chart_score"],
+        "direct_claim_types": ["fundamental_context"],
+        "score_bucket": "none",
+        "single_variable_direction_flip": false
+      },
+      "fedwatch": {
+        "role": "macro_probability_delta_and_event_window",
+        "judgment_standard": "比较当前概率与1日、1周、1月变化，区分存量水平和边际变化；概率变化只描述宏观预期，不直接生成交易方向。",
+        "required_value_paths": ["data_as_of", "next_fomc_date", "current_probabilities", "change_1d", "change_1w", "change_1m"],
+        "evaluation_sequence": ["read_current_distribution", "compare_multi_window_delta", "locate_event_window"],
+        "conflict_rule": "不同窗口变化冲突时标记宏观预期不一致，不选择最符合叙事的窗口。",
+        "missing_data_rule": "任一必需窗口缺失时宏观边际判断降级为不可用。",
+        "forbidden_inference": ["direct_price_direction", "orderflow_score", "chart_score"],
+        "direct_claim_types": ["fundamental_context"],
+        "score_bucket": "none",
+        "single_variable_direction_flip": false
+      },
+      "farside_btc_etf": {
+        "role": "spot_flow_confirmation_or_weakening",
+        "judgment_standard": "读取最近完整交易日总净流量并与价格表现对照，只判断现货资金面对当前方向的确认、削弱或中性关系。",
+        "required_value_paths": ["latest_complete_date", "latest_total_usd_m", "flow_direction"],
+        "evaluation_sequence": ["select_latest_complete_day", "derive_flow_direction", "compare_with_price"],
+        "conflict_rule": "资金流与价格背离时记录背离，不用单日ETF流量覆盖盘面和盘口。",
+        "missing_data_rule": "最新交易日未完整或总计不可确认时不得沿用前值冒充当期。",
+        "forbidden_inference": ["standalone_trade_direction", "orderflow_score", "chart_score"],
+        "direct_claim_types": ["fundamental_context"],
+        "score_bucket": "none",
+        "single_variable_direction_flip": false
+      },
+      "coinglass": {
+        "role": "same_pivot_orderflow_primary",
+        "judgment_standard": "先选主腿，再检查回调是否形成新锚点；只在同一1小时pivot内联合解释价格、CVD、OI和资金费率。",
+        "required_value_paths": ["pivot", "price_direction", "cvd_direction", "oi_direction", "funding_direction", "funding_sign", "combination_id", "effect_divergence", "price_break_status", "oi_price_context", "main_triad_direction", "main_triad_rationale", "funding_effect", "final_direction", "funding_single_variable_flip"],
+        "evaluation_sequence": ["select_dominant_leg", "check_anchor_reset", "derive_c01_c81_combination", "test_effect_divergence", "classify_oi_price_context", "derive_main_triad_direction", "apply_funding_as_modifier_only"],
+        "conflict_rule": "四维不一致时降低盘口结论强度并保留最强反证，禁止拆取单变量翻向。",
+        "missing_data_rule": "任一核心维度或pivot锚点缺失时盘口评分不可认证。",
+        "forbidden_inference": ["single_variable_direction_flip", "chart_score", "fundamental_context"],
+        "direct_claim_types": ["orderflow_interpretation"],
+        "score_bucket": "orderflow_70",
+        "single_variable_direction_flip": false
+      },
+      "exocharts": {
+        "role": "footprint_confirmation_strength_and_conflict",
+        "judgment_standard": "用同一时段OHLC、POC、Delta、CVD和成交量复核Coinglass主判断，只能确认、削弱或反驳，不能单独重建方向。",
+        "required_value_paths": ["ohlc", "poc", "delta", "cvd", "volume"],
+        "evaluation_sequence": ["align_time_window", "read_footprint_values", "classify_confirm_weaken_contradict"],
+        "conflict_rule": "与Coinglass冲突时显式进入反证路径，不把足迹图静默解释成确认。",
+        "missing_data_rule": "时间窗或任一足迹核心值缺失时不得宣称完成足迹确认。",
+        "forbidden_inference": ["standalone_direction", "chart_score", "fundamental_context"],
+        "direct_claim_types": ["orderflow_interpretation"],
+        "score_bucket": "orderflow_70_confirmation",
+        "single_variable_direction_flip": false
+      },
+      "tradingview": {
+        "role": "multi_timeframe_structure_and_opportunity_quality",
+        "judgment_standard": "按日线、4小时、1小时、15分钟逐级判断结构转场，再用SMA20、支撑阻力、量价、趋势工具和VRVP评价机会质量；清算地图只作辅助。",
+        "required_value_paths": ["timeframes", "volume_profile", "liquidation_map"],
+        "evaluation_sequence": ["read_1d_to_15m_transition", "evaluate_chart_components", "check_vrvp_and_aux_liquidation"],
+        "conflict_rule": "多周期冲突时保留周期分歧并降低机会质量，不强行合并成单一趋势。",
+        "missing_data_rule": "四个周期、SMA20或结构字段不完整时盘面评分不可认证。",
+        "forbidden_inference": ["liquidation_map_standalone_flip", "orderflow_score", "fundamental_context"],
+        "direct_claim_types": ["chart_interpretation"],
+        "score_bucket": "chart_30",
+        "single_variable_direction_flip": false
+      }
+    },
+    "required_direct_source_groups": {
+      "fundamental_context": ["blockbeats", "fedwatch", "farside_btc_etf"],
+      "orderflow_interpretation": ["coinglass", "exocharts"],
+      "chart_interpretation": ["tradingview"]
+    },
+    "minimum_independent_sources_by_claim_type": {
+      "market_regime": 2,
+      "orderflow_interpretation": 2,
+      "chart_interpretation": 1,
+      "main_account_thesis": 2,
+      "maker_thesis": 2,
+      "strongest_counterevidence": 1,
+      "invalidation_path": 1,
+      "cannot_do": 2
+    },
+    "minimum_scenario_count": 3
+  }
+}

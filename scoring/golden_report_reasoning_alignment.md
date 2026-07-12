@@ -1,23 +1,27 @@
-# 2026-06-26 前本地 Word 金标推理契约
+# 2026-06-22 至 2026-06-26 AI Agent 底稿与手工 Notion 双参考推理契约
 
 > 状态：已学习的压缩契约，不是每次报告的历史样本输入。
-> 旧 Word 报告只用于沉淀本契约；后续早/午/晚报禁止重新读取、重新识别或逐篇比对旧样本来消耗 token。
-> 一次性学习样本：`outputs/2026-06-22_evening_render.docx`、`outputs/2026-06-23_morning_render.docx`、`outputs/2026-06-24_evening_render.docx`、`outputs/2026-06-25_morning_render.docx`。`outputs/2026-07-04_midday_render.docx` 仅作为反例参照：数字很多但部分数字没有进入承重推理。
+> AI Agent 底稿参考范围固定为 **2026-06-22 至 2026-06-26**；只用于学习和校准逻辑链、交易方法论、证据进入判断的方式、推理深度和分析维度。手工 Notion 稿不限日期，只用于校准用户原始策略意图、字段含义和观望边界。两条参考链必须分开，不得把任一旧稿的行情事实、方向、分数、胜率、价位、风险判断或措辞带入当前报告。
+> 历史材料只在维护审计中只读；日常生产运行禁止重新读取、重新识别或逐篇比对旧样本。
+> 一次性学习样本：6 月 22 日早/午/晚、6 月 23 日早、6 月 24 日晚、6 月 25 日早、6 月 26 日早/午共 8 份 Word 底稿及其可用 Notion 成稿。`outputs/2026-07-04_midday_render.docx` 及 6 月 27 日后的已知问题稿只作负样本，不得反向成为方法权威。
 
 ## 核心定义
 
 金标对齐 = 对齐思考方式、推理逻辑和分析维度，不是对齐字数、价位数量、段落长度或 Markdown 后补痕迹。
+
+`VRVP`、流动性猎杀、清算地图和 ETF 净流入/流出是**增量维度**：它们只能增强原逻辑，禁止替代或压缩同一 pivot 四维、Exocharts 足迹、多周期结构、评分、置信度、风险、反证、失效和订单生命周期。
 
 推理方式、深度和维度必须硬对齐；格式不要求克隆旧 Word/冻结金标到 100%。格式达到接近 100%、字段含义不误导、交易参数准确、并通过 Notion/Word/发布机械门即可。
 
 执行顺序固定为：
 
 1. 完成当次 slot 的六源采集与有效性确认。
-2. 进入最高可用模型能力与 MAX reasoning。
+2. 先由 `runtime/host_capability.py` 从当前 session JSONL 绑定真实 model/effort；实际 effort 不是 `max` 即硬停。Prompt 中写 MAX 或人工布尔确认不得冒充宿主证据。
 3. 在动笔前按本契约组织推理。
 4. 在正式 MD 前写入内部 `runtime_state/<date>/reasoning_work_<slot>.md`，并通过 `session_runner.py certify-reasoning` 形成 `reasoning_readiness_<slot>.json`。
-5. 再写正式 `combined.md`，并在 analysis lock 之后才允许 Word / Notion。
-6. MD 生成后不得为了“像金标”补字数、补价位、补 rubric、补段落；后补任何推理均禁止。
+5. `certify-reasoning` 后先建立 `reasoning_lock_<slot>.json`，锁定独立分析，再开放前序计划/实仓只读上下文并生成 `continuity_contract_<slot>.json`。
+6. 再写正式 `combined.md`；正文和③后附必须逐项承载 reasoning contract 预先冻结的语义投影，之后才允许最终 report preflight / analysis lock / Word / Notion。
+7. MD 生成后不得为了“像金标”补字数、补价位、补 rubric、补段落；后补任何推理均禁止。
 
 ## 必须对齐的推理维度
 
@@ -51,10 +55,24 @@
 11. 冲突项必须显式处理：例如基本面偏暖但盘口承压时，主账户可以等待，Maker 只做压力区短线；不能为了统一叙事强行把所有源压成同一方向。
 12. 每个数值必须嵌入其对应推理节点，证明方向、分数、胜率、风险或取消条件。禁止在后附末尾堆“锚点组”来凑数；数字列表不能替代推理链。
 
+## 机器执行门
+
+- BlockBeats 的 Tier 结论必须与当前 TradingView 价格/结构形成显式 `fundamental_price_realization` 节点，状态只能是已兑现、部分兑现、未兑现或冲突；新闻方向本身不能直接成为交易方向。
+- FedWatch 必须绑定数据时点、下一次 FOMC 日期、当前概率分布及 1日/1周/1月边际，概率分布需自洽；Farside 必须绑定最新完整交易日，流入/流出标签需与带符号总值一致。
+
+- `scoring/scoring_contract.json`（`trading-scoring-contract-v2`）是机器可读单一规则源；`runtime/reasoning_contract.py` 生成 `trading-reasoning-contract-v2`。它必须复算 C01–C81、效果背离、OI/价格语义与资金费率不翻向，并将盘面30锁定为 TradingView-only、方向中立的机会质量分。
+- 同锚三问、足迹交叉验证、四周期转换、成交量结构/猎杀、ETF 关系、账户分流、三情景树和“不能做”末位推导缺一即硬停。
+- 每个承重 claim 至少追溯到两个独立源；只写“已复核”“结构完整”等通用句不能满足证据覆盖。
+- `report_projection.items` 在正式 MD 前冻结；可见正文必须覆盖全部承重 claim 类型，③后附必须覆盖全部金标语义单元，且承重数值必须由 observation value path 绑定后原样进入文本。
+- `runtime/adversarial_review.py` 除五类检查外，还必须逐个承重 claim 绑定被挑战的 support/counter 节点和用于裁决的 resolution 节点；通用 pass 文案不能替代节点证据。
+- Notion 仍由 `combined.md` 唯一派生，但 draft/preflight 必须先验证金标可见语义没有在 Word/Notion 投影中丢失；“正文精炼”不得解释为删除推理链。
+- 前序订单连续性只能在独立 reasoning lock 后读取，并由 continuity contract 证明旧单状态、撤旧/保留/挂新动作和最终活跃订单数；不得靠布尔自证。
+
 ## 红线
 
 - 禁止把金标对齐做成 MD 后的长度、价位、格式、rubric 留痕补丁。
-- 禁止每次报告重新读取 2026-06-26 前旧 Word 报告或旧 combined.md 来“再学习”。
+- 禁止每次报告重新读取 2026-06-27 前旧 AI Agent Word/Notion 报告或任意日期手工 Notion 稿来“再学习”。
+- 禁止混淆双参考链：AI Agent 稿只证明方法曾如何展开，手工稿只证明用户策略意图；二者都不能证明旧市场事实正确。
 - 禁止复制旧报告方向、分数、胜率、价格区间、风险判断或措辞。
 - 禁止为了追逐旧 Word 版式 100% 牺牲推理深度；格式只要求接近 100% 和机械门通过。
 - 禁止用 lint 表面指标证明推理深度；表面指标只能报警，不能代替动笔前的推理契约。

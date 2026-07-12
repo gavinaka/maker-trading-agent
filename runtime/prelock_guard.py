@@ -89,6 +89,10 @@ def _is_current_slot_recovery_artifact(
     manifest against the requested immutable capture.
     """
     if relative in {
+        f"runtime_state/{trading_date}/reasoning_input_{slot}.json",
+        f"runtime_state/{trading_date}/reasoning_contract_{slot}.json",
+        f"runtime_state/{trading_date}/adversarial_review_input_{slot}.json",
+        f"runtime_state/{trading_date}/adversarial_review_{slot}.json",
         f"runtime_state/{trading_date}/decision_input_{slot}.json",
         f"runtime_state/{trading_date}/decision_contract_{slot}.json",
         f"outputs/{trading_date}_{slot}_cards.json",
@@ -349,9 +353,14 @@ def restore_prelock_guard(
         _safe_relative(original, root)
         _safe_relative(quarantine, root)
         superseded_current_artifact = (
-            reason == "analysis_lock_success"
+            reason in {"analysis_lock_success", "reasoning_lock_success"}
             and (
                 _is_current_slot_generated_output(original_relative, trading_date, slot)
+                or _is_current_slot_recovery_artifact(
+                    original_relative,
+                    trading_date,
+                    slot,
+                )
                 or _is_current_slot_generated_runtime_state(
                     original_relative,
                     trading_date,
@@ -425,6 +434,6 @@ def assert_no_active_prelock_guard(
     payload = load_json(guard_manifest_path(trading_date, slot, root=root))
     if payload and payload.get("status") == "active":
         raise RuntimeError(
-            "pre-lock guard is still active; run lock-analysis successfully "
+            "pre-lock guard is still active; run lock-reasoning successfully "
             "or abandon/recover the session before downstream steps"
         )

@@ -35,6 +35,7 @@ from daily_publish_contract import (
     CRITICAL_REPORT_TEXT_PREFIXES,
     DAILY_PAYLOAD_TEXT_PREFIXES,
     DAILY_PAYLOAD_TYPES_BY_SLOT,
+    DAILY_VISUAL_BODY_PREFIXES,
     DAILY_VISUAL_LABELS,
     DAILY_VISUAL_LIMITS,
     DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT,
@@ -354,6 +355,14 @@ def validate_daily_payload_shape(
                 "daily Notion payload exceeds total visual text budget: "
                 f"chars={total_text_chars}"
             )
+        for index, expected_prefixes in DAILY_VISUAL_BODY_PREFIXES.items():
+            text = _rich_text_plain(children[index])
+            if not text.startswith(expected_prefixes):
+                raise ValueError(
+                    "daily Notion visual body drift: "
+                    f"block {index + 1} expected one of {expected_prefixes!r}, "
+                    f"got {text!r}"
+                )
         warnings = []
         if quote_length > DAILY_VISUAL_LIMITS["quote_warn_chars"]:
             warnings.append("quote_density")

@@ -35,6 +35,7 @@ class EfficiencyContractTests(unittest.TestCase):
             session = Path(directory) / "rollout-thread.jsonl"
             rows = [
                 {"type": "session_meta", "payload": {"id": "thread", "cwd": str(root)}},
+                {"type": "turn_context", "payload": {"turn_id": "turn", "cwd": str(root), "model": "gpt-test", "effort": "max"}},
                 {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 100, "cached_input_tokens": 60, "output_tokens": 10, "reasoning_output_tokens": 5}}}},
                 {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 200, "cached_input_tokens": 100, "output_tokens": 20, "reasoning_output_tokens": 8}}}},
                 {"type": "response_item", "payload": {"type": "function_call"}},
@@ -145,6 +146,7 @@ class EfficiencyContractTests(unittest.TestCase):
                 LOGIC_FILES[name].replace("\\", "/")
                 for name in (
                     "reasoning_depth",
+                    "scoring_contract",
                     "scoring_system",
                     "orderflow",
                     "orderflow_scoring",
@@ -191,6 +193,7 @@ class EfficiencyContractTests(unittest.TestCase):
     def test_direct_script_entrypoints_do_not_require_pythonpath(self):
         root = Path(__file__).resolve().parents[1]
         for relative in (
+            "runtime/automation_gate.py",
             "runtime/host_usage_import.py",
             "runtime/phase_contract.py",
             "runtime/prelock_safe_search.py",

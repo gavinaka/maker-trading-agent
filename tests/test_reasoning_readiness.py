@@ -14,6 +14,11 @@ from runtime.reasoning_readiness import (
     validate_locked_report_for_output,
     validate_reasoning_readiness_manifest,
 )
+from runtime.adversarial_review import build_adversarial_review
+from runtime.decision_contract import build_contract
+from runtime.reasoning_contract import build_reasoning_contract
+from runtime.host_capability import build_manifest as build_host_capability_manifest
+from tests.test_reasoning_contract import ReasoningContractTests
 
 
 def _sha256_file(path: Path) -> str:
@@ -262,6 +267,151 @@ class ReasoningReadinessTests(unittest.TestCase):
                     report,
                     root=root,
                 )
+
+    def test_v3_readiness_binds_reasoning_review_and_decision(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, reasoning_input = ReasoningContractTests().seed(root)
+            runtime = root / "runtime_state" / "2026-07-12"
+            (root / "scoring" / "reasoning_depth_checklist.md").write_text(
+                "structured reasoning depth contract", encoding="utf-8"
+            )
+            work = runtime / "reasoning_work_midday.md"
+            work.write_text(_reasoning_work_text(), encoding="utf-8")
+            transition = runtime / "transition_midday.json"
+            session = root / "session.jsonl"
+            session.write_text(
+                "\n".join(
+                    json.dumps(item)
+                    for item in (
+                        {"type": "session_meta", "payload": {"id": "thread-v3", "cwd": str(root)}},
+                        {"type": "turn_context", "payload": {"turn_id": "turn-v3", "cwd": str(root), "model": "gpt-test", "effort": "max"}},
+                    )
+                ),
+                encoding="utf-8",
+            )
+            host_payload = build_host_capability_manifest(
+                "2026-07-12", "midday", session_jsonl=session, root=root
+            )
+            host = runtime / "host_capability_midday.json"
+            host.write_text(json.dumps(host_payload), encoding="utf-8")
+            transition.write_text(
+                json.dumps(
+                    {
+                        "trading_date": "2026-07-12",
+                        "slot": "midday",
+                        "capture_manifest": {
+                            "path": capture.relative_to(runtime).as_posix(),
+                            "sha256": _sha256_file(capture),
+                        },
+                        "host_capability": {
+                            "path": host.relative_to(root).as_posix(),
+                            "sha256": _sha256_file(host),
+                            "bytes": host.stat().st_size,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            golden = runtime / "golden_reasoning_midday.json"
+            golden.write_text(json.dumps({"status": "ready"}), encoding="utf-8")
+            reasoning_payload = build_reasoning_contract(
+                reasoning_input, capture_manifest_path=capture, root=root
+            )
+            reasoning = runtime / "reasoning_contract_midday.json"
+            reasoning.write_text(json.dumps(reasoning_payload), encoding="utf-8")
+            high_impact = [
+                item["id"]
+                for item in reasoning_payload["claims"]
+                if item["claim_type"]
+                in {
+                    "market_regime",
+                    "main_account_thesis",
+                    "maker_thesis",
+                    "strongest_counterevidence",
+                    "invalidation_path",
+                }
+            ]
+            check_types = [
+                "source_integrity",
+                "claim_support",
+                "competing_interpretation",
+                "score_contamination",
+                "risk_semantics",
+            ]
+            review_payload = build_adversarial_review(
+                {
+                    "reasoning_contract_sha256": reasoning_payload["contract_sha256"],
+                    "reviewer_mode": "isolated_second_pass",
+                    "reviewed_claim_ids": high_impact,
+                    "claim_verdicts": [
+                        {
+                            "claim_id": claim_id,
+                            "status": "uphold",
+                            "challenged_support_ids": [
+                                next(item for item in reasoning_payload["claims"] if item["id"] == claim_id)["support_ids"][0]
+                            ],
+                            "challenged_counter_ids": [
+                                next(item for item in reasoning_payload["claims"] if item["id"] == claim_id)["counter_ids"][0]
+                            ],
+                            "resolution_node_ids": [
+                                next(item for item in reasoning_payload["claims"] if item["id"] == claim_id)["support_ids"][0]
+                            ],
+                            "why_counter_does_not_flip": "反方证据降低置信强度，但当前跨源支持节点尚未被失效条件推翻。",
+                            "residual_uncertainty": "市场后续路径和视觉转录仍有不确定性。",
+                        }
+                        for claim_id in high_impact
+                    ],
+                    "checks": [
+                        {
+                            "id": f"check.{index}",
+                            "check_type": check_type,
+                            "status": "pass",
+                            "node_ids": [high_impact[index]],
+                            "challenge": "按最不利解释重查当前证据和结论是否存在断链。",
+                            "resolution": "证据只支持有限结论，未发现需要硬停的断链。",
+                            "residual_risk": "市场路径和视觉转录仍有不确定性。",
+                        }
+                        for index, check_type in enumerate(check_types)
+                    ],
+                    "conclusion": "隔离第二遍检查通过，但不宣称能够消除市场不确定性。",
+                },
+                reasoning_contract_path=reasoning,
+                trading_date="2026-07-12",
+                slot="midday",
+                root=root,
+            )
+            review = runtime / "adversarial_review_midday.json"
+            review.write_text(json.dumps(review_payload), encoding="utf-8")
+            decision_payload = build_contract(
+                {
+                    "trading_date": "2026-07-12",
+                    "slot": "midday",
+                    "plan": {"direction": "none"},
+                },
+                reasoning_contract_path=reasoning,
+                root=root,
+            )
+            decision = runtime / "decision_contract_midday.json"
+            decision.write_text(json.dumps(decision_payload), encoding="utf-8")
+            payload, target = build_reasoning_readiness_manifest(
+                "2026-07-12",
+                "midday",
+                work_file=work,
+                capture_manifest_path=capture,
+                transition_path=transition,
+                decision_contract_path=decision,
+                reasoning_contract_path=reasoning,
+                adversarial_review_path=review,
+                root=root,
+            )
+            self.assertTrue(target.is_file())
+            self.assertIn("reasoning_contract", payload)
+            self.assertIn("adversarial_review", payload)
+            validated, _ = validate_reasoning_readiness_manifest(
+                "2026-07-12", "midday", root=root
+            )
+            self.assertEqual(validated, payload)
 
 
 if __name__ == "__main__":

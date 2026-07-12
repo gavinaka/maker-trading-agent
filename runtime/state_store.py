@@ -38,6 +38,7 @@ LOGIC_FILES = {
     "blockbeats_rules": "data_sources/blockbeats_rules.md",
     "blockbeats_collector": "data_sources/collectors/blockbeats.md",
     "reasoning_depth": "scoring/reasoning_depth_checklist.md",
+    "scoring_contract": "scoring/scoring_contract.json",
     "scoring_system": "scoring/scoring_system.md",
     "orderflow": "scoring/orderflow_methodology.md",
     "orderflow_scoring": "scoring/orderflow_scoring.md",

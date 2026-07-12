@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import subprocess
@@ -11,13 +12,22 @@ from pathlib import Path
 from typing import Any
 
 from runtime.golden_reasoning import validate_golden_reasoning_manifest
+from runtime.decision_contract import reasoning_bound_contract_required
+from runtime.continuity_contract import (
+    manifest_path as continuity_manifest_path,
+    validate_report_continuity_projection,
+)
 from runtime.reasoning_readiness import validate_reasoning_readiness_manifest
 from runtime.report_contract import (
     report_contract_required,
     validate_report_contract_manifest,
 )
+from runtime.report_state_extract import extract_report_state, validate_report_state
+from runtime.report_projection import validate_report_projection
 from runtime.state_store import atomic_json_write
+from outputs.daily_color_template import audit_daily_blocks, style_daily_payload_children
 from outputs.daily_payload_builder import build_daily_payload
+from outputs.publish_report import validate_daily_payload_shape
 from outputs.report_structure_gate import assert_combined_structure
 
 
@@ -102,10 +112,44 @@ def validate_draft_eligibility(
     payload = build_daily_payload(report, root=root)
     if len(payload.get("image_paths") or []) != 3:
         raise ValueError("draft is not eligible for certification: payload requires 3 cards")
+    text = report.read_text(encoding="utf-8")
+    report_state = extract_report_state(
+        text,
+        trading_date=trading_date,
+        slot=slot,
+    )
+    omissions = validate_report_state(text, report_state)
+    if omissions:
+        raise ValueError(
+            "draft is not eligible for certification: incomplete report state: "
+            + ", ".join(omissions)
+        )
+    payload_shape = validate_daily_payload_shape(
+        payload,
+        trading_date,
+        slot,
+        report_text=text,
+    )
+    visual_contract = payload_shape.get("visual_contract")
+    if not isinstance(visual_contract, dict) or visual_contract.get("status") != "passed":
+        raise ValueError(
+            "draft is not eligible for certification: Notion visual contract failed"
+        )
+    styled_children = copy.deepcopy(payload.get("children") or [])
+    color_contract = style_daily_payload_children(styled_children)
+    color_violations, _ = audit_daily_blocks(styled_children)
+    if color_contract.get("status") != "passed" or color_violations:
+        raise ValueError(
+            "draft is not eligible for certification: Notion color contract failed"
+        )
     return {
         "report_structure": True,
         "report_lint": True,
+        "report_state": True,
         "daily_payload_derivation": True,
+        "daily_payload_shape": True,
+        "notion_visual_contract": True,
+        "notion_color_contract": True,
         "blockbeats_cards": True,
     }
 
@@ -134,6 +178,20 @@ def certify_draft_recovery(
     )
     if not readiness or readiness_path is None or golden_path is None:
         raise ValueError("draft recovery requires certified reasoning and golden manifests")
+    reasoning_path = None
+    continuity_path = None
+    if reasoning_bound_contract_required(trading_date, slot):
+        reasoning_record = readiness.get("reasoning_contract") or {}
+        reasoning_path = root / str(reasoning_record.get("path", ""))
+        projection = validate_report_projection(
+            report, reasoning_path, trading_date, slot, root=root
+        )
+        eligibility["semantic_projection"] = projection.get("status") == "passed"
+        continuity_path = continuity_manifest_path(trading_date, slot, root=root)
+        continuity = validate_report_continuity_projection(
+            report, continuity_path, trading_date, slot, root=root
+        )
+        eligibility["continuity_projection"] = continuity.get("status") == "passed"
     capture_record = readiness.get("capture_manifest") or {}
     capture_path = Path(str(capture_record.get("path", "")))
     if not capture_path.is_absolute():
@@ -153,6 +211,9 @@ def certify_draft_recovery(
         "report_contract": _file_record(contract_path, root) if contract_path else None,
         "draft_eligibility": eligibility,
     }
+    if reasoning_path is not None and continuity_path is not None:
+        payload["reasoning_contract"] = _file_record(reasoning_path, root)
+        payload["continuity_contract"] = _file_record(continuity_path, root)
     target = manifest_path(trading_date, slot, root=root)
     atomic_json_write(target, payload)
     return payload, target
@@ -195,6 +256,14 @@ def validate_recovery_draft_artifacts(
     readiness = _verified_record(
         payload.get("reasoning_readiness"), root, "reasoning readiness"
     )
+    reasoning = continuity = None
+    if reasoning_bound_contract_required(trading_date, slot):
+        reasoning = _verified_record(
+            payload.get("reasoning_contract"), root, "reasoning contract"
+        )
+        continuity = _verified_record(
+            payload.get("continuity_contract"), root, "continuity contract"
+        )
     golden = _verified_record(
         payload.get("golden_reasoning_manifest"), root, "golden reasoning"
     )
@@ -214,6 +283,9 @@ def validate_recovery_draft_artifacts(
         golden: expected_state / f"golden_reasoning_{slot}.json",
         report_contract: expected_state / f"report_contract_{slot}.json",
     }
+    if reasoning is not None and continuity is not None:
+        expected_records[reasoning] = expected_state / f"reasoning_contract_{slot}.json"
+        expected_records[continuity] = expected_state / f"continuity_contract_{slot}.json"
     if any(actual != expected.resolve() for actual, expected in expected_records.items()):
         raise ValueError("draft recovery certification path does not match current slot")
     return payload, target
@@ -255,6 +327,9 @@ def validate_draft_recovery_manifest(
         "golden_reasoning_manifest": golden_path,
         "report_contract": report_contract_path,
     }
+    if reasoning_bound_contract_required(trading_date, slot):
+        manifest_records["reasoning_contract"] = root / str(((readiness or {}).get("reasoning_contract") or {}).get("path", ""))
+        manifest_records["continuity_contract"] = continuity_manifest_path(trading_date, slot, root=root)
     for label, expected in manifest_records.items():
         recorded = _verified_record((validated or {}).get(label), root, label)
         if expected is None or recorded != expected.resolve():

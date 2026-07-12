@@ -182,8 +182,13 @@ def extract_report_state(
                 },
                 "total": _number(r"总分(?:\*\*)?\s*[：:]?\s*([0-9.]+)", text),
                 "winrate": _number(
-                    r"胜率(?:自估)?(?:\*\*)?\s*[：:]?\s*([0-9.]+)%",
+                    r"胜率(?:自估)?(?:（[^）]+）)?(?:\*\*)?\s*[：:]?\s*([0-9.]+)%",
                     text,
+                ),
+                "conviction_metric_kind": (
+                    "plan_time_conviction"
+                    if "计划时置信度" in text
+                    else "legacy_winrate_self_estimate"
                 ),
             },
             "risk_state": {

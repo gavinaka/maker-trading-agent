@@ -12,13 +12,25 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from runtime.context_pack import ensure_context_pack
-from runtime.decision_contract import build_contract, validate_contract_file
+from runtime.continuity_contract import (
+    manifest_path as continuity_manifest_path,
+    validate_contract_file as validate_continuity_contract_file,
+    validate_report_continuity_projection,
+)
+from runtime.decision_contract import (
+    build_contract,
+    reasoning_bound_contract_required,
+    validate_contract_file,
+)
+from runtime.adversarial_review import validate_adversarial_review_file
+from runtime.reasoning_contract import validate_reasoning_contract_file
 from runtime.draft_recovery import (
     certify_draft_recovery,
     validate_draft_recovery_manifest,
@@ -30,6 +42,8 @@ from runtime.golden_reasoning import (
     build_golden_reasoning_manifest,
     validate_golden_reasoning_manifest,
 )
+from runtime.host_capability import required as host_capability_required
+from runtime.host_capability import validate_manifest as validate_host_capability_manifest
 from runtime.prelock_guard import (
     activate_prelock_guard,
     assert_no_active_prelock_guard,
@@ -52,6 +66,12 @@ from runtime.report_contract import (
     report_contract_required,
     validate_report_contract_manifest,
     write_report_contract,
+)
+from runtime.report_projection import validate_report_projection
+from runtime.reasoning_lock import (
+    manifest_path as reasoning_lock_manifest_path,
+    validate_reasoning_lock,
+    write_reasoning_lock,
 )
 from runtime.report_state_extract import extract_report_state, validate_report_state
 from runtime.state_store import (
@@ -112,6 +132,16 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def file_record(path: Path) -> dict[str, Any]:
+    resolved = path.resolve()
+    resolved.relative_to(ROOT.resolve())
+    return {
+        "path": resolved.relative_to(ROOT.resolve()).as_posix(),
+        "sha256": sha256_file(resolved),
+        "bytes": resolved.stat().st_size,
+    }
 
 
 def sha256_json(value: object) -> str:
@@ -216,10 +246,22 @@ def _certified_recovery_artifacts_available(
         golden = verified_record("golden_reasoning_manifest", verify_hash=False)
         verified_record("contract")
         decision = verified_record("decision_contract")
+        reasoning_contract = None
+        if reasoning_bound_contract_required(trading_date, slot):
+            reasoning_contract = verified_record("reasoning_contract")
+            adversarial_review = verified_record("adversarial_review")
+            validate_reasoning_contract_file(
+                reasoning_contract, trading_date, slot, root=ROOT
+            )
+            validate_adversarial_review_file(
+                adversarial_review, trading_date, slot, root=ROOT
+            )
         if recorded_capture != capture_manifest_path.resolve():
             return False
         validate_reasoning_work_file(work)
-        decision_payload = validate_contract_file(decision, trading_date, slot)
+        decision_payload = validate_contract_file(
+            decision, trading_date, slot, root=ROOT
+        )
         decision_input_path = (
             ROOT
             / "runtime_state"
@@ -229,7 +271,11 @@ def _certified_recovery_artifacts_available(
         decision_input = load_json(decision_input_path)
         if not isinstance(decision_input, dict):
             return False
-        if build_contract(decision_input) != decision_payload:
+        if build_contract(
+            decision_input,
+            reasoning_contract_path=reasoning_contract,
+            root=ROOT,
+        ) != decision_payload:
             return False
         golden_payload = load_json(golden)
         if not isinstance(golden_payload, dict):
@@ -322,7 +368,7 @@ def validate_report_preflight(
     without requiring a post-lock format reissue.
     """
     report = report.resolve()
-    _, readiness_target = validate_reasoning_readiness_manifest(
+    readiness, readiness_target = validate_reasoning_readiness_manifest(
         trading_date,
         slot,
         report,
@@ -334,6 +380,18 @@ def validate_report_preflight(
     )
     validate_report_structure(report, trading_date, slot)
     run_report_lint(report)
+    semantic_projection = {"status": "not_required"}
+    continuity = {"status": "not_required", "contract_sha256": None}
+    if reasoning_bound_contract_required(trading_date, slot):
+        reasoning_record = (readiness or {}).get("reasoning_contract") or {}
+        reasoning_path = ROOT / str(reasoning_record.get("path", ""))
+        semantic_projection = validate_report_projection(
+            report, reasoning_path, trading_date, slot, root=ROOT
+        )
+        continuity_path = continuity_manifest_path(trading_date, slot, root=ROOT)
+        continuity = validate_report_continuity_projection(
+            report, continuity_path, trading_date, slot, root=ROOT
+        )
     text = report.read_text(encoding="utf-8")
     updates = extract_report_state(
         text,
@@ -400,11 +458,23 @@ def validate_report_preflight(
         "draft_recovery_manifest_sha256": (
             sha256_file(draft_recovery_target) if draft_recovery_target else None
         ),
+        "semantic_projection": semantic_projection,
+        "continuity_contract_sha256": continuity.get("contract_sha256"),
         "checks": {
             "reasoning_readiness_pre_md": readiness_target is not None,
             "golden_reasoning_manifest": golden_target is not None,
             "report_structure": True,
             "report_lint": True,
+            "semantic_projection": (
+                semantic_projection.get("status") == "passed"
+                if reasoning_bound_contract_required(trading_date, slot)
+                else True
+            ),
+            "continuity_projection": (
+                continuity.get("status") == "passed"
+                if reasoning_bound_contract_required(trading_date, slot)
+                else True
+            ),
             "report_state": True,
             "daily_payload_derivation": True,
             "notion_visual_contract": True,
@@ -505,9 +575,9 @@ def main() -> int:
     prepare.add_argument(
         "--max-reasoning-confirmed",
         action="store_true",
-        required=True,
-        help="attest that the host is on its highest available model and MAX effort",
+        help="legacy compatibility flag; actual MAX authority comes from host capability",
     )
+    prepare.add_argument("--host-capability-manifest", type=Path)
     prepare.add_argument(
         "--external-change",
         action="append",
@@ -619,6 +689,8 @@ def main() -> int:
     certify.add_argument("--work-file", required=True, type=Path)
     certify.add_argument("--capture-manifest", required=True, type=Path)
     certify.add_argument("--decision-contract", type=Path)
+    certify.add_argument("--reasoning-contract", type=Path)
+    certify.add_argument("--adversarial-review", type=Path)
     certify.add_argument(
         "--confirm-six-source-accuracy",
         action="store_true",
@@ -651,6 +723,14 @@ def main() -> int:
     )
     add_lease_argument(certify)
     add_usage_arguments(certify)
+
+    lock_reasoning = sub.add_parser("lock-reasoning")
+    lock_reasoning.add_argument("--date", required=True)
+    lock_reasoning.add_argument(
+        "--slot", required=True, choices=("morning", "midday", "evening")
+    )
+    add_lease_argument(lock_reasoning)
+    add_usage_arguments(lock_reasoning)
 
     finalize = sub.add_parser("finalize-post-lock")
     finalize.add_argument("--date", required=True)
@@ -778,6 +858,15 @@ def main() -> int:
         return 0
 
     if args.command == "prepare":
+        host_capability_path = None
+        host_capability = None
+        if host_capability_required(args.date, args.slot):
+            if args.host_capability_manifest is None:
+                raise ValueError("prepare requires a host capability manifest proving actual MAX")
+            host_capability_path = args.host_capability_manifest.resolve()
+            host_capability = validate_host_capability_manifest(
+                host_capability_path, args.date, args.slot, root=ROOT
+            )
         pretrade_gate_binding = pretrade_gate_transition_binding(
             args.date, args.slot, root=ROOT
         )
@@ -808,7 +897,9 @@ def main() -> int:
             args.date,
             args.slot,
             external_changes=set(args.external_change),
-            max_reasoning_confirmed=args.max_reasoning_confirmed,
+            max_reasoning_confirmed=(
+                host_capability is not None or args.max_reasoning_confirmed
+            ),
             full_recollection_performed=full_recollection_performed,
             replace_prepared_transition=args.replace_prepared_transition,
             allow_same_slot_reissue=args.allow_same_slot_reissue,
@@ -826,6 +917,16 @@ def main() -> int:
             ),
             pretrade_gate_contract=pretrade_gate_binding,
         )
+        if host_capability_path is not None and host_capability is not None:
+            transition["host_capability"] = file_record(host_capability_path)
+            transition["analysis_policy"]["max_reasoning_provenance"] = (
+                "session_jsonl_host_capability_manifest"
+            )
+            transition["analysis_policy"]["actual_model"] = host_capability["model"]
+            transition["analysis_policy"]["actual_reasoning_effort"] = host_capability[
+                "reasoning_effort"
+            ]
+            atomic_json_write(target, transition)
         _, golden_target = build_golden_reasoning_manifest(
             args.date,
             args.slot,
@@ -998,6 +1099,8 @@ def main() -> int:
             capture_manifest_path=args.capture_manifest,
             transition_path=transition_path,
             decision_contract_path=args.decision_contract,
+            reasoning_contract_path=args.reasoning_contract,
+            adversarial_review_path=args.adversarial_review,
         )
         append_usage(
             trading_date=args.date,
@@ -1014,6 +1117,8 @@ def main() -> int:
                 "work_file": payload["work_file"]["path"],
                 "policy": payload["policy"],
                 "decision_contract": payload.get("decision_contract"),
+                "reasoning_contract": payload.get("reasoning_contract"),
+                "adversarial_review": payload.get("adversarial_review"),
             },
             **usage_values(args),
         )
@@ -1021,6 +1126,20 @@ def main() -> int:
         return 0
 
     if args.command == "lock-analysis":
+        reasoning_lock_path = None
+        continuity_path = None
+        continuity = None
+        if reasoning_bound_contract_required(args.date, args.slot):
+            reasoning_lock_path = reasoning_lock_manifest_path(
+                args.date, args.slot, root=ROOT
+            )
+            validate_reasoning_lock(
+                reasoning_lock_path, args.date, args.slot, root=ROOT
+            )
+            continuity_path = continuity_manifest_path(args.date, args.slot, root=ROOT)
+            continuity = validate_continuity_contract_file(
+                continuity_path, args.date, args.slot, root=ROOT
+            )
         report = args.report.resolve()
         preflight, updates, readiness_target, golden_target = validate_report_preflight(
             report,
@@ -1054,6 +1173,7 @@ def main() -> int:
             "five_source_validation_passed": True,
             "full_analysis_confirmed": True,
             "prior_judgment_read_before_lock": False,
+            "prior_judgment_read_before_reasoning_lock": False,
             "max_reasoning_confirmed": True,
             "max_through_analysis_confirmed": True,
             "max_through_post_lock_confirmed": False,
@@ -1086,6 +1206,16 @@ def main() -> int:
                 ),
                 "payload_preview_sha256": preflight["payload_preview_sha256"],
                 "payload_derivation_pre_lock": True,
+                "independent_reasoning_lock": (
+                    file_record(reasoning_lock_path) if reasoning_lock_path else None
+                ),
+                "continuity_contract": (
+                    file_record(continuity_path) if continuity_path else None
+                ),
+                "continuity_preserved_independent_analysis": (
+                    continuity["current_plan"]["independent_analysis_changed_after_lock"] is False
+                    if continuity is not None else None
+                ),
             },
             "operator_confirmations": {
                 "five_source_validation": args.confirm_five_source_validation,
@@ -1141,8 +1271,35 @@ def main() -> int:
         print(json.dumps({"analysis_lock": str(target), "commit_id": commit_id}))
         return 0
 
+    if args.command == "lock-reasoning":
+        payload, target = write_reasoning_lock(args.date, args.slot, root=ROOT)
+        restore_prelock_guard(args.date, args.slot, reason="reasoning_lock_success")
+        append_usage(
+            trading_date=args.date,
+            slot=args.slot,
+            phase="reasoning_lock",
+            status="success",
+            event_id=f"{payload['manifest_sha256']}:reasoning_lock",
+            duration_ms=round((time.perf_counter() - started) * 1000),
+            details={
+                "reasoning_lock": str(target),
+                "actual_model": payload["actual_model"],
+                "actual_reasoning_effort": payload["actual_reasoning_effort"],
+            },
+            **usage_values(args),
+        )
+        print(json.dumps({"reasoning_lock": str(target), "status": "locked"}))
+        return 0
+
     if args.command == "finalize-post-lock":
         assert_no_active_prelock_guard(args.date, args.slot)
+        continuity_path = None
+        continuity = None
+        if reasoning_bound_contract_required(args.date, args.slot):
+            continuity_path = continuity_manifest_path(args.date, args.slot, root=ROOT)
+            continuity = validate_continuity_contract_file(
+                continuity_path, args.date, args.slot, root=ROOT
+            )
         target = directory / f"analysis_lock_{args.slot}.json"
         analysis_lock = load_object(target)
         original_post_lock = set(transition.get("post_lock_nodes", []))
@@ -1164,6 +1321,10 @@ def main() -> int:
             set(analysis_lock.get("post_lock_completed_nodes", []))
             == completed_post_lock
             and analysis_lock.get("max_through_post_lock_confirmed") is True
+            and (
+                analysis_lock.get("continuity_contract") == file_record(continuity_path)
+                if continuity_path is not None else True
+            )
         )
         if not already_finalized:
             analysis_lock["post_lock_completed_nodes"] = sorted(completed_post_lock)
@@ -1171,6 +1332,9 @@ def main() -> int:
             analysis_lock["post_lock_finalized_at"] = (
                 datetime.now().astimezone().isoformat(timespec="seconds")
             )
+            if continuity_path is not None and continuity is not None:
+                analysis_lock["continuity_contract"] = file_record(continuity_path)
+                analysis_lock["continuity_action"] = continuity["current_plan"]["action"]
             atomic_json_write(target, analysis_lock)
         append_usage(
             trading_date=args.date,

@@ -1695,6 +1695,25 @@ class PublishEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "body exceeds visual budget"):
                 publish_report.validate_daily_payload_shape(payload, date, slot)
 
+    def test_visual_v3_shape_rejects_report_body_prefix_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(self._strict_daily_combined_text(date, slot), encoding="utf-8")
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+            payload = daily_payload_builder.build_daily_payload(report, root=root)
+            payload["children"][14]["paragraph"]["rich_text"][0]["text"]["content"] = (
+                "多头趋势仍成立，但缺少固定前缀"
+            )
+
+            with self.assertRaisesRegex(ValueError, "visual body drift"):
+                publish_report.validate_daily_payload_shape(payload, date, slot)
+
     def test_visual_v3_projection_preserves_deep_analysis_verbatim(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

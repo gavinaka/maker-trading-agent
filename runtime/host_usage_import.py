@@ -13,6 +13,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from runtime.state_store import atomic_json_write
+from runtime.host_capability import required as host_capability_required
+from runtime.host_capability import validate_manifest as validate_host_capability_manifest
 
 
 def locate_session(thread_id: str, codex_home: Path | None = None) -> Path:
@@ -31,17 +33,29 @@ def summarize_session(path: Path, *, expected_root: Path = ROOT) -> dict:
     }
     thread_id = None
     session_cwd = None
+    host_settings: list[dict[str, str]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             item = json.loads(line)
         except json.JSONDecodeError:
             continue
+        payload = item.get("payload") or {}
         if item.get("type") == "session_meta" and session_cwd is None:
-            payload = item.get("payload") or {}
             thread_id = payload.get("id")
             session_cwd = payload.get("cwd")
+        if item.get("type") == "turn_context":
+            model = payload.get("model")
+            effort = payload.get("effort") or payload.get("reasoning_effort")
+            if model and effort:
+                host_settings.append({"model": str(model), "reasoning_effort": str(effort)})
+            session_cwd = payload.get("cwd") or session_cwd
         if item.get("type") == "event_msg":
-            payload = item.get("payload") or {}
+            if payload.get("type") == "thread_settings_applied":
+                settings = payload.get("thread_settings") or {}
+                model = settings.get("model")
+                effort = settings.get("reasoning_effort")
+                if model and effort:
+                    host_settings.append({"model": str(model), "reasoning_effort": str(effort)})
             if payload.get("type") == "token_count":
                 usage = ((payload.get("info") or {}).get("last_token_usage") or {})
                 if usage:
@@ -57,9 +71,18 @@ def summarize_session(path: Path, *, expected_root: Path = ROOT) -> dict:
     if session_cwd is None or Path(session_cwd).resolve() != expected_root.resolve():
         raise ValueError(f"session cwd does not match Trading-System: {session_cwd}")
     totals["uncached_input_tokens"] = totals["input_tokens"] - totals["cached_input_tokens"]
+    if not host_settings:
+        raise ValueError("session JSONL does not expose model/reasoning effort")
+    latest_settings = host_settings[-1]
+    efforts = sorted({item["reasoning_effort"] for item in host_settings})
+    models = sorted({item["model"] for item in host_settings})
     totals.update({
         "schema_version": "codex-host-usage-v1", "thread_id": thread_id,
         "session_jsonl": str(path), "session_cwd": session_cwd,
+        "model": latest_settings["model"],
+        "reasoning_effort": latest_settings["reasoning_effort"],
+        "models_observed": models,
+        "reasoning_efforts_observed": efforts,
         "targets": {"model_turns_max": 80, "uncached_input_tokens_max": 800000},
     })
     totals["target_status"] = {
@@ -81,6 +104,16 @@ def main() -> int:
     path = args.session_jsonl or locate_session(args.thread_id)
     payload = summarize_session(path)
     payload.update({"trading_date": args.date, "slot": args.slot})
+    if host_capability_required(args.date, args.slot):
+        capability_path = ROOT / "runtime_state" / args.date / f"host_capability_{args.slot}.json"
+        capability = validate_host_capability_manifest(
+            capability_path, args.date, args.slot, root=ROOT
+        )
+        if payload["reasoning_effort"] != "max" or set(payload["reasoning_efforts_observed"]) != {"max"}:
+            raise ValueError("production thread contains non-MAX reasoning turns")
+        if payload["model"] != capability["model"]:
+            raise ValueError("final host model differs from pre-analysis capability binding")
+        payload["host_capability_manifest"] = str(capability_path.relative_to(ROOT))
     target = ROOT / "runtime_state" / args.date / f"host_usage_{args.slot}.json"
     atomic_json_write(target, payload)
     print(json.dumps({"status": "IMPORTED", "path": str(target), **payload["target_status"]}, ensure_ascii=False))

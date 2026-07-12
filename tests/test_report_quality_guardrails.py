@@ -22,6 +22,16 @@ BlockBeats Exocharts Coinglass FedWatch TradingView
 
 
 class ReportQualityGuardrailTests(unittest.TestCase):
+    def test_tool_wrapper_metadata_is_rejected_before_render(self):
+        lines = [
+            "# 2026.7.12 早间日报",
+            "Exit code: 0",
+            "Wall time: 0.3 seconds",
+            "Output:",
+        ]
+        hits = report_lint.tool_wrapper_leak_check(lines)
+        self.assertEqual(len(hits), 3)
+
     def test_maker_first_defense_layer_must_use_4h_extreme(self):
         lines = """
 ## ② Maker 计划
@@ -159,6 +169,45 @@ TP2：60,920，清理剩余仓位。
 方向主判：CVD 与 OI 给出空头占优，SMA20 与 pivot 摆动结构确认未破；最强反证是价格重新站回 VAH，失效路径是放量上破后情景改为观望。
 """.splitlines()
         self.assertEqual(report_lint.strict_reasoning_trace_check(lines), [])
+
+    def test_v3_semantics_rejects_representative_entry_and_ambiguous_range(self):
+        lines = """
+# 2026.7.12 午间日报
+总分：71　胜率自估：66%
+策略：入场区间63,100-63,400，以63,250为代表入场。
+风险验算：代表入场63,250计算达到1:2.5。
+""".splitlines()
+        hits = report_lint.v3_semantics_check(
+            lines, "outputs/2026-07-12_midday_combined.md"
+        )
+        self.assertTrue(any("代表价" in desc for _, desc, _, _ in hits))
+        self.assertTrue(any("订单语义" in desc for _, desc, _, _ in hits))
+        self.assertTrue(any("置信度" in desc for _, desc, _, _ in hits))
+
+    def test_v3_semantics_accepts_canonical_ladder_language(self):
+        lines = """
+# 2026.7.12 午间日报
+盘口：50/70　盘面：21/30　总分：71　胜率自估（计划时置信度，非回测命中率）：66%
+分档入场：63,100占50%，63,300占50%。
+风险验算：ladder订单共3种非空成交情景，最差TP1盈亏比1:2.5，最高5倍杠杆名义风险3%；全部情景均达到1:2.5且不高于3%。
+""".splitlines()
+        self.assertEqual(
+            report_lint.v3_semantics_check(
+                lines, "outputs/2026-07-12_midday_combined.md"
+            ),
+            [],
+        )
+
+    def test_v3_report_cannot_self_attest_max_host_reasoning(self):
+        lines = [
+            "胜率自估（计划时置信度，非回测命中率）",
+            "MAX reasoning confirmed by the report author",
+            "无可执行 Maker 计划",
+        ]
+        hits = report_lint.v3_semantics_check(
+            lines, "outputs/2026-07-12_midday_combined.md"
+        )
+        self.assertTrue(any("MAX" in hit[2] for hit in hits))
 
 
 if __name__ == "__main__":

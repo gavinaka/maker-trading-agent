@@ -68,8 +68,11 @@ def build_golden_reasoning_manifest(
         "policy": "pre_write_reasoning_alignment_not_posthoc_output_padding",
         "historical_sample_runtime_use": "forbidden",
         "historical_sample_policy": (
-            "pre-2026-06-26 local Word reports are learned once into the compact "
-            "contract and are not runtime inputs for daily reports"
+            "AI Agent Word drafts dated 2026-06-22 through 2026-06-26 "
+            "contribute method/depth only; "
+            "manual Notion reports from any date contribute user-intent and field "
+            "semantics only; neither reference chain is a daily runtime input or "
+            "a source of old facts, direction, scores, conviction or prices"
         ),
         "format_alignment_policy": (
             "reasoning_style_depth_and_dimensions_are_hard_aligned; "
@@ -77,11 +80,15 @@ def build_golden_reasoning_manifest(
         ),
         "phase_order": [
             "six_source_capture_manifest_ready",
+            "exact_max_host_capability_bound",
             "prepare_transition_ready",
             "golden_reasoning_contract_active",
+            "source_judgment_methods_bound",
             "pre_md_reasoning_readiness",
+            "independent_reasoning_lock",
+            "post_lock_prior_plan_continuity_only",
             "combined_report_drafting",
-            "analysis_lock",
+            "final_analysis_lock",
         ],
         "contract": _file_record(contract, root),
         "capture_manifest": _file_record(capture, root),
@@ -89,7 +96,8 @@ def build_golden_reasoning_manifest(
         "required_dimensions": [
             "six_source_validation_and_transcription",
             "farside_btc_etf_flow_consistency",
-            "sample_derived_reasoning_order_from_june_word_reports",
+            "sample_derived_reasoning_order_from_2026_06_22_to_26_ai_word_drafts",
+            "source_specific_judgment_standard_and_forbidden_inference",
             "blockbeats_tier_and_price_realization",
             "fedwatch_probability_delta",
             "coinglass_phase_pivot_price_cvd_funding_oi",
@@ -113,6 +121,7 @@ def build_golden_reasoning_manifest(
         ],
         "forbidden_alignment_modes": [
             "reading_historical_word_reports_each_run",
+            "using_ai_word_drafts_outside_2026_06_22_to_26_as_gold",
             "posthoc_length_padding",
             "posthoc_price_reference_padding",
             "posthoc_rubric_word_stuffing",

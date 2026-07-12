@@ -62,6 +62,29 @@ def coupling_check(lines):
                 hits.append((i, desc, m.group(0), ln.strip()[:60]))
     return hits
 
+
+TOOL_WRAPPER_METADATA = re.compile(
+    r"^\s*(?:Exit code:|Wall time:|Process exited with code|Final output:|"
+    r"Output:|Script running with cell ID|Warning: truncated output)"
+)
+
+
+def tool_wrapper_leak_check(lines):
+    """Reject host/tool wrapper text before it can enter Word or Notion."""
+    hits = []
+    for i, line in enumerate(lines, 1):
+        match = TOOL_WRAPPER_METADATA.search(line)
+        if match:
+            hits.append(
+                (
+                    i,
+                    "工具包装元数据泄漏",
+                    match.group(0).strip(),
+                    line.strip()[:60],
+                )
+            )
+    return hits
+
 # ---------------- 正文禁元叙事门（门②扩展·2026-06-19） ----------------
 # 见 memory/fundamentals-brief-core-priority.md：日报正文（① 正文 + ② Maker 段）禁出现
 # 内部规则/方法论/评分代号/门槛判定的元叙事，只用自然语言给结论与本质；代号/方法论/分数/门槛
@@ -621,6 +644,7 @@ _GOLDEN_PRICE_REF = re.compile(r"\d{2},\d{3}|\d{5}(?:\.\d+)?")
 _STRICT_SIX_SOURCE_FROM = date(2026, 7, 5)
 _STRICT_REASONING_TRACE_FROM = date(2026, 7, 6)
 _STRICT_REASONING_TRACE_EXEMPT_FILE = "2026-07-06_morning_"
+_V3_SEMANTICS_FROM = (date(2026, 7, 12), "midday")
 _BASE_GOLDEN_SOURCES = ("BlockBeats", "Exocharts", "Coinglass", "FedWatch", "TradingView")
 _SIXTH_SOURCE = "Farside"
 
@@ -746,6 +770,65 @@ def strict_reasoning_trace_check(lines, report_path=None):
     return issues
 
 
+def v3_semantics_check(lines, report_path=None):
+    """Reject legacy representative-price and probability semantics after v3."""
+    if report_path is None:
+        return []
+    name = Path(report_path).name
+    match = re.match(
+        r"^(20\d{2})-(\d{2})-(\d{2})_(morning|midday|evening)_", name
+    )
+    if not match:
+        return []
+    report_date = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    slot = match.group(4)
+    slot_index = {"morning": 0, "midday": 1, "evening": 2}
+    if (report_date, slot_index[slot]) < (
+        _V3_SEMANTICS_FROM[0],
+        slot_index[_V3_SEMANTICS_FROM[1]],
+    ):
+        return []
+    text = "\n".join(lines)
+    issues = []
+    if "胜率自估（计划时置信度，非回测命中率）" not in text:
+        issues.append(
+            (0, "v3置信度语义缺失", "胜率自估", "必须明确非回测命中率")
+        )
+    for index, line in enumerate(lines, 1):
+        if "代表入场" in line:
+            issues.append(
+                (index, "v3禁止代表价掩盖区间风险", "代表入场", line.strip()[:80])
+            )
+        if re.search(
+            r"最高可用模型|MAX\s*推理.*(?:确认|已确认)|推理强度.*MAX"
+            r"|\bMAX\b.{0,24}(?:confirmed|verified)"
+            r"|宿主模型.{0,24}\bMAX\b",
+            line,
+            re.I,
+        ):
+            issues.append(
+                (
+                    index,
+                    "v3禁止在报告正文自证宿主模型或MAX",
+                    "MAX自证",
+                    "模型与推理强度只能由host_capability/host_usage工件证明，不进入交易报告",
+                )
+            )
+    has_range = bool(re.search(r"入场(?:区间)?[^\n]{0,20}\d[\d,.]*\s*[-—–~～]\s*\d", text))
+    if has_range and not re.search(r"分档|条件观察区|不是可执行订单", text):
+        issues.append(
+            (0, "入场区间未声明订单语义", "入场区间", "必须是分档订单或条件观察区")
+        )
+    if not re.search(
+        r"全部情景均达到1:2\.5且不高于3%|条件观察区，不是可执行订单|无可执行 Maker 计划",
+        text,
+    ):
+        issues.append(
+            (0, "v3成交情景风险证明缺失", "风险验算", "必须由canonical report contract生成")
+        )
+    return issues
+
+
 def golden_surface_proxy_check(lines):
     """Legacy surface proxy for thin reports.
 
@@ -820,6 +903,7 @@ def main():
                 warn_hits.append((i, desc, m.group(0), ln.strip()[:60]))
     ledger_issues, ledger_skip = ledger_check(lines)
     coupling_hits = coupling_check(lines)
+    tool_wrapper_hits = tool_wrapper_leak_check(lines)
     meta_hits = meta_narrative_check(lines)
     wr_band, wr_chain, wr_scoped = winrate_anchor_check(lines)
     wr_fail = bool(wr_band) and not wr_chain
@@ -831,6 +915,7 @@ def main():
     depth_hits = analysis_depth_check(lines)
     anchor_dump_hits = numeric_anchor_dump_check(lines)
     strict_trace_hits = strict_reasoning_trace_check(lines, path)
+    v3_hits = v3_semantics_check(lines, path)
     golden_hits = golden_surface_proxy_check(lines)
     for i, desc, hit, ctx in warn_hits:
         print(f"[WARN] L{i} {desc}: '{hit}'  | {ctx}")
@@ -841,6 +926,8 @@ def main():
         print(f"[HARD] {loc} report-structure·{code}: {message}")
     for i, desc, hit, ctx in coupling_hits:
         print(f"[HARD] L{i} 解耦门·联动红旗 {desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in tool_wrapper_hits:
+        print(f"[HARD] L{i} 输出纯净门·{desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in meta_hits:
         print(f"[HARD] L{i} 正文元叙事 {desc}: '{hit}'  | {ctx}")
     if not meta_hits:
@@ -866,6 +953,9 @@ def main():
     for i, desc, hit, ctx in strict_trace_hits:
         loc = f"L{i}" if i else "全文"
         print(f"[HARD] {loc} 严格推理留痕门·{desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in v3_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} v3语义门·{desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in golden_hits:
         loc = f"L{i}" if i else "全文"
         print(f"[WARN] {loc} 旧金标表面代理·{desc}: '{hit}'  | {ctx}")
@@ -893,7 +983,7 @@ def main():
     else:
         print("[OK] 胜率反下偏门: 胜率未落临界带[55,59](无贴门槛下偏嫌疑)")
     print()
-    if structure_hits or hard_hits or ledger_issues or coupling_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or anchor_dump_hits or strict_trace_hits:
+    if structure_hits or hard_hits or ledger_issues or coupling_hits or tool_wrapper_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or anchor_dump_hits or strict_trace_hits or v3_hits:
         msgs = []
         if structure_hits:
             msgs.append(f"{len(structure_hits)} 处底稿结构/六源契约错误（修正 combined 骨架、日期展示或六源证据）")
@@ -903,6 +993,8 @@ def main():
             msgs.append(f"{len(ledger_issues)} 处仓位帐本矛盾（对照 6/2 金标：第二层只设保本损无减仓）")
         if coupling_hits:
             msgs.append(f"{len(coupling_hits)} 处联动用户实仓（违解耦边界·system-plan-decoupled·改为系统独立判断）")
+        if tool_wrapper_hits:
+            msgs.append(f"{len(tool_wrapper_hits)} 处工具包装元数据泄漏（删除 Exit code/Wall time/Output 等宿主文本）")
         if meta_hits:
             msgs.append(f"{len(meta_hits)} 处正文元叙事（代号/方法论/分数/门槛→改自然语言·移③后附·见 fundamentals-brief-core-priority）")
         if wr_fail:
@@ -921,6 +1013,8 @@ def main():
             msgs.append(f"{len(anchor_dump_hits)} 处数值锚点组堆砌（数字必须嵌入推理链而非列表凑数）")
         if strict_trace_hits:
             msgs.append(f"{len(strict_trace_hits)} 处严格推理留痕不足（胜率rubric/总分合成/方向反证/承重点颗粒度必须写清）")
+        if v3_hits:
+            msgs.append(f"{len(v3_hits)} 处v3语义违规（禁止代表价、伪概率或未枚举区间成交风险）")
         print(f"[FAIL] " + "；".join(msgs) + " —— 修正后重跑")
         sys.exit(1)
     suffix = "" if ledger_skip else "·仓位帐本一致"

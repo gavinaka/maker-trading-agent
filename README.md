@@ -51,7 +51,7 @@ Trading-System/
 │   ├── emotional_agent.md             ← 情绪+5项门禁
 │   ├── data_collection_agent.md       ← 数据采集（A/B/C 通道）
 │   ├── news_agent.md                  ← BlockBeats 强制截图
-│   ├── footprint_agent.md             ← 盘口 16 组合
+│   ├── footprint_agent.md             ← 盘口 C01–C81 + 综合方法论
 │   ├── scoring_agent.md               ← 70+30=总评分
 │   ├── risk_agent.md                  ← 7 Gate 守门
 │   ├── output_agent.md                ← 日报渲染
@@ -154,7 +154,7 @@ Trading-System/
 ├── state/                             ← 状态机（6 JSON）
 │   ├── main_account_state.json        ← 主账户持仓 + 5 层防守
 │   ├── maker_state.json               ← Maker + 洁净样本进度
-│   ├── market_state.json              ← 市场结构 + 16 组合定义
+│   ├── market_state.json              ← 市场结构 + C01–C81 客观组合
 │   ├── score_state.json               ← 当前评分 + 历史参考
 │   ├── session_state.json             ← 当日任务状态 + context_memory
 │   └── risk_state.json                ← 风控状态 + alerts
@@ -220,8 +220,8 @@ Trading-System/
 
 ### 盘口 70 分（footprint_agent）
 - 4 维：CVD / Price / OI / Funding
-- **极端组合**（C01/C02）= 70 分必做
-- **其余 14 组合** = 0/10/20/30/40/50/60 手动评分
+- **极端候选**（C19/C22/C56/C59）只有在整体证据确认时为 70；接近极端为 60
+- **其余组合**最高 60，按同 pivot、效果背离、OI/价格语义、足迹印证与反证闭环给 0–60 精细整数分
 
 ### 盘面 30 分（scoring_agent）
 | 项 | 分 |
@@ -291,9 +291,9 @@ mkdir -p Trading-System/data_sources/inbox/$(date +%Y-%m-%d)
 
 agent 会：
 1. 读取并校验当天 Notion「开仓前状态门禁」（emotional_agent）
-2. 自动采集 4 数据源（data_collection_agent）
+2. 自动采集六源（data_collection_agent）
 3. 校验 BlockBeats 截图（news_agent）
-4. 盘口 16 组合判定（footprint_agent）
+4. 盘口 C01–C81 客观组合 + 综合方法论判定（footprint_agent）
 5. 计算总评分（scoring_agent）
 6. 7 Gate 预检（risk_agent）
 7. 渲染主账户日报 + Maker 上午计划（output_agent）

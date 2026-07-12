@@ -51,6 +51,7 @@ AUTHORITY_READ_PLAN = {
     ),
     "analysis_orderflow": (
         "reasoning_depth",
+        "scoring_contract",
         "scoring_system",
         "orderflow",
         "orderflow_scoring",

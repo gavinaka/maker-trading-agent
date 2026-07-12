@@ -386,6 +386,48 @@ class PrelockGuardTests(unittest.TestCase):
                 restored["superseded_current_outputs"],
             )
 
+    def test_analysis_lock_restore_preserves_new_certified_recovery_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            date = "2026-07-07"
+            slot = "morning"
+            paths = [
+                root / "runtime_state" / date / f"decision_input_{slot}.json",
+                root / "runtime_state" / date / f"decision_contract_{slot}.json",
+                root / "outputs" / f"{date}_{slot}_cards.json",
+                root / "outputs" / f"{date}_{slot}_combined.md",
+                *[
+                    root / "outputs" / "blockbeats" / f"{date}_{slot}_{index}.png"
+                    for index in range(3)
+                ],
+            ]
+            for path in paths:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"old {path.name}\n", encoding="utf-8")
+
+            activate_prelock_guard(date, slot, root=root)
+            for path in paths:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"new {path.name}\n", encoding="utf-8")
+
+            restored, _ = restore_prelock_guard(
+                date,
+                slot,
+                root=root,
+                reason="analysis_lock_success",
+            )
+
+            self.assertEqual(restored["status"], "restored")
+            for path in paths:
+                self.assertEqual(
+                    path.read_text(encoding="utf-8"),
+                    f"new {path.name}\n",
+                )
+                self.assertIn(
+                    path.relative_to(root).as_posix(),
+                    restored["superseded_current_outputs"],
+                )
+
     def test_prelock_safe_read_blocks_prior_judgment_surfaces(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -15,7 +15,14 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from runtime.decision_contract import validate_contract_file
+from runtime.adversarial_review import validate_adversarial_review_file
+from runtime.host_capability import required as host_capability_required
+from runtime.host_capability import validate_manifest as validate_host_capability_manifest
+from runtime.decision_contract import (
+    reasoning_bound_contract_required,
+    validate_contract_file,
+)
+from runtime.reasoning_contract import validate_reasoning_contract_file
 from runtime.state_store import atomic_json_write
 
 
@@ -216,6 +223,8 @@ def build_reasoning_readiness_manifest(
     capture_manifest_path: Path,
     transition_path: Path,
     decision_contract_path: Path | None = None,
+    reasoning_contract_path: Path | None = None,
+    adversarial_review_path: Path | None = None,
     root: Path = ROOT,
 ) -> tuple[dict[str, Any], Path]:
     root = root.resolve()
@@ -227,11 +236,54 @@ def build_reasoning_readiness_manifest(
     _assert_inside_runtime_state(work, trading_date, root)
     work_validation = validate_reasoning_work_file(work)
     _validate_capture_matches_transition(trading_date, slot, capture, transition, root)
+    host_path = None
+    if host_capability_required(trading_date, slot):
+        transition_payload = json.loads(transition.read_text(encoding="utf-8"))
+        host_record = transition_payload.get("host_capability") or {}
+        host_path = root / str(host_record.get("path", ""))
+        validate_host_capability_manifest(
+            host_path, trading_date, slot, root=root
+        )
+        expected_host_record = _file_record(host_path, root)
+        if any(
+            host_record.get(key) != expected_host_record.get(key)
+            for key in ("path", "sha256", "bytes")
+        ):
+            raise ValueError("transition host capability binding changed")
     decision_record = None
+    reasoning_record = None
+    adversarial_record = None
+    reasoning_payload = None
+    if reasoning_contract_path is not None:
+        reasoning = reasoning_contract_path.resolve()
+        _assert_inside_runtime_state(reasoning, trading_date, root)
+        reasoning_payload = validate_reasoning_contract_file(
+            reasoning, trading_date, slot, root=root
+        )
+        reasoning_record = _file_record(reasoning, root)
+    elif reasoning_bound_contract_required(trading_date, slot):
+        raise ValueError(
+            "structured reasoning contract is required before reasoning certification"
+        )
+    if adversarial_review_path is not None:
+        adversarial = adversarial_review_path.resolve()
+        _assert_inside_runtime_state(adversarial, trading_date, root)
+        review = validate_adversarial_review_file(
+            adversarial, trading_date, slot, root=root
+        )
+        if reasoning_payload is None or (
+            review.get("reasoning_contract") or {}
+        ).get("sha256") != reasoning_payload.get("contract_sha256"):
+            raise ValueError("adversarial review reasoning binding mismatch")
+        adversarial_record = _file_record(adversarial, root)
+    elif reasoning_bound_contract_required(trading_date, slot):
+        raise ValueError(
+            "adversarial review is required before reasoning certification"
+        )
     if decision_contract_path is not None:
         decision = decision_contract_path.resolve()
         _assert_inside_runtime_state(decision, trading_date, root)
-        validate_contract_file(decision, trading_date, slot)
+        validate_contract_file(decision, trading_date, slot, root=root)
         decision_record = _file_record(decision, root)
     elif decision_contract_required(trading_date, slot):
         raise ValueError("decision contract is required before reasoning certification")
@@ -249,12 +301,18 @@ def build_reasoning_readiness_manifest(
         ),
         "phase_order": [
             "six_source_capture_complete",
+            "exact_max_host_capability_verified",
             "source_accuracy_verified",
+            "source_specific_judgment_methods_validated",
             "max_reasoning_depth_calibrated",
+            "structured_reasoning_contract_validated",
+            "isolated_adversarial_review_passed",
             "decision_math_contract_validated",
             "reasoning_readiness_manifest_ready",
+            "independent_reasoning_lock_before_prior_plan_read",
+            "post_lock_continuity_contract_only",
             "formal_combined_md_drafting",
-            "analysis_lock",
+            "final_analysis_lock",
             "word_render_and_notion_publish",
         ],
         "forbidden_modes": [
@@ -271,8 +329,14 @@ def build_reasoning_readiness_manifest(
         "golden_reasoning_manifest": _file_record(golden, root),
         "contract": _file_record(contract, root),
     }
+    if host_path is not None:
+        payload["host_capability"] = _file_record(host_path, root)
     if decision_record is not None:
         payload["decision_contract"] = decision_record
+    if reasoning_record is not None:
+        payload["reasoning_contract"] = reasoning_record
+    if adversarial_record is not None:
+        payload["adversarial_review"] = adversarial_record
     atomic_json_write(target, payload)
     return payload, target
 
@@ -310,10 +374,17 @@ def validate_reasoning_readiness_manifest(
         "golden_reasoning_manifest",
         "contract",
     ]
+    if host_capability_required(trading_date, slot):
+        record_keys.append("host_capability")
     if "decision_contract" in payload:
         record_keys.append("decision_contract")
     elif decision_contract_required(trading_date, slot):
         raise ValueError("reasoning readiness missing decision contract")
+    if reasoning_bound_contract_required(trading_date, slot):
+        for key in ("reasoning_contract", "adversarial_review"):
+            if key not in payload:
+                raise ValueError(f"reasoning readiness missing {key}")
+            record_keys.append(key)
     for key in record_keys:
         record = payload.get(key) or {}
         path_text = record.get("path")
@@ -339,10 +410,24 @@ def validate_reasoning_readiness_manifest(
         records["transition"],
         root,
     )
+    if "host_capability" in records:
+        validate_host_capability_manifest(
+            records["host_capability"], trading_date, slot, root=root
+        )
     work = records["work_file"]
     validate_reasoning_work_file(work)
     if "decision_contract" in records:
-        validate_contract_file(records["decision_contract"], trading_date, slot)
+        validate_contract_file(
+            records["decision_contract"], trading_date, slot, root=root
+        )
+    if "reasoning_contract" in records:
+        validate_reasoning_contract_file(
+            records["reasoning_contract"], trading_date, slot, root=root
+        )
+    if "adversarial_review" in records:
+        validate_adversarial_review_file(
+            records["adversarial_review"], trading_date, slot, root=root
+        )
     if report_path is not None:
         report = report_path.resolve()
         if not report.is_file():

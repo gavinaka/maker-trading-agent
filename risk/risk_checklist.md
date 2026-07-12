@@ -53,7 +53,7 @@
 ### 3. 是否满足开单双门槛（总评分 + 胜率）
 
 **判定**（两门槛并列·任一不过即不开）：
-* 门槛① `state/score_state.json.current_score.total_score >= 65`（或极端组合 C01/C02 命中·强制 70 分）AND
+* 门槛① `state/score_state.json.current_score.total_score >= 65`（盘口 70 只允许 C19/C22/C56/C59 经整体证据确认为真极端）AND
 * 门槛② `plan.win_rate >= 60`（胜率自估 ≥60%·2026-06-16 升级为硬门槛）AND
 * `outputs/<today>_footprint_<HHMM>.json` 存在且 `data_quality != "partial"`
 
@@ -80,7 +80,7 @@
 * 午盘观察期：**14:00 - 18:00** → 减少新开仓
 * 其他时段 → ✗
 
-**例外**：极端组合 C01/C02 + 用户在 metadata 标 `time_window_override:true`
+**例外**：C19/C22/C56/C59 真极端已认证 + 用户在 metadata 标 `time_window_override:true`
 
 ---
 

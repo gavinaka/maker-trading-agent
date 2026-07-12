@@ -135,6 +135,44 @@ class DraftRecoveryTests(unittest.TestCase):
                 )
             self.assertFalse(draft_recovery.manifest_path(date, slot, root=root).exists())
 
+    def test_draft_eligibility_runs_the_same_publish_shape_gate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = root / "outputs" / "2026-07-12_morning_combined.md"
+            report.parent.mkdir(parents=True)
+            report.write_text("# report\n", encoding="utf-8")
+            payload = {"image_paths": ["a", "b", "c"], "children": []}
+            with mock.patch.object(
+                draft_recovery,
+                "assert_combined_structure",
+            ), mock.patch.object(
+                draft_recovery.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=0, stdout="", stderr=""),
+            ), mock.patch.object(
+                draft_recovery,
+                "build_daily_payload",
+                return_value=payload,
+            ), mock.patch.object(
+                draft_recovery,
+                "extract_report_state",
+                return_value={},
+            ), mock.patch.object(
+                draft_recovery,
+                "validate_report_state",
+                return_value=[],
+            ), mock.patch.object(
+                draft_recovery,
+                "validate_daily_payload_shape",
+                side_effect=ValueError("visual body drift"),
+            ), self.assertRaisesRegex(ValueError, "visual body drift"):
+                draft_recovery.validate_draft_eligibility(
+                    report,
+                    "2026-07-12",
+                    "morning",
+                    root=root,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

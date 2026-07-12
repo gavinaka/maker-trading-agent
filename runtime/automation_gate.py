@@ -11,10 +11,13 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from runtime.authority_mutex import production_start_guard
 
 
-ROOT = Path(__file__).resolve().parents[1]
 GATE_DIR = ROOT / "runtime_state" / "automation_gate"
 KEY_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 

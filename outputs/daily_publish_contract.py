@@ -97,6 +97,28 @@ DAILY_VISUAL_LABELS = {
     25: "防守计划",
 }
 
+# v3 renders immutable section names as their own blocks, but the following
+# report-derived bodies still carry canonical prefixes.  Keeping this mapping
+# beside the block-type/label contract prevents the preflight and publisher
+# from maintaining separate, drifting assumptions.
+DAILY_VISUAL_BODY_PREFIXES = {
+    2: ("不能做：",),
+    4: ("基本面：",),
+    6: ("盘口",),
+    9: ("解读：",),
+    10: ("盘面",),
+    11: ("日线级别：",),
+    12: ("小时级别：",),
+    14: ("趋势确认：",),
+    16: ("日内支撑：",),
+    21: ("BTC（策略）：",),
+    26: ("第一层：",),
+    27: ("第二层：",),
+    28: ("注意事项：",),
+    29: ("取消", "⚠️取消"),
+    30: ("独立边界", "持仓校准"),
+}
+
 DAILY_VISUAL_LIMITS = {
     "heading_max_chars": 12,
     "quote_warn_chars": 140,
