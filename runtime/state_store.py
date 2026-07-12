@@ -351,6 +351,7 @@ def prepare_transition(
     workflow_lease_id: str | None = None,
     recovered_from_workflow_lease: dict | None = None,
     prior_state_skip_reason: str | None = None,
+    pretrade_gate_contract: dict | None = None,
 ) -> tuple[dict, Path]:
     if slot not in SLOT_ORDER:
         raise ValueError(f"unsupported slot: {slot}")
@@ -602,6 +603,10 @@ def prepare_transition(
         transition["reissue"] = reissue
     if capture_lease_recovery is not None:
         transition["capture_lease_recovery"] = capture_lease_recovery
+    if pretrade_gate_contract is not None:
+        transition["pretrade_gate_contract"] = copy.deepcopy(
+            pretrade_gate_contract
+        )
     target = directory / f"transition_{slot}.json"
     existing = load_json(target)
     if existing and not replace_prepared_transition:
@@ -611,6 +616,8 @@ def prepare_transition(
             and existing.get("capture_manifest") == transition["capture_manifest"]
             and existing.get("parent_version") == transition["parent_version"]
             and existing.get("analysis_policy") == transition["analysis_policy"]
+            and existing.get("pretrade_gate_contract")
+            == transition.get("pretrade_gate_contract")
         )
         if comparable:
             existing_recovery = existing.get("capture_lease_recovery")

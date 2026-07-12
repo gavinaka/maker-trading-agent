@@ -9,19 +9,16 @@ from pathlib import Path
 from typing import Any
 
 from runtime.decision_contract import validate_contract_file
+from runtime.pretrade_gate import (
+    assert_transition_binding,
+    pretrade_gate_required,
+)
 from runtime.state_store import atomic_json_write
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FIRST_SLOT = ("2026-07-11", "evening")
-SLOT_INDEX = {"morning": 0, "midday": 1, "evening": 2}
-
-
 def report_contract_required(trading_date: str, slot: str) -> bool:
-    return (trading_date, SLOT_INDEX[slot]) >= (
-        FIRST_SLOT[0],
-        SLOT_INDEX[FIRST_SLOT[1]],
-    )
+    return pretrade_gate_required(trading_date, slot)
 
 
 def _sha256_file(path: Path) -> str:
@@ -56,14 +53,14 @@ def build_report_contract(
     trading_date: str,
     slot: str,
     *,
-    gate_summary: str,
     decision_contract_path: Path,
     leverage: Decimal | int | str = Decimal("5"),
     root: Path = ROOT,
 ) -> dict[str, Any]:
-    gate = gate_summary.strip()
-    if not gate or "\n" in gate or "｜" in gate:
-        raise ValueError("gate summary must be one standalone field without metadata")
+    gate_contract, gate_contract_path = assert_transition_binding(
+        trading_date, slot, root=root
+    )
+    gate = str(gate_contract["subjective_conclusion"])
     leverage_value = Decimal(str(leverage))
     if not leverage_value.is_finite() or leverage_value <= 0:
         raise ValueError("leverage must be a positive finite number")
@@ -99,6 +96,7 @@ def build_report_contract(
         "trading_date": trading_date,
         "slot": slot,
         "gate_summary": gate,
+        "pretrade_gate_contract": _file_record(gate_contract_path, root),
         "leverage": _plain_decimal(leverage_value),
         "decision_contract": _file_record(decision_path, root),
         "lines": {
@@ -157,6 +155,11 @@ def validate_report_contract_manifest(
         or payload.get("manifest_sha256") != _manifest_hash(payload)
     ):
         raise ValueError("canonical report contract manifest is invalid")
+    gate_record = payload.get("pretrade_gate_contract") or {}
+    gate_path = root / str(gate_record.get("path", ""))
+    if not gate_path.is_file() or gate_record != _file_record(gate_path, root):
+        raise ValueError("canonical report contract gate binding changed")
+    assert_transition_binding(trading_date, slot, root=root)
     record = payload.get("decision_contract") or {}
     decision_path = root / str(record.get("path", ""))
     if not decision_path.is_file() or record.get("sha256") != _sha256_file(decision_path):
@@ -165,7 +168,6 @@ def validate_report_contract_manifest(
     rebuilt = build_report_contract(
         trading_date,
         slot,
-        gate_summary=str(payload.get("gate_summary", "")),
         decision_contract_path=decision_path,
         leverage=str(payload.get("leverage", "")),
         root=root,

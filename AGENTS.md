@@ -30,4 +30,4 @@
 - 最终三门和台账记录完成后必须运行 `session_runner.py deliver`，形成最终交付状态。
 - 采集前必须 `begin-session` 并把 lease token 传给采集及所有 runner 阶段；租约持续到 hash-closed delivery，禁止时段交叠或静默抢锁。
 - 逻辑版本变化只触发本时段 MAX 全量分析失效，不触发证据重采；完整采集回退只允许证据失败、缺失、过期或无效。
-- DOCX 仅允许 canonical 文件；渲染/Word 导出哈希幂等且最多两次，且从 2026-07-06 午报起必须有 hash-bound analysis lock。delivery 必须读取真实 render/Word-QA/publish/context_log manifest，禁止布尔自证。
+- DOCX 仅允许 canonical 文件；渲染/Word 导出哈希幂等且最多两次，且从 2026-07-06 午报起必须有 hash-bound analysis lock。producer 遇到 Windows `80070520` 时，只能经共享 heartbeat 与 canonical、nonce/SHA-256 绑定的 attempt 请求使用预安装的常驻交互式 Word broker；sandbox 不得查询/触发 Task Scheduler，禁止任意路径或任意参数任务。两次历史失败后的基础设施迁移例外仅可使用一次，成功或失败均永久消耗；delivery 必须复核 broker request/response 与迁移证据，并读取真实 render/Word-QA/publish/context_log manifest，禁止布尔自证。

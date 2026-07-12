@@ -17,9 +17,19 @@ from typing import Any
 
 try:
     from runtime.workflow_lease import _delivery_complete
+    from runtime.pretrade_gate import (
+        manifest_path as pretrade_gate_path,
+        pretrade_gate_required,
+        validate_pretrade_gate_contract,
+    )
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from runtime.workflow_lease import _delivery_complete
+    from runtime.pretrade_gate import (
+        manifest_path as pretrade_gate_path,
+        pretrade_gate_required,
+        validate_pretrade_gate_contract,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,11 +134,12 @@ def daily_artifacts(root: Path, trading_date: str, slot: str) -> dict[str, Any]:
         "publish_manifest": (state / f"publish_{slot}.json").is_file(),
         "delivery_manifest": delivery_path.is_file(),
         "retention_cleanup": (state / f"retention_cleanup_{slot}.json").is_file(),
+        "pretrade_gate_contract": (state / "pretrade_gate.json").is_file(),
     }
     partial_keys = [
         key
         for key, present in exists.items()
-        if present and key not in {"state_dir"}
+        if present and key not in {"state_dir", "pretrade_gate_contract"}
     ]
     return {
         "state_dir": relative_path(state, root),
@@ -153,12 +164,21 @@ def daily_status(root: Path, trading_date: str, slot: str) -> dict[str, Any]:
     prior_delivery_complete = (
         True if prior is None else _delivery_complete(trading_date, prior, root)
     )
+    gate_contract_required = pretrade_gate_required(trading_date, slot)
+    gate_contract_valid = not gate_contract_required
+    gate_contract_error = None
+    if gate_contract_required:
+        try:
+            validate_pretrade_gate_contract(trading_date, slot, root=root)
+            gate_contract_valid = True
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError) as exc:
+            gate_contract_error = type(exc).__name__
 
     state = "ready_to_claim"
     reasons: list[str] = []
     missing: list[str] = []
 
-    if delivery_complete and gate["done"]:
+    if delivery_complete and gate["done"] and gate_contract_valid:
         state = "complete"
     elif delivery_complete and not gate["done"]:
         state = "manual_review_required"
@@ -172,9 +192,15 @@ def daily_status(root: Path, trading_date: str, slot: str) -> dict[str, Any]:
     elif not prior_delivery_complete:
         state = "manual_review_required"
         missing.append(f"complete_prior_delivery:{prior}")
+    elif slot != "morning" and gate_contract_required and not gate_contract_valid:
+        state = "manual_review_required"
+        reasons.append("same_day_pretrade_gate_contract_missing_or_invalid")
+        missing.append("runtime_state/<date>/pretrade_gate.json")
     elif artifacts["has_partial_work"]:
         state = "manual_review_required"
         reasons.append("partial_daily_artifacts_exist_without_complete_delivery")
+        if gate_contract_required and not gate_contract_valid:
+            reasons.append("same_day_pretrade_gate_contract_missing_or_invalid")
 
     return {
         "schema_version": "1.0",
@@ -201,6 +227,12 @@ def daily_status(root: Path, trading_date: str, slot: str) -> dict[str, Any]:
         "prior_delivery": {
             "slot": prior,
             "complete": prior_delivery_complete,
+        },
+        "pretrade_gate_contract": {
+            "required": gate_contract_required,
+            "valid": gate_contract_valid,
+            "path": relative_path(pretrade_gate_path(trading_date, root=root), root),
+            "error_type": gate_contract_error,
         },
         "delivery": {
             "complete": delivery_complete,

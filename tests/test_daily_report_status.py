@@ -121,6 +121,33 @@ class DailyReportStatusTests(unittest.TestCase):
             )
             self.assertIn("analysis", payload["artifacts"]["partial_keys"])
 
+    def test_future_midday_requires_same_day_pretrade_gate_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def fake_delivery_complete(_date: str, slot: str, _root: Path) -> bool:
+                return slot == "morning"
+
+            with patch.object(status, "_delivery_complete", fake_delivery_complete):
+                payload = status.daily_status(root, "2026-07-12", "midday")
+
+            self.assertEqual(
+                payload["next_action"]["state"], "manual_review_required"
+            )
+            self.assertIn(
+                "same_day_pretrade_gate_contract_missing_or_invalid",
+                payload["next_action"]["reasons"],
+            )
+
+    def test_future_morning_can_claim_before_gate_is_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(status, "_delivery_complete", return_value=False):
+                payload = status.daily_status(root, "2026-07-12", "morning")
+            self.assertEqual(payload["next_action"]["state"], "ready_to_claim")
+            self.assertTrue(payload["pretrade_gate_contract"]["required"])
+            self.assertFalse(payload["pretrade_gate_contract"]["valid"])
+
     def test_monthly_artifact_without_gate_needs_verification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -19,6 +19,7 @@ from typing import Any
 try:
     from .daily_publish_contract import (
         DAILY_PAYLOAD_TYPES_BY_SLOT,
+        DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT,
         FINAL_TEXT_PREFIXES,
         REQUIRED_SOURCE_LABELS,
         SLOT_TITLE_META,
@@ -33,6 +34,7 @@ try:
 except ImportError:  # pragma: no cover - script execution from outputs/
     from daily_publish_contract import (
         DAILY_PAYLOAD_TYPES_BY_SLOT,
+        DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT,
         FINAL_TEXT_PREFIXES,
         REQUIRED_SOURCE_LABELS,
         SLOT_TITLE_META,
@@ -275,9 +277,11 @@ def parse_daily_text_contract(
     }
 
 
-def daily_text_values_from_combined(lines: list[str], trading_date: str, slot: str) -> list[str]:
+def daily_text_values_from_combined(
+    lines: list[str], trading_date: str, slot: str, *, visual_v3: bool = True
+) -> list[str]:
     contract = parse_daily_text_contract(lines, trading_date, slot)
-    values = [
+    legacy_values = [
         contract["opening_quote"],
         contract["cannot_do"],
         contract["fundamentals"],
@@ -300,7 +304,40 @@ def daily_text_values_from_combined(lines: list[str], trading_date: str, slot: s
         "防守计划",
         *contract["defense"],
     ]
-    expected = len(DAILY_PAYLOAD_TYPES_BY_SLOT[slot])
+    if visual_v3:
+        values = [
+            legacy_values[0],
+            "不能做",
+            legacy_values[1],
+            "基本面",
+            legacy_values[2],
+            "技术面",
+            legacy_values[4],
+            legacy_values[5],
+            "解读",
+            legacy_values[6],
+            legacy_values[7],
+            legacy_values[8],
+            legacy_values[9],
+            "趋势确认",
+            legacy_values[10],
+            "日内支撑/压力",
+            legacy_values[11],
+            "策略",
+            legacy_values[13],
+            "<divider>",
+            "Maker 计划",
+            legacy_values[15],
+            legacy_values[16],
+            legacy_values[17],
+            legacy_values[18],
+            "防守计划",
+            *legacy_values[20:],
+        ]
+        expected = len(DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT[slot])
+    else:
+        values = legacy_values
+        expected = len(DAILY_PAYLOAD_TYPES_BY_SLOT[slot])
     if len(values) != expected:
         raise ValueError(
             f"derived daily payload text count mismatch for {slot}: "
@@ -309,11 +346,20 @@ def daily_text_values_from_combined(lines: list[str], trading_date: str, slot: s
     return values
 
 
-def daily_children_from_combined(lines: list[str], trading_date: str, slot: str) -> list[dict]:
-    values = daily_text_values_from_combined(lines, trading_date, slot)
+def daily_children_from_combined(
+    lines: list[str], trading_date: str, slot: str, *, visual_v3: bool = True
+) -> list[dict]:
+    values = daily_text_values_from_combined(
+        lines, trading_date, slot, visual_v3=visual_v3
+    )
+    block_types = (
+        DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT[slot]
+        if visual_v3
+        else DAILY_PAYLOAD_TYPES_BY_SLOT[slot]
+    )
     return [
         _block(block_type, None if block_type == "divider" else values[index])
-        for index, block_type in enumerate(DAILY_PAYLOAD_TYPES_BY_SLOT[slot])
+        for index, block_type in enumerate(block_types)
     ]
 
 
@@ -363,7 +409,9 @@ def blockbeat_card_paths(trading_date: str, slot: str, *, root: Path = ROOT) -> 
     return [_relative(path, Path(root)) for path in paths]
 
 
-def build_daily_payload(report_path: Path, *, root: Path = ROOT) -> dict:
+def build_daily_payload(
+    report_path: Path, *, root: Path = ROOT, schema_version: str = "daily-publish-payload-v3"
+) -> dict:
     root = Path(root).resolve()
     report_path = Path(report_path)
     report = report_path if report_path.is_absolute() else root / report_path
@@ -375,14 +423,19 @@ def build_daily_payload(report_path: Path, *, root: Path = ROOT) -> dict:
         raise ValueError("combined report filename must start with YYYY-MM-DD_slot_")
     trading_date, slot = match.groups()
     lines = report.read_text(encoding="utf-8").splitlines()
-    children = daily_children_from_combined(lines, trading_date, slot)
+    visual_v3 = schema_version == "daily-publish-payload-v3"
+    if schema_version not in {"daily-publish-payload-v2", "daily-publish-payload-v3"}:
+        raise ValueError(f"unsupported daily payload schema: {schema_version}")
+    children = daily_children_from_combined(
+        lines, trading_date, slot, visual_v3=visual_v3
+    )
     source_specs = source_specs_from_transition(trading_date, slot, root=root)
     image_paths = blockbeat_card_paths(trading_date, slot, root=root)
     meta = SLOT_TITLE_META[slot]
     report_sha = sha256_file(report)
     signature = children_signature(children)
     payload = {
-        "schema_version": "daily-publish-payload-v2",
+        "schema_version": schema_version,
         "date": trading_date,
         "title": (
             f"{meta['emoji']} {display_date(trading_date)} {meta['label']}"
@@ -443,7 +496,8 @@ def validate_payload_derivation(
 
     root = Path(root).resolve()
     report = report_path if Path(report_path).is_absolute() else root / report_path
-    expected = build_daily_payload(report, root=root)
+    actual_schema = payload.get("schema_version", "daily-publish-payload-v2")
+    expected = build_daily_payload(report, root=root, schema_version=actual_schema)
     expected_source = expected["payload_source"]
     actual_source = payload.get("payload_source")
     if not isinstance(actual_source, dict):

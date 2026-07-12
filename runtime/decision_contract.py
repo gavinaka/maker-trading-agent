@@ -13,6 +13,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SLOTS = {"morning", "midday", "evening"}
+MAKER_EXECUTION_CUTOVER = ("2026-07-11", "evening")
+
+
+def maker_execution_contract_required(trading_date: str, slot: str) -> bool:
+    return (trading_date, {"morning": 0, "midday": 1, "evening": 2}[slot]) >= (
+        MAKER_EXECUTION_CUTOVER[0],
+        2,
+    )
 
 
 def _decimal(value, field: str) -> Decimal:
@@ -78,6 +86,7 @@ def build_contract(payload: dict) -> dict:
     plan = payload.get("plan") or {}
     direction = str(plan.get("direction", "none")).lower()
     risk_math = None
+    maker_execution = None
     if direction != "none":
         if direction not in {"long", "short"}:
             raise ValueError("plan.direction must be long, short or none")
@@ -91,6 +100,8 @@ def build_contract(payload: dict) -> dict:
         if risk <= 0 or reward <= 0:
             raise ValueError("plan stop/TP1 are inconsistent with direction")
         rr = reward / risk
+        if rr < Decimal("2.5"):
+            raise ValueError("plan TP1 reward/risk must be at least 2.5")
         risk_math = {
             "entry": _plain(entry),
             "stop": _plain(stop),
@@ -99,9 +110,58 @@ def build_contract(payload: dict) -> dict:
             "reward_to_tp1": _plain(reward),
             "rr_to_tp1": round(float(rr), 6),
         }
+        if maker_execution_contract_required(trading_date, slot):
+            tp2 = _decimal(plan.get("tp2"), "plan.tp2")
+            if tp2 <= 0 or (
+                direction == "long" and tp2 <= tp1
+            ) or (
+                direction == "short" and tp2 >= tp1
+            ):
+                raise ValueError("plan.tp2 is inconsistent with direction and TP1")
+            tp1_close_pct = _decimal(
+                plan.get("tp1_close_pct"), "plan.tp1_close_pct"
+            )
+            tp2_close_pct = _decimal(
+                plan.get("tp2_close_pct"), "plan.tp2_close_pct"
+            )
+            if tp1_close_pct != Decimal("50") or tp2_close_pct != Decimal("50"):
+                raise ValueError(
+                    "Maker position ledger requires TP1 50% and TP2 remaining 50%"
+                )
+            sign = Decimal("1") if direction == "long" else Decimal("-1")
+            first_trigger = entry + sign * Decimal("1.5") * risk
+            second_trigger = entry + sign * Decimal("2.0") * risk
+            claimed_first = _decimal(
+                plan.get("defense_first_trigger"), "plan.defense_first_trigger"
+            )
+            claimed_second = _decimal(
+                plan.get("defense_second_trigger"), "plan.defense_second_trigger"
+            )
+            if claimed_first != first_trigger:
+                raise ValueError("plan.defense_first_trigger must equal entry +/- 1.5R")
+            if claimed_second != second_trigger:
+                raise ValueError("plan.defense_second_trigger must equal entry +/- 2R")
+            maker_execution = {
+                "tp2": _plain(tp2),
+                "tp1_close_pct": 50,
+                "tp2_close_pct": 50,
+                "defense_first_trigger": _plain(first_trigger),
+                "defense_first_stop_rule": (
+                    "post-entry-confirmed-4h-structure-low"
+                    if direction == "long"
+                    else "post-entry-confirmed-4h-structure-high"
+                ),
+                "defense_first_cancel_additions": True,
+                "defense_second_trigger": _plain(second_trigger),
+                "defense_second_action": "move-stop-to-breakeven-only",
+            }
 
     normalized = {
-        "schema_version": "trading-decision-contract-v1",
+        "schema_version": (
+            "trading-decision-contract-v2"
+            if maker_execution_contract_required(trading_date, slot)
+            else "trading-decision-contract-v1"
+        ),
         "trading_date": trading_date,
         "slot": slot,
         "score": {
@@ -116,7 +176,11 @@ def build_contract(payload: dict) -> dict:
             "adjustment_total": _plain(adjustment_total),
             "final": _plain(final),
         },
-        "plan": {"direction": direction, "risk_math": risk_math},
+        "plan": {
+            "direction": direction,
+            "risk_math": risk_math,
+            "maker_execution": maker_execution,
+        },
     }
     normalized["contract_sha256"] = hashlib.sha256(
         json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -135,6 +199,44 @@ def validate_contract_file(path: Path, trading_date: str, slot: str) -> dict:
         raise ValueError("decision contract hash mismatch")
     if payload.get("trading_date") != trading_date or payload.get("slot") != slot:
         raise ValueError("decision contract date/slot mismatch")
+    if maker_execution_contract_required(trading_date, slot):
+        if payload.get("schema_version") != "trading-decision-contract-v2":
+            raise ValueError("decision contract v2 is required for Maker execution cutover")
+        plan = payload.get("plan") or {}
+        direction = plan.get("direction")
+        execution = plan.get("maker_execution")
+        if direction != "none":
+            if not isinstance(execution, dict):
+                raise ValueError("decision contract v2 requires Maker execution binding")
+            risk_math = plan.get("risk_math") or {}
+            entry = _decimal(risk_math.get("entry"), "plan.risk_math.entry")
+            risk = _decimal(
+                risk_math.get("risk_per_unit"), "plan.risk_math.risk_per_unit"
+            )
+            sign = Decimal("1") if direction == "long" else Decimal("-1")
+            expected_first = entry + sign * Decimal("1.5") * risk
+            expected_second = entry + sign * Decimal("2.0") * risk
+            if (
+                _decimal(execution.get("tp1_close_pct"), "maker.tp1_close_pct")
+                != Decimal("50")
+                or _decimal(execution.get("tp2_close_pct"), "maker.tp2_close_pct")
+                != Decimal("50")
+            ):
+                raise ValueError("decision contract Maker ledger binding changed")
+            if _decimal(
+                execution.get("defense_first_trigger"),
+                "maker.defense_first_trigger",
+            ) != expected_first or _decimal(
+                execution.get("defense_second_trigger"),
+                "maker.defense_second_trigger",
+            ) != expected_second:
+                raise ValueError("decision contract Maker defense trigger binding changed")
+            if (
+                execution.get("defense_first_cancel_additions") is not True
+                or execution.get("defense_second_action")
+                != "move-stop-to-breakeven-only"
+            ):
+                raise ValueError("decision contract Maker defense action binding changed")
     return payload
 
 

@@ -323,13 +323,16 @@ def run_report_lint(report_path):
         "REPORT LINT",
     )
 
-def run_frozen_verifier(page_id, mode):
+def run_frozen_verifier(page_id, mode, expected_children_signature_sha256=None):
+    args = [page_id, mode]
+    if expected_children_signature_sha256:
+        args.append(str(expected_children_signature_sha256))
     return run_python_gate(
         os.path.join(
             os.path.dirname(__file__),
             "notion_verify_against_yesterday.py",
         ),
-        [page_id, mode],
+        args,
         "FROZEN GOLD VERIFY",
     )
 
@@ -430,7 +433,16 @@ def replace_page_transactional(
         print("PUBLISH VERIFY PASS:", message)
 
         set_page_title(page_id, title)
-        verifier_evidence = run_frozen_verifier(page_id, verifier_mode)
+        expected_children_signature = (
+            daily_payload_source.get("children_signature_sha256")
+            if isinstance(daily_payload_source, dict)
+            else None
+        )
+        verifier_evidence = run_frozen_verifier(
+            page_id,
+            verifier_mode,
+            expected_children_signature,
+        )
     except BaseException:
         if page_id:
             try:

@@ -12,6 +12,7 @@ from runtime import delivery_evidence
 from runtime import reasoning_readiness
 from runtime import session_runner
 from runtime import state_store
+from runtime import workflow_lease
 
 
 COMPLETE_STATE = {
@@ -27,6 +28,21 @@ COMPLETE_STATE = {
 
 
 class ReportPreflightTests(unittest.TestCase):
+    def test_v3_delivery_requires_explicit_notion_visual_flag(self):
+        evidence = {"notion_visual_contract_pass": True}
+        self.assertFalse(workflow_lease._notion_visual_flag_matches({}, evidence))
+        self.assertFalse(
+            workflow_lease._notion_visual_flag_matches(
+                {"notion_visual_contract_pass": False}, evidence
+            )
+        )
+        self.assertTrue(
+            workflow_lease._notion_visual_flag_matches(
+                {"notion_visual_contract_pass": True}, evidence
+            )
+        )
+        self.assertTrue(workflow_lease._notion_visual_flag_matches({}, {}))
+
     def test_preflight_revalidates_reasoning_and_all_mechanical_consumers(self):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "2026-07-11_morning_combined.md"
@@ -57,7 +73,19 @@ class ReportPreflightTests(unittest.TestCase):
                 session_runner, "validate_report_state", return_value=[]
             ) as state_gate, mock.patch.object(
                 session_runner, "build_daily_payload", return_value=payload_preview
-            ) as payload_gate:
+            ) as payload_gate, mock.patch.object(
+                session_runner,
+                "validate_daily_payload_shape",
+                return_value={"visual_contract": {"status": "passed", "template": "v3"}},
+            ) as visual_gate, mock.patch.object(
+                session_runner,
+                "style_daily_payload_children",
+                return_value={"status": "passed", "template": "colors-v3"},
+            ) as color_style, mock.patch.object(
+                session_runner,
+                "audit_daily_blocks",
+                return_value=([], {"status": "passed", "template": "colors-v3"}),
+            ) as color_audit:
                 manifest, state, _, _ = session_runner.validate_report_preflight(
                     report,
                     "2026-07-11",
@@ -75,6 +103,9 @@ class ReportPreflightTests(unittest.TestCase):
             )
             state_gate.assert_called_once_with(report.read_text(encoding="utf-8"), COMPLETE_STATE)
             payload_gate.assert_called_once()
+            visual_gate.assert_called_once()
+            color_style.assert_called_once()
+            color_audit.assert_called_once()
             self.assertEqual(state, COMPLETE_STATE)
             self.assertTrue(all(manifest["checks"].values()))
             self.assertEqual(manifest["image_count"], 3)
@@ -150,6 +181,18 @@ class ReportPreflightTests(unittest.TestCase):
                 session_runner, "validate_report_state", return_value=[]
             ), mock.patch.object(
                 session_runner, "build_daily_payload", return_value=payload_preview
+            ), mock.patch.object(
+                session_runner,
+                "validate_daily_payload_shape",
+                return_value={"visual_contract": {"status": "passed", "template": "v3"}},
+            ), mock.patch.object(
+                session_runner,
+                "style_daily_payload_children",
+                return_value={"status": "passed", "template": "colors-v3"},
+            ), mock.patch.object(
+                session_runner,
+                "audit_daily_blocks",
+                return_value=([], {"status": "passed", "template": "colors-v3"}),
             ):
                 manifest, _, _, _ = session_runner.validate_report_preflight(
                     report, "2026-07-11", "evening"
@@ -166,6 +209,44 @@ class ReportPreflightTests(unittest.TestCase):
             )
             self.assertTrue(manifest["checks"]["canonical_report_contract"])
             self.assertTrue(manifest["checks"]["draft_recovery_binding"])
+
+    def test_preflight_blocks_notion_visual_drift_before_analysis_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "2026-07-11_morning_combined.md"
+            report.write_text("# deterministic fixture\n", encoding="utf-8")
+            payload_preview = {
+                "image_paths": ["one.png", "two.png", "three.png"],
+                "payload_source": {
+                    "children_signature_sha256": "1" * 64,
+                    "source_specs_sha256": "2" * 64,
+                    "image_paths_sha256": "3" * 64,
+                },
+            }
+            with mock.patch.object(
+                session_runner,
+                "validate_reasoning_readiness_manifest",
+                return_value=({}, Path("readiness.json")),
+            ), mock.patch.object(
+                session_runner,
+                "validate_golden_reasoning_manifest",
+                return_value=({}, Path("golden.json")),
+            ), mock.patch.object(session_runner, "validate_report_structure"), mock.patch.object(
+                session_runner, "run_report_lint"
+            ), mock.patch.object(
+                session_runner, "extract_report_state", return_value=COMPLETE_STATE
+            ), mock.patch.object(
+                session_runner, "validate_report_state", return_value=[]
+            ), mock.patch.object(
+                session_runner, "build_daily_payload", return_value=payload_preview
+            ), mock.patch.object(
+                session_runner,
+                "validate_daily_payload_shape",
+                side_effect=ValueError("daily Notion heading exceeds visual budget"),
+            ):
+                with self.assertRaisesRegex(ValueError, "heading exceeds visual budget"):
+                    session_runner.validate_report_preflight(
+                        report, "2026-07-11", "morning"
+                    )
 
     def test_preflight_binding_rejects_report_or_payload_drift(self):
         expected = {

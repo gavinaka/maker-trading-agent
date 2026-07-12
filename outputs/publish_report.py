@@ -35,6 +35,9 @@ from daily_publish_contract import (
     CRITICAL_REPORT_TEXT_PREFIXES,
     DAILY_PAYLOAD_TEXT_PREFIXES,
     DAILY_PAYLOAD_TYPES_BY_SLOT,
+    DAILY_VISUAL_LABELS,
+    DAILY_VISUAL_LIMITS,
+    DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT,
     FINAL_TEXT_PREFIXES,
     REQUIRED_SOURCE_LABELS,
     SOURCE_LABEL_FILES,
@@ -260,7 +263,13 @@ def validate_daily_payload_shape(
     children = payload.get("children")
     if not isinstance(children, list):
         raise ValueError("daily payload shape gate requires children array")
-    expected_types = DAILY_PAYLOAD_TYPES_BY_SLOT[report_slot]
+    schema_version = payload.get("schema_version", "daily-publish-payload-v2")
+    visual_v3 = schema_version == "daily-publish-payload-v3"
+    expected_types = (
+        DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT[report_slot]
+        if visual_v3
+        else DAILY_PAYLOAD_TYPES_BY_SLOT[report_slot]
+    )
     actual_types = tuple(
         block.get("type") if isinstance(block, dict) else None
         for block in children
@@ -299,13 +308,84 @@ def validate_daily_payload_shape(
     }[report_slot]
     if expected_slot not in str(payload.get("title", "")):
         raise ValueError(f"daily Notion payload title must contain {expected_slot}")
-    for index, expected_prefix in DAILY_PAYLOAD_TEXT_PREFIXES.items():
-        text = _rich_text_plain(children[index])
-        if not text.startswith(expected_prefix):
+    if visual_v3:
+        for index, expected_label in DAILY_VISUAL_LABELS.items():
+            text = _rich_text_plain(children[index])
+            if text != expected_label:
+                raise ValueError(
+                    "daily Notion visual label drift: "
+                    f"block {index + 1} expected {expected_label!r}, got {text!r}"
+                )
+        heading_lengths = []
+        body_lengths = []
+        total_text_chars = 0
+        long_body_count = 0
+        for index, block in enumerate(children):
+            block_type = block.get("type")
+            if block_type == "divider":
+                continue
+            text = _rich_text_plain(block)
+            length = len(text)
+            total_text_chars += length
+            if block_type in {"heading_1", "heading_2", "heading_3"}:
+                heading_lengths.append(length)
+                if length > DAILY_VISUAL_LIMITS["heading_max_chars"]:
+                    raise ValueError(
+                        "daily Notion heading exceeds visual budget: "
+                        f"block={index + 1}, chars={length}, text={text!r}"
+                    )
+            else:
+                body_lengths.append(length)
+                if length > DAILY_VISUAL_LIMITS["body_max_chars"]:
+                    raise ValueError(
+                        "daily Notion body exceeds visual budget: "
+                        f"block={index + 1}, chars={length}"
+                    )
+                if length > DAILY_VISUAL_LIMITS["long_body_threshold_chars"]:
+                    long_body_count += 1
+        quote_length = len(_rich_text_plain(children[0]))
+        if quote_length > DAILY_VISUAL_LIMITS["quote_max_chars"]:
             raise ValueError(
-                "daily Notion payload text slot drift: "
-                f"block {index + 1} expected prefix {expected_prefix!r}, got {text!r}"
+                "daily Notion quote exceeds visual budget: "
+                f"chars={quote_length}"
             )
+        if total_text_chars > DAILY_VISUAL_LIMITS["total_text_max_chars"]:
+            raise ValueError(
+                "daily Notion payload exceeds total visual text budget: "
+                f"chars={total_text_chars}"
+            )
+        warnings = []
+        if quote_length > DAILY_VISUAL_LIMITS["quote_warn_chars"]:
+            warnings.append("quote_density")
+        if max(body_lengths, default=0) > DAILY_VISUAL_LIMITS["body_warn_chars"]:
+            warnings.append("body_density")
+        if long_body_count > DAILY_VISUAL_LIMITS["long_body_warn_count"]:
+            warnings.append("many_long_body_blocks")
+        if total_text_chars > DAILY_VISUAL_LIMITS["total_text_warn_chars"]:
+            warnings.append("total_text_density")
+        visual_contract = {
+            "status": "passed",
+            "template": "daily-visual-contract-v3",
+            "heading_max_chars": max(heading_lengths, default=0),
+            "body_max_chars": max(body_lengths, default=0),
+            "quote_chars": quote_length,
+            "long_body_count": long_body_count,
+            "total_text_chars": total_text_chars,
+            "warnings": warnings,
+            "limits": dict(DAILY_VISUAL_LIMITS),
+        }
+    else:
+        for index, expected_prefix in DAILY_PAYLOAD_TEXT_PREFIXES.items():
+            text = _rich_text_plain(children[index])
+            if not text.startswith(expected_prefix):
+                raise ValueError(
+                    "daily Notion payload text slot drift: "
+                    f"block {index + 1} expected prefix {expected_prefix!r}, got {text!r}"
+                )
+        visual_contract = {
+            "status": "legacy",
+            "template": "daily-gold-run-colors-v1",
+        }
     final_text = _rich_text_plain(children[-1])
     if not final_text.startswith(FINAL_TEXT_PREFIXES):
         raise ValueError(
@@ -329,6 +409,8 @@ def validate_daily_payload_shape(
         ),
         "block_count_before_images": len(children),
         "image_count": len(payload["image_paths"]),
+        "schema_version": schema_version,
+        "visual_contract": visual_contract,
     }
 
 
@@ -357,20 +439,37 @@ def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) ->
             and verifier.get("returncode") == 0
             and "[PASS]" in str(verifier.get("stdout", ""))
         )
-    expected_count = {
-        "morning": 25,
-        "midday": 25,
-        "evening": 26,
-    }.get(str(manifest.get("slot", "")))
+    schema_version = shape.get("schema_version") if isinstance(shape, dict) else None
+    expected_count = (
+        {"morning": 31, "midday": 31, "evening": 32}
+        if schema_version == "daily-publish-payload-v3"
+        else {"morning": 25, "midday": 25, "evening": 26}
+    ).get(str(manifest.get("slot", "")))
+    visual_contract = shape.get("visual_contract") if isinstance(shape, dict) else None
+    visual_contract_ok = (
+        isinstance(visual_contract, dict)
+        and visual_contract.get("status") == "passed"
+        if schema_version == "daily-publish-payload-v3"
+        else visual_contract is None
+        or (
+            isinstance(visual_contract, dict)
+            and visual_contract.get("status") in {"passed", "legacy"}
+        )
+    )
     return bool(
         isinstance(shape, dict)
         and shape.get("status") == "passed"
         and expected_count is not None
         and shape.get("block_count_before_images") == expected_count
         and shape.get("image_count") == 3
+        and visual_contract_ok
         and isinstance(colors, dict)
         and colors.get("status") == "passed"
-        and colors.get("template") == "daily-gold-run-colors-v1"
+        and colors.get("template") == (
+            "daily-visual-colors-v3"
+            if schema_version == "daily-publish-payload-v3"
+            else "daily-gold-run-colors-v1"
+        )
         and isinstance(source, dict)
         and source.get("status") == "passed"
         and source.get("kind") == "combined_md_to_notion_payload"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import re
@@ -35,6 +36,10 @@ from runtime.prelock_guard import (
     restore_all_active_prelock_guards,
     restore_prelock_guard,
 )
+from runtime.pretrade_gate import (
+    transition_binding as pretrade_gate_transition_binding,
+    write_pretrade_gate_contract,
+)
 from runtime.reasoning_readiness import (
     POLICY as REASONING_READINESS_POLICY,
     build_reasoning_readiness_manifest,
@@ -64,6 +69,8 @@ from runtime.workflow_lease import (
     recover_lease,
 )
 from outputs.daily_payload_builder import build_daily_payload
+from outputs.daily_color_template import audit_daily_blocks, style_daily_payload_children
+from outputs.publish_report import validate_daily_payload_shape
 from outputs.report_structure_gate import assert_combined_structure
 
 
@@ -84,6 +91,8 @@ REPORT_PREFLIGHT_BINDING_FIELDS = (
     "source_specs_sha256",
     "image_paths_sha256",
     "image_count",
+    "notion_visual_contract_sha256",
+    "notion_color_contract_sha256",
     "report_contract_manifest_sha256",
     "draft_recovery_manifest_sha256",
     "checks",
@@ -114,6 +123,15 @@ def sha256_json(value: object) -> str:
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
+
+
+def strict_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
 
 
 def commit_identifier(
@@ -341,6 +359,23 @@ def validate_report_preflight(
     payload_source = payload_preview.get("payload_source")
     if not isinstance(payload_source, dict):
         raise ValueError("report preflight payload is missing payload_source")
+    payload_shape = validate_daily_payload_shape(
+        payload_preview,
+        trading_date,
+        slot,
+        report_text=text,
+    )
+    visual_contract = payload_shape.get("visual_contract")
+    if not isinstance(visual_contract, dict) or visual_contract.get("status") != "passed":
+        raise ValueError("report preflight Notion visual contract did not pass")
+    styled_children = copy.deepcopy(payload_preview.get("children", []))
+    color_contract = style_daily_payload_children(styled_children)
+    color_violations, color_audit = audit_daily_blocks(styled_children)
+    if color_contract.get("status") != "passed" or color_violations:
+        raise ValueError(
+            "report preflight Notion color contract did not pass: "
+            f"violations={len(color_violations)}"
+        )
     manifest = {
         "schema_version": "daily-report-preflight-v1",
         "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -357,6 +392,8 @@ def validate_report_preflight(
         "source_specs_sha256": payload_source.get("source_specs_sha256"),
         "image_paths_sha256": payload_source.get("image_paths_sha256"),
         "image_count": len(payload_preview.get("image_paths", [])),
+        "notion_visual_contract_sha256": sha256_json(visual_contract),
+        "notion_color_contract_sha256": sha256_json(color_audit),
         "report_contract_manifest_sha256": (
             sha256_file(report_contract_target) if report_contract_target else None
         ),
@@ -370,6 +407,8 @@ def validate_report_preflight(
             "report_lint": True,
             "report_state": True,
             "daily_payload_derivation": True,
+            "notion_visual_contract": True,
+            "notion_color_contract": True,
             "source_binding_inputs": True,
             "blockbeats_cards": len(payload_preview.get("image_paths", [])) == 3,
             "canonical_report_contract": (
@@ -489,6 +528,32 @@ def main() -> int:
     add_lease_argument(prepare)
     add_usage_arguments(prepare)
 
+    record_pretrade_gate = sub.add_parser("record-pretrade-gate")
+    record_pretrade_gate.add_argument("--date", required=True)
+    record_pretrade_gate.add_argument("--slot", required=True, choices=("morning",))
+    record_pretrade_gate.add_argument("--source-page-id", required=True)
+    record_pretrade_gate.add_argument("--source-observed-at", required=True)
+    record_pretrade_gate.add_argument(
+        "--subjective-conclusion", required=True, choices=("可交易", "不可交易")
+    )
+    record_pretrade_gate.add_argument("--emotion-stable", required=True, type=strict_bool)
+    record_pretrade_gate.add_argument(
+        "--rhythm-consistent", required=True, type=strict_bool
+    )
+    record_pretrade_gate.add_argument(
+        "--result-dependency", required=True, type=strict_bool
+    )
+    record_pretrade_gate.add_argument(
+        "--continuous-stop-loss-count", required=True, type=int
+    )
+    record_pretrade_gate.add_argument(
+        "--physical-condition",
+        required=True,
+        choices=("normal", "tired", "unwell"),
+    )
+    add_lease_argument(record_pretrade_gate)
+    add_usage_arguments(record_pretrade_gate)
+
     lock_analysis = sub.add_parser("lock-analysis")
     lock_analysis.add_argument("--date", required=True)
     lock_analysis.add_argument(
@@ -531,7 +596,6 @@ def main() -> int:
     prepare_report_contract.add_argument(
         "--slot", required=True, choices=("morning", "midday", "evening")
     )
-    prepare_report_contract.add_argument("--gate-summary", required=True)
     prepare_report_contract.add_argument("--decision-contract", required=True, type=Path)
     prepare_report_contract.add_argument("--leverage", default="5")
     add_lease_argument(prepare_report_contract)
@@ -675,7 +739,48 @@ def main() -> int:
     directory = ROOT / "runtime_state" / args.date
     lease = assert_lease(args.date, args.slot, args.lease_token)
 
+    if args.command == "record-pretrade-gate":
+        payload, target = write_pretrade_gate_contract(
+            args.date,
+            source_reference=args.source_page_id,
+            source_observed_at=args.source_observed_at,
+            subjective_conclusion=args.subjective_conclusion,
+            emotion_stable=args.emotion_stable,
+            rhythm_consistent=args.rhythm_consistent,
+            result_dependency=args.result_dependency,
+            continuous_stop_loss_count=args.continuous_stop_loss_count,
+            physical_condition=args.physical_condition,
+            provenance_mode="live_notion_row",
+            root=ROOT,
+        )
+        append_usage(
+            trading_date=args.date,
+            slot=args.slot,
+            phase="pretrade_gate_contract",
+            status="success",
+            event_id=f"{args.date}:pretrade_gate:{payload['manifest_sha256']}",
+            duration_ms=round((time.perf_counter() - started) * 1000),
+            details={
+                "pretrade_gate_contract": str(target),
+                "manifest_sha256": payload["manifest_sha256"],
+                "provenance_mode": payload["provenance_mode"],
+            },
+            **usage_values(args),
+        )
+        print(
+            json.dumps(
+                {"pretrade_gate_contract": str(target), **payload},
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+
     if args.command == "prepare":
+        pretrade_gate_binding = pretrade_gate_transition_binding(
+            args.date, args.slot, root=ROOT
+        )
         preserve_certified_recovery_artifacts = (
             _certified_recovery_artifacts_available(
                 args.date,
@@ -719,6 +824,7 @@ def main() -> int:
                 if isinstance(lease.get("prior_delivery_skip"), dict)
                 else None
             ),
+            pretrade_gate_contract=pretrade_gate_binding,
         )
         _, golden_target = build_golden_reasoning_manifest(
             args.date,
@@ -775,7 +881,6 @@ def main() -> int:
         payload, target = write_report_contract(
             args.date,
             args.slot,
-            gate_summary=args.gate_summary,
             decision_contract_path=args.decision_contract,
             leverage=args.leverage,
             root=ROOT,
@@ -1189,6 +1294,7 @@ def main() -> int:
         "published_at": evidence["published_at"],
         "frozen_verifier_pass": True,
         "word_visual_qa_pass": True,
+        "notion_visual_contract_pass": evidence.get("notion_visual_contract_pass") is True,
         "unique_page_pass": True,
         "context_log_recorded": True,
         "evidence": evidence,

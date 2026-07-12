@@ -1,3 +1,27 @@
+## 2026-07-12 早间最终交付
+<!-- generated-delivery-evidence:2026-07-12:morning:39bfda35-a098-8178-b793-f67c159d6fac -->
+- 最终唯一存活页：`39bfda35-a098-8178-b793-f67c159d6fac`
+- 发布时间：`2026-07-12T09:38:39+08:00`
+- report_sha256：`ae645aedd968b9059e8d8c4c11a1eb68a152ee53129536d8570c7590ba0d80d5`
+- docx_sha256：`a6de11a14e4e10fb079fd50dd5dcaf466076d1de7d93f2fa9582d0ea8842f082`
+- render_manifest：`runtime_state/2026-07-12/render_morning.json`
+- word_qa_manifest：`runtime_state/2026-07-12/word_qa_morning.json`
+- publish_manifest：`runtime_state/2026-07-12/publish_morning.json`
+- Word 视觉 QA PASS
+- 冻结 verifier PASS
+
+## 2026-07-11 晚间最终交付
+<!-- generated-delivery-evidence:2026-07-11:evening:39afda35-a098-8112-8aa2-cb3543684799 -->
+- 最终唯一存活页：`39afda35-a098-8112-8aa2-cb3543684799`
+- 发布时间：`2026-07-11T22:25:50+08:00`
+- report_sha256：`bd411b6dc7ecc07fea7bad8a88c9d9f14daf43272dcce804ff964ccaf2cd8734`
+- docx_sha256：`8c395eef940e0e3756dda9770cde22a766a1964f7042f35af4b554674d46b194`
+- render_manifest：`runtime_state/2026-07-11/render_evening.json`
+- word_qa_manifest：`runtime_state/2026-07-11/word_qa_evening.json`
+- publish_manifest：`runtime_state/2026-07-11/publish_evening.json`
+- Word 视觉 QA PASS
+- 冻结 verifier PASS
+
 ## 2026-07-11 午间最终交付
 <!-- generated-delivery-evidence:2026-07-11:midday:39afda35-a098-81bc-b001-f43151115836 -->
 - 最终唯一存活页：`39afda35-a098-81bc-b001-f43151115836`

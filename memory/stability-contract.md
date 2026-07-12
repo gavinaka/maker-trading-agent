@@ -14,10 +14,10 @@ metadata:
 
 ## 一、禁飘逸（不自由发挥/不偏离模板与流程）
 - 只做 SOP/模板/用户明确要求的事；**想偏离=先问，不擅自改格式/字段/流程**。
-- 出稿严格按 **2026.6.2 冻结金标模板** 造（块类型/顺序/配色/配图位），不即兴换结构。
+- 新出稿严格按 **`daily-publish-payload-v3` 视觉契约** 造（固定短标题、完整正文相邻承载、配色、配图位），不即兴换结构；2026.6.2 冻结金标仅用于历史 `v2` 复验。
 - **门 ①（防漂移）**：push 后必跑
   `py outputs/notion_verify_against_yesterday.py <今日id> morning|evening|review`
-  → 对照 6/2 金标逐块比类型+颜色+图数+块数，**[PASS] 才算完成**。
+  → 新页必须同时得到 `STRUCTURE_PASS + VISUAL_CONTRACT_PASS`；正文密度 WARN 不得通过删减推理消除，只有结构漂移或接近 Notion API 上限才硬停。历史 `v2` 才逐块对照 6/2 金标。
 - 🟥 **失败传播锁死（2026-06-27）**：门① PASS 必须同时满足“输出 `[PASS]` + 进程退出码0”；`[FAIL]`/异常必须退出非零，外层推送脚本必须传播并回滚 staging。曾发现 verifier 打印 FAIL 仍 exit0，导致外层可假报 `FROZEN GOLD VERIFY PASS`，已修复并以错误模式故障注入回归。
 - 🟥 **事务式替换（2026-06-27）**：同名页必须“先建唯一 staging 新页→三图/落库/冻结门全过→再归档旧页→唯一存活检查”；禁先删旧后建新。准备失败回滚新页、旧页保留；清旧失败保留已验证新页并硬停，宁可重复不可全失。
 - 每天最多重建页到 PASS，不带 `[FAIL]`/`MISMATCH` 交付（见 [[notion-publish-checklist]]）。
@@ -27,6 +27,7 @@ metadata:
 - **新闻只用实时抓的 BlockBeats**，禁 AI 生成快讯；其余源截图/结构化读数不臆测。
 - **发布前时效门（2026-07-05）**：任何 Notion 写入前动态算源文件年龄；Coinglass/Exocharts/TradingView 四档任一 >4h，报告不得作为可执行计划发布，必须重采六源、重评分、重出稿。BlockBeats/FedWatch/Farside 至少当日；Farside 表格最新行允许停留在最近一个美股交易日，但文件必须当日采集。禁止把历史快照晚推后继续当实时计划。
 - **发布正文单源门（2026-07-05 根因修复）**：Daily Notion payload 必须由 `outputs/daily_payload_builder.py` 从 locked `combined.md` 与 source binding 机械派生；publish/deliver 证据必须包含 `notion_payload_source.status=passed` 且 `kind=combined_md_to_notion_payload`。任何手写 `children`、空块、补造 combined 不存在的 Maker/取消价/独立边界字段，或缺少 payload_source 的旧 payload，均不得发布或交付。
+- **推理零损失门（2026-07-12）**：Notion 视觉优化只能改变 block 容器，不能摘要、截断、改写或减少 `combined.md` 的分析维度。视觉/配色契约必须在 `preflight-report` 中、分析锁前 hash 绑定；视觉密度阈值默认只告警。发布后 verifier 必须把 live 非图片块全文重算并匹配 preflight `children_signature_sha256`，完整文本逐字派生与落库优先于表面长度稳定。
 - 不确定就**显式标注"条目未记/未知"**，绝不用占位或编造填。
 - **门 ②（防幻觉）**：push 前必跑
   `py outputs/report_lint.py outputs/{date}_morning_combined.md`

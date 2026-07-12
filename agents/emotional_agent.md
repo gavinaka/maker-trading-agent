@@ -22,7 +22,7 @@
 * **唯一准入源**：Notion 当天 `开仓前状态门禁` 行。
 * **只读镜像**：允许把同一门禁行机械镜像到 `state/risk_state.state_gate.*`、`state/main_account_state.state_gate.*`、`state/maker_state.state_gate.*`；镜像不得增加、推断或修改门禁结论。
 * 三处 `state_gate` 必须记录相同日期、相同来源和相同结论；晚间 review 无权写这些字段。
-* 可写 `outputs/<today>_emotional_log.json` 作为门禁读取快照：
+* 必须由 active morning lease 调用 `session_runner.py record-pretrade-gate`，把最小必要字段写入不可变 `runtime_state/<today>/pretrade_gate.json`；午报／晚报只读验证该工件。`outputs/<today>_emotional_log.json` 不再承担跨时段权威：
   ```json
   {
     "date": "<today>",

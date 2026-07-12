@@ -59,6 +59,15 @@ class DraftRecoveryTests(unittest.TestCase):
                 draft_recovery,
                 "validate_golden_reasoning_manifest",
                 return_value=({}, golden),
+            ), mock.patch.object(
+                draft_recovery,
+                "validate_draft_eligibility",
+                return_value={
+                    "report_structure": True,
+                    "report_lint": True,
+                    "daily_payload_derivation": True,
+                    "blockbeats_cards": True,
+                },
             ):
                 payload, target = draft_recovery.certify_draft_recovery(
                     date, slot, report=report, cards=cards, root=root
@@ -91,6 +100,15 @@ class DraftRecoveryTests(unittest.TestCase):
                 draft_recovery,
                 "validate_golden_reasoning_manifest",
                 return_value=({}, golden),
+            ), mock.patch.object(
+                draft_recovery,
+                "validate_draft_eligibility",
+                return_value={
+                    "report_structure": True,
+                    "report_lint": True,
+                    "daily_payload_derivation": True,
+                    "blockbeats_cards": True,
+                },
             ):
                 draft_recovery.certify_draft_recovery(
                     date, slot, report=report, cards=cards, root=root
@@ -102,6 +120,20 @@ class DraftRecoveryTests(unittest.TestCase):
                 draft_recovery.validate_recovery_draft_artifacts(
                     date, slot, capture, root=root
                 )
+
+    def test_ineligible_report_is_rejected_before_certification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            date, slot, report, cards, *_ = self.fixture(root)
+            with mock.patch.object(
+                draft_recovery,
+                "validate_draft_eligibility",
+                side_effect=ValueError("report lint failed"),
+            ), self.assertRaisesRegex(ValueError, "report lint failed"):
+                draft_recovery.certify_draft_recovery(
+                    date, slot, report=report, cards=cards, root=root
+                )
+            self.assertFalse(draft_recovery.manifest_path(date, slot, root=root).exists())
 
 
 if __name__ == "__main__":

@@ -56,6 +56,68 @@ def _relative(path: Path, root: Path) -> str:
     return str(path.resolve().relative_to(root.resolve())).replace("\\", "/")
 
 
+def _validate_interactive_word_qa(
+    qa: dict,
+    *,
+    qa_docx: Path,
+    qa_pdf: Path,
+    trading_date: str,
+    slot: str,
+    root: Path,
+) -> None:
+    exception = qa.get("attempt_limit_exception")
+    exception = exception if isinstance(exception, dict) else {}
+    previous_attempts = exception.get("previous_attempts")
+    request_path = qa_pdf.parent / "broker_request.json"
+    response_path = qa_pdf.parent / "broker_response.json"
+    try:
+        request = load_object(request_path)
+        response = load_object(response_path)
+        request_docx = _resolve_under_root(request.get("docx_path", ""), root)
+        request_pdf = _resolve_under_root(request.get("pdf_path", ""), root)
+        response_docx = _resolve_under_root(response.get("docx_path", ""), root)
+        response_pdf = _resolve_under_root(response.get("pdf_path", ""), root)
+    except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError) as exc:
+        raise ValueError("invalid Word QA interactive broker artifacts") from exc
+
+    checks = {
+        "recovery_used": qa.get("infrastructure_recovery_used") is True,
+        "exception_kind": exception.get("kind")
+        == "word_com_logon_session_to_interactive_broker",
+        "previous_attempts": isinstance(previous_attempts, int)
+        and previous_attempts >= 2,
+        "attempt_sequence": isinstance(previous_attempts, int)
+        and qa.get("attempts") == previous_attempts + 1,
+        "previous_failure": "80070520"
+        in str(exception.get("previous_failure_reason", "")),
+        "request_schema": request.get("schema_version") == "1.0",
+        "request_id": bool(
+            re.fullmatch(r"[0-9a-f]{32}", str(request.get("request_id", "")))
+        ),
+        "request_target": request.get("trading_date") == trading_date
+        and request.get("slot") == slot,
+        "request_docx": request_docx == qa_docx
+        and request.get("docx_sha256") == qa.get("docx_sha256"),
+        "request_pdf": request_pdf == qa_pdf,
+        "response_schema": response.get("schema_version") == "1.0",
+        "response_status": response.get("status") == "success",
+        "response_backend": response.get("backend")
+        == "word_com_interactive_task",
+        "response_nonce": response.get("request_id") == request.get("request_id"),
+        "response_target": response.get("trading_date") == trading_date
+        and response.get("slot") == slot,
+        "response_docx": response_docx == qa_docx
+        and response.get("docx_sha256") == qa.get("docx_sha256"),
+        "response_pdf": response_pdf == qa_pdf
+        and response.get("pdf_sha256") == qa.get("pdf_sha256"),
+    }
+    failed = sorted(name for name, passed in checks.items() if not passed)
+    if failed:
+        raise ValueError(
+            "invalid Word QA interactive broker evidence: " + ", ".join(failed)
+        )
+
+
 def _context_block(text: str, trading_date: str, slot: str, page_id: str) -> str:
     pattern = re.compile(
         rf"^## {re.escape(trading_date)}[^\n]*\n(?P<body>.*?)(?=^## 20\d{{2}}-\d{{2}}-\d{{2}}|\Z)",
@@ -96,11 +158,13 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
     source = publish.get("notion_payload_source")
     colors = publish.get("notion_payload_colors")
     verifier = publish.get("frozen_verifier")
-    expected_payload_count = {
-        "morning": 25,
-        "midday": 25,
-        "evening": 26,
-    }.get(str(publish.get("slot", "")))
+    schema_version = shape.get("schema_version") if isinstance(shape, dict) else None
+    visual_contract = shape.get("visual_contract") if isinstance(shape, dict) else None
+    expected_payload_count = (
+        {"morning": 31, "midday": 31, "evening": 32}
+        if schema_version == "daily-publish-payload-v3"
+        else {"morning": 25, "midday": 25, "evening": 26}
+    ).get(str(publish.get("slot", "")))
     checks = {
         "notion_payload_shape": isinstance(shape, dict),
         "notion_payload_shape_passed": isinstance(shape, dict)
@@ -110,6 +174,18 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
         and shape.get("block_count_before_images") == expected_payload_count,
         "notion_payload_image_count": isinstance(shape, dict)
         and shape.get("image_count") == 3,
+        "notion_visual_contract": (
+            isinstance(visual_contract, dict)
+            if schema_version == "daily-publish-payload-v3"
+            else visual_contract is None or isinstance(visual_contract, dict)
+        ),
+        "notion_visual_contract_passed": (
+            isinstance(visual_contract, dict)
+            and visual_contract.get("status") == "passed"
+            if schema_version == "daily-publish-payload-v3"
+            else visual_contract is None
+            or visual_contract.get("status") in {"passed", "legacy"}
+        ),
         "notion_payload_source": isinstance(source, dict),
         "notion_payload_source_passed": isinstance(source, dict)
         and source.get("status") == "passed",
@@ -119,7 +195,12 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
         "notion_payload_colors_passed": isinstance(colors, dict)
         and colors.get("status") == "passed",
         "notion_payload_colors_template": isinstance(colors, dict)
-        and colors.get("template") == "daily-gold-run-colors-v1",
+        and colors.get("template")
+        == (
+            "daily-visual-colors-v3"
+            if schema_version == "daily-publish-payload-v3"
+            else "daily-gold-run-colors-v1"
+        ),
         "frozen_verifier": isinstance(verifier, dict),
         "frozen_verifier_returncode": isinstance(verifier, dict)
         and verifier.get("returncode") == 0,
@@ -228,7 +309,8 @@ def validate_delivery_evidence(
         "visual_pass": qa.get("visual_qa_pass") is True,
         "date": qa.get("trading_date") == trading_date,
         "slot": qa.get("slot") == slot,
-        "backend": qa.get("backend") == "word_com",
+        "backend": qa.get("backend")
+        in {"word_com", "word_com_interactive_task"},
         "docx_path": qa_docx == canonical_docx,
         "docx_hash": qa.get("docx_sha256") == render["docx_sha256"],
         "pdf_hash": bool(re.fullmatch(r"[0-9a-f]{64}", str(qa.get("pdf_sha256", "")))),
@@ -238,6 +320,15 @@ def validate_delivery_evidence(
     failed = sorted(name for name, passed in qa_checks.items() if not passed)
     if failed:
         raise ValueError("invalid Word QA evidence: " + ", ".join(failed))
+    if qa.get("backend") == "word_com_interactive_task":
+        _validate_interactive_word_qa(
+            qa,
+            qa_docx=qa_docx,
+            qa_pdf=qa_pdf,
+            trading_date=trading_date,
+            slot=slot,
+            root=root,
+        )
     _verify_file(qa_pdf, qa["pdf_sha256"], "Word QA PDF")
     for index, page in enumerate(qa["pages"], start=1):
         if not isinstance(page, dict):
@@ -309,6 +400,12 @@ def validate_delivery_evidence(
         "source_binding": source_binding,
         "reviewed_at": reviewed_at.isoformat(),
         "published_at": publish["published_at"],
+        "notion_visual_contract_pass": (
+            isinstance(publish.get("notion_payload_shape"), dict)
+            and isinstance(publish["notion_payload_shape"].get("visual_contract"), dict)
+            and publish["notion_payload_shape"]["visual_contract"].get("status")
+            in {"passed", "legacy"}
+        ),
     }
     if not require_context:
         return base_evidence

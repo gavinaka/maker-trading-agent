@@ -401,7 +401,8 @@ def ledger_check(lines):
     (a) 扣减合计>100%  (b) TP2 触发时剩余仓位 0%（死条款）
     (c) 防守层与止盈层同价各扣一次且未注明同一动作
     (d) 金标口径（2026-06-11 锁死）：防守层禁带任何减仓/平仓百分比（只移损/保本损/取消加仓，
-        扣减只发生在止盈档 TP1 减仓50%→TP2 清剩余）"""
+        扣减只发生在止盈档 TP1 减仓50%→TP2 清剩余）
+    (e) 执行仓位账必须显式写成 TP1 50% + TP2 剩余50%，禁止 70/30 等漂移。"""
     sec = _maker_section(lines)
     if sec is None:
         return [], "无 Maker 段"
@@ -432,6 +433,19 @@ def ledger_check(lines):
     # (b) TP2 死条款：按触发顺序模拟扣减
     tp1 = next((a for a in actions if a["kind"] == "TP1"), None)
     tp2 = next((a for a in actions if a["kind"] == "TP2"), None)
+    if tp1 is not None and tp1.get("cut") != 50:
+        issues.append((
+            "(e) TP1 必须减仓50%（冻结金标仓位账）",
+            refs([tp1]),
+        ))
+    if tp2 is not None and not re.search(
+        r"(?:清|处理)[^。；;/／]*剩余(?:仓位)?\s*50\s*[%％]",
+        tp2["text"],
+    ):
+        issues.append((
+            "(e) TP2 必须显式清剩余50%（冻结金标仓位账）",
+            refs([tp2]),
+        ))
     if tp2 is not None and tp1 is not None:
         descending = tp2["price"] < tp1["price"]  # 空单价格自高向低触发，多单反之
         ordered = sorted(actions, key=lambda a: (-a["price"] if descending else a["price"]))

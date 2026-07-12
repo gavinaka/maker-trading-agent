@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from runtime import report_contract
+from runtime import pretrade_gate
 from runtime.report_state_extract import extract_report_state
 
 
@@ -23,6 +25,28 @@ DECISION = {
 
 
 class ReportContractTests(unittest.TestCase):
+    def write_gate_binding(self, root: Path, trading_date: str, slot: str) -> None:
+        pretrade_gate.write_pretrade_gate_contract(
+            trading_date,
+            source_reference="11111111-2222-3333-4444-555555555555",
+            source_observed_at=f"{trading_date}T08:20:00+08:00",
+            subjective_conclusion="可交易",
+            emotion_stable=True,
+            rhythm_consistent=True,
+            result_dependency=False,
+            continuous_stop_loss_count=0,
+            physical_condition="normal",
+            root=root,
+        )
+        state = root / "runtime_state" / trading_date
+        binding = pretrade_gate.transition_binding(
+            trading_date, slot, root=root
+        )
+        (state / f"transition_{slot}.json").write_text(
+            json.dumps({"pretrade_gate_contract": binding}),
+            encoding="utf-8",
+        )
+
     def test_cutover_starts_at_2026_07_11_evening(self):
         self.assertFalse(report_contract.report_contract_required("2026-07-11", "midday"))
         self.assertTrue(report_contract.report_contract_required("2026-07-11", "evening"))
@@ -35,13 +59,13 @@ class ReportContractTests(unittest.TestCase):
             state.mkdir(parents=True)
             decision = state / "decision_contract_evening.json"
             decision.write_text("{}\n", encoding="utf-8")
+            self.write_gate_binding(root, "2026-07-11", "evening")
             with mock.patch.object(
                 report_contract, "validate_contract_file", return_value=DECISION
             ):
                 payload, target = report_contract.write_report_contract(
                     "2026-07-11",
                     "evening",
-                    gate_summary="可交易",
                     decision_contract_path=decision,
                     root=root,
                 )
@@ -90,7 +114,7 @@ class ReportContractTests(unittest.TestCase):
                     "2026-07-11", "evening", report, root=root
                 )
 
-    def test_gate_summary_rejects_embedded_metadata(self):
+    def test_contract_requires_transition_bound_gate(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             state = root / "runtime_state" / "2026-07-11"
@@ -99,11 +123,10 @@ class ReportContractTests(unittest.TestCase):
             decision.write_text("{}", encoding="utf-8")
             with mock.patch.object(
                 report_contract, "validate_contract_file", return_value=DECISION
-            ), self.assertRaisesRegex(ValueError, "standalone field"):
+            ), self.assertRaises((FileNotFoundError, ValueError)):
                 report_contract.build_report_contract(
                     "2026-07-11",
                     "evening",
-                    gate_summary="可交易｜元数据",
                     decision_contract_path=decision,
                     root=root,
                 )

@@ -45,7 +45,7 @@ BTC（策略）：执行概率55%（已执行0%）　胜率64%
 入场：62,700-62,760。
 止损：63,040。
 TP1：61,850，减仓50%。
-TP2：60,920，清理剩余仓位。
+TP2：60,920，清理剩余50%仓位。
 撤单：若未成交前价格先跌破62,120，则取消此策略，不追空。
 浮盈防守：成交后以62,700为风险基准。价格下行至62,190后，触发第一层防守，止损下移至成交后新形成并确认的4小时级别K线结构性极点高点，并取消所有加仓。价格触及61,850后，触发第二层防守，止损维持在不高于62,700的保本损，不允许回退第一层保护。
 """.splitlines()
@@ -53,6 +53,16 @@ TP2：60,920，清理剩余仓位。
         self.assertIsNone(ledger_skip)
         self.assertEqual(ledger_issues, [])
         self.assertEqual(report_lint.maker_defense_check(lines), [])
+
+    def test_maker_position_ledger_rejects_70_30_drift(self):
+        lines = """
+## ② Maker 计划
+止盈：64,750（TP1）减仓70%；65,200（TP2）处理剩余30%仓位。
+""".splitlines()
+        issues, skip = report_lint.ledger_check(lines)
+        self.assertIsNone(skip)
+        self.assertTrue(any("TP1 必须减仓50%" in desc for desc, _ in issues))
+        self.assertTrue(any("TP2 必须显式清剩余50%" in desc for desc, _ in issues))
 
     def test_first_defense_layer_must_not_prefill_future_4h_extreme_price(self):
         lines = """

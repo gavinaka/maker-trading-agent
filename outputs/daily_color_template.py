@@ -12,6 +12,17 @@ from copy import deepcopy
 import re
 from typing import Iterable
 
+try:
+    from .daily_publish_contract import (
+        DAILY_VISUAL_PAYLOAD_TYPES_31,
+        DAILY_VISUAL_PAYLOAD_TYPES_32,
+    )
+except ImportError:  # pragma: no cover - direct script/import from outputs/
+    from daily_publish_contract import (
+        DAILY_VISUAL_PAYLOAD_TYPES_31,
+        DAILY_VISUAL_PAYLOAD_TYPES_32,
+    )
+
 
 TEXT_TYPES = {
     "paragraph",
@@ -56,6 +67,33 @@ DAILY_TEXT_BLOCK_TYPES_26 = DAILY_TEXT_BLOCK_TYPES_25 + ("paragraph",)
 DAILY_TEXT_BLOCK_TYPE_SEQUENCES = {
     DAILY_TEXT_BLOCK_TYPES_25,
     DAILY_TEXT_BLOCK_TYPES_26,
+    DAILY_VISUAL_PAYLOAD_TYPES_31,
+    DAILY_VISUAL_PAYLOAD_TYPES_32,
+}
+
+VISUAL_V3_TO_LEGACY_STYLE_INDEX = {
+    0: 0,
+    2: 1,
+    4: 2,
+    6: 4,
+    7: 5,
+    9: 6,
+    10: 7,
+    11: 8,
+    12: 9,
+    14: 10,
+    16: 11,
+    18: 13,
+    21: 15,
+    22: 16,
+    23: 17,
+    24: 18,
+    26: 20,
+    27: 21,
+    28: 22,
+    29: 23,
+    30: 24,
+    31: 25,
 }
 
 SENTIMENT_COLORS = {
@@ -445,9 +483,12 @@ def _run_signature(runs: list[dict]) -> list[tuple[str, str, bool]]:
     return signature
 
 
-def expected_signature_for_block(index: int, block: dict) -> list[tuple[str, str, bool]]:
+def expected_signature_for_block(
+    index: int, block: dict, *, visual_v3: bool = False
+) -> list[tuple[str, str, bool]]:
     text = _plain(block)
-    runs = _style_by_index(index, text)
+    style_index = VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index
+    runs = _style_by_index(style_index, text) if style_index is not None else [_run(text)]
     if runs is None:
         block_type = block.get("type")
         body = block.get(block_type)
@@ -468,12 +509,18 @@ def actual_signature_for_block(block: dict) -> list[tuple[str, str, bool]]:
 def style_daily_payload_children(children: list[dict]) -> dict:
     """Mutate daily payload children to the canonical run-level color template."""
     text_blocks = _text_blocks(children)
-    if tuple(block.get("type") for block in text_blocks) not in DAILY_TEXT_BLOCK_TYPE_SEQUENCES:
+    actual_types = tuple(block.get("type") for block in text_blocks)
+    if actual_types not in DAILY_TEXT_BLOCK_TYPE_SEQUENCES:
         raise ValueError("daily color template requires the frozen daily block sequence")
+    visual_v3 = actual_types in {
+        DAILY_VISUAL_PAYLOAD_TYPES_31,
+        DAILY_VISUAL_PAYLOAD_TYPES_32,
+    }
     changed = 0
     checked = 0
     for index, block in enumerate(text_blocks):
-        runs = _style_by_index(index, _plain(block))
+        style_index = VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index
+        runs = _style_by_index(style_index, _plain(block)) if style_index is not None else [_run(_plain(block))]
         if runs is None:
             continue
         checked += 1
@@ -484,7 +531,7 @@ def style_daily_payload_children(children: list[dict]) -> dict:
             changed += 1
     return {
         "status": "passed",
-        "template": "daily-gold-run-colors-v1",
+        "template": "daily-visual-colors-v3" if visual_v3 else "daily-gold-run-colors-v1",
         "checked_blocks": checked,
         "changed_blocks": changed,
     }
@@ -515,14 +562,20 @@ def audit_daily_blocks(blocks: list[dict]) -> tuple[list[dict], dict]:
             "template": "daily-gold-run-colors-v1",
             "checked_blocks": 0,
         }
+    visual_v3 = actual_types in {
+        DAILY_VISUAL_PAYLOAD_TYPES_31,
+        DAILY_VISUAL_PAYLOAD_TYPES_32,
+    }
+    template = "daily-visual-colors-v3" if visual_v3 else "daily-gold-run-colors-v1"
     violations = []
     checked = 0
     for index, block in enumerate(text_blocks):
-        runs = _style_by_index(index, _plain(block))
+        style_index = VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index
+        runs = _style_by_index(style_index, _plain(block)) if style_index is not None else [_run(_plain(block))]
         if runs is None:
             continue
         checked += 1
-        expected = expected_signature_for_block(index, block)
+        expected = expected_signature_for_block(index, block, visual_v3=visual_v3)
         actual = actual_signature_for_block(block)
         if actual != expected:
             violations.append(
@@ -536,7 +589,7 @@ def audit_daily_blocks(blocks: list[dict]) -> tuple[list[dict], dict]:
             )
     return violations, {
         "status": "passed" if not violations else "failed",
-        "template": "daily-gold-run-colors-v1",
+        "template": template,
         "checked_blocks": checked,
         "violation_count": len(violations),
     }

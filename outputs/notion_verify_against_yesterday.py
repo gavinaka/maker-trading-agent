@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Notion 出稿稳定性自检器（机械化·不靠记忆）。
-对比今日页 vs 【2026.6.2 固定金标模板】的「block 类型序列 / 每块字体颜色集合 / 图片数与位置」。
+新 `v3` 页校验固定短标题、完整正文容器、视觉密度、配色与图片位置；
+历史 `v2` 页继续对比【2026.6.2 固定金标模板】。
 2026-06-03 用户拍板：以 6/2 为冻结模板长期对照（非"昨日"，避免错误逐日传播）。
 
 用法：
@@ -9,7 +10,7 @@ Notion 出稿稳定性自检器（机械化·不靠记忆）。
   py notion_verify_against_yesterday.py <today_page_id> <任意参照page_id>          # 显式指定参照页
 PASS 才算出稿完成（见 memory/notion-publish-checklist.md）。
 """
-import sys, os, re, time, requests
+import sys, os, re, time, requests, hashlib, json
 
 TOK = os.environ.get("NOTION_TOKEN", "")
 assert TOK, "请先 $env:NOTION_TOKEN"
@@ -122,15 +123,89 @@ def daily_semantic_scan(pid):
             issues.append((index, "empty_text_block", text))
         if "??" in text:
             issues.append((index, "encoding_corruption", text))
-    if len(blocks) >= 2:
-        cannot_do = _plain_block(blocks[1])
+    visual_v3 = any(
+        block.get("type") == "heading_2" and _plain_block(block) == "不能做"
+        for block in blocks
+    )
+    cannot_index = 2 if visual_v3 else 1
+    if len(blocks) > cannot_index:
+        cannot_do = _plain_block(blocks[cannot_index])
         if not cannot_do.startswith("不能做：") or cannot_do == "不能做：":
-            issues.append((2, "cannot_do_incomplete", cannot_do))
+            issues.append((cannot_index + 1, "cannot_do_incomplete", cannot_do))
     if text_blocks:
         last_index, _, last_text = text_blocks[-1]
         if not last_text.startswith(FINAL_TEXT_PREFIXES):
             issues.append((last_index, "final_boundary_drift", last_text))
     return issues
+
+
+def daily_visual_contract_scan(pid):
+    """Validate live typography density for the v3 deterministic projection."""
+    from daily_publish_contract import (
+        DAILY_VISUAL_LABELS,
+        DAILY_VISUAL_LIMITS,
+        DAILY_VISUAL_PAYLOAD_TYPES_31,
+        DAILY_VISUAL_PAYLOAD_TYPES_32,
+    )
+
+    blocks = children(pid)
+    text_blocks = [block for block in blocks if block.get("type") != "image"]
+    actual_types = tuple(block.get("type") for block in text_blocks)
+    if actual_types not in {
+        DAILY_VISUAL_PAYLOAD_TYPES_31,
+        DAILY_VISUAL_PAYLOAD_TYPES_32,
+    }:
+        return False, [], {"status": "legacy"}
+    issues = []
+    total = 0
+    long_body_count = 0
+    body_max = 0
+    heading_max = 0
+    for index, block in enumerate(text_blocks):
+        block_type = block.get("type")
+        if block_type == "divider":
+            continue
+        text = _plain_block(block)
+        length = len(text)
+        total += length
+        if block_type in {"heading_1", "heading_2", "heading_3"}:
+            heading_max = max(heading_max, length)
+            if length > DAILY_VISUAL_LIMITS["heading_max_chars"]:
+                issues.append((index + 1, "heading_too_long", length))
+        else:
+            body_max = max(body_max, length)
+            if length > DAILY_VISUAL_LIMITS["body_max_chars"]:
+                issues.append((index + 1, "body_too_long", length))
+            if length > DAILY_VISUAL_LIMITS["long_body_threshold_chars"]:
+                long_body_count += 1
+    for index, label in DAILY_VISUAL_LABELS.items():
+        actual = _plain_block(text_blocks[index])
+        if actual != label:
+            issues.append((index + 1, "label_drift", actual))
+    quote_chars = len(_plain_block(text_blocks[0]))
+    if quote_chars > DAILY_VISUAL_LIMITS["quote_max_chars"]:
+        issues.append((1, "quote_too_long", quote_chars))
+    if total > DAILY_VISUAL_LIMITS["total_text_max_chars"]:
+        issues.append((0, "total_text_too_long", total))
+    warnings = []
+    if quote_chars > DAILY_VISUAL_LIMITS["quote_warn_chars"]:
+        warnings.append("quote_density")
+    if body_max > DAILY_VISUAL_LIMITS["body_warn_chars"]:
+        warnings.append("body_density")
+    if long_body_count > DAILY_VISUAL_LIMITS["long_body_warn_count"]:
+        warnings.append("many_long_body_blocks")
+    if total > DAILY_VISUAL_LIMITS["total_text_warn_chars"]:
+        warnings.append("total_text_density")
+    return True, issues, {
+        "status": "passed" if not issues else "failed",
+        "template": "daily-visual-contract-v3",
+        "heading_max_chars": heading_max,
+        "body_max_chars": body_max,
+        "quote_chars": quote_chars,
+        "long_body_count": long_body_count,
+        "total_text_chars": total,
+        "warnings": warnings,
+    }
 
 def meta_narrative_scan(pid):
     """元叙事门（2026-06-19·根因修复）：扫【实际已发布 Notion 页】全部块的完整 plain_text，
@@ -186,6 +261,32 @@ def profile(pid):
         rows.append((t, colors, txt))
     return rows
 
+
+def live_children_signature(pid):
+    """Hash live non-image block types and full text like daily_payload_builder."""
+    signature = []
+    for block in children(pid):
+        if block.get("type") == "image":
+            continue
+        signature.append(
+            {
+                "index": len(signature) + 1,
+                "type": block.get("type"),
+                "text": "<divider>"
+                if block.get("type") == "divider"
+                else _plain_block(block),
+            }
+        )
+    digest = hashlib.sha256(
+        json.dumps(
+            signature,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return digest
+
 def main():
     if len(sys.argv) < 2:
         print(
@@ -196,6 +297,7 @@ def main():
 
     today = sys.argv[1]
     ref = sys.argv[2] if len(sys.argv) > 2 else "morning"
+    expected_children_signature = sys.argv[3] if len(sys.argv) > 3 else None
     gold = GOLD.get(ref, ref)  # 关键词->6/2金标id；否则当作显式page_id
     label = f"6/2金标:{ref}" if ref in GOLD else "参照页"
     # ⓪ 标题门：子页标题格式须对齐金标（抹日期后逐字比，防"漏（20:00 评分点）"类漂移）
@@ -212,6 +314,25 @@ def main():
         print(f"标题门：今「{_disp(ta)}」 标「{_disp(tb)}」 {'OK' if title_ok else '<<< MISMATCH 标题格式不对齐金标'}")
 
     A, B = profile(today), profile(gold)
+    visual_v3, visual_issues, visual_summary = (
+        daily_visual_contract_scan(today)
+        if ref in ("morning", "midday", "evening")
+        else (False, [], {"status": "not_applicable"})
+    )
+    if visual_v3:
+        from daily_publish_contract import (
+            DAILY_VISUAL_PAYLOAD_TYPES_31,
+            DAILY_VISUAL_PAYLOAD_TYPES_32,
+        )
+        text_types = (
+            DAILY_VISUAL_PAYLOAD_TYPES_32
+            if ref == "evening"
+            else DAILY_VISUAL_PAYLOAD_TYPES_31
+        )
+        live_types = list(text_types)
+        live_types[4:4] = ["image", "image", "image"]
+        B = [(block_type, [], "") for block_type in live_types]
+        label = "v3视觉契约"
     print(f"今日块数={len(A)}  {label}块数={len(B)}")
     # ① 结构门：块类型序列对照金标（颜色不再硬比金标——金标自身配色不一致，
     #    配色权威改由 report_colors 按【情绪词→颜色唯一规则】逐 run 校验，见门①b）
@@ -229,6 +350,39 @@ def main():
     img_ok = ia == ib
     print(f"\n图片数：今={ia} 标={ib} {'OK' if img_ok else '<<< MISMATCH 基本面配图缺失/多余'}")
     struct_ok = (bad == 0 and img_ok and len(A) == len(B))
+
+    visual_ok = not visual_issues
+    if visual_v3:
+        print("\n视觉密度门：短标题/正文密度/总文本预算", end="")
+        if visual_issues:
+            print("  <<< VISUAL CONTRACT DRIFT")
+            for block, reason, value in visual_issues[:8]:
+                print(f"   blk{block}: {reason}={_disp(str(value)[:120])}")
+        else:
+            print(
+                "  OK "
+                f"(heading={visual_summary['heading_max_chars']}, "
+                f"body={visual_summary['body_max_chars']}, "
+                f"total={visual_summary['total_text_chars']}, "
+                f"warnings={','.join(visual_summary['warnings']) or '-'})"
+            )
+
+    live_signature = live_children_signature(today)
+    content_binding_ok = (
+        live_signature == expected_children_signature
+        if expected_children_signature
+        else not visual_v3
+    )
+    print("\n正文逐字落库门：", end="")
+    if content_binding_ok:
+        print("CONTENT_SIGNATURE_PASS" if expected_children_signature else "LEGACY_NOT_BOUND")
+    elif expected_children_signature:
+        print(
+            "<<< CONTENT SIGNATURE MISMATCH "
+            f"expected={expected_children_signature} actual={live_signature}"
+        )
+    else:
+        print("<<< v3 缺少 preflight children_signature_sha256")
 
     semantic_ok = True
     if ref in ("morning", "midday", "evening"):
@@ -313,8 +467,11 @@ def main():
             meta_ok = False
             print(f"\n元叙事门：执行失败 {e}")
 
-    if title_ok and struct_ok and semantic_ok and color_ok and meta_ok:
-        print("\n[PASS] ALL CHECKS PASS — 标题 + 块类型/块数/图片 + 语义槽位 对齐金标 + 配色符合唯一规则 + 正文无元叙事")
+    if title_ok and struct_ok and semantic_ok and color_ok and meta_ok and visual_ok and content_binding_ok:
+        if visual_v3:
+            print("\n[PASS] STRUCTURE_PASS + VISUAL_CONTRACT_PASS — 标题 + 块结构/图片 + 视觉密度 + 语义配色 + 正文完整性")
+        else:
+            print("\n[PASS] LEGACY_STRUCTURE_PASS — 历史 v2 标题 + 金标块结构/图片 + 语义配色 + 正文完整性")
         return 0
     else:
         msg = []
@@ -327,6 +484,8 @@ def main():
                 msg.append("语义槽位漂移（不能做/空文本/尾部边界/编码）")
         if not color_ok: msg.append("语义配色错配")
         if not meta_ok: msg.append("正文含元叙事（代号/方法论/分数/门槛→改自然语言·移③后附）")
+        if not visual_ok: msg.append("Notion视觉密度契约失败")
+        if not content_binding_ok: msg.append("Notion正文与preflight逐字签名不一致")
         print(f"\n[FAIL] " + " / ".join(msg) + " —— 必须修复后重跑")
         return 1
 

@@ -42,6 +42,76 @@ DAILY_PAYLOAD_TYPES_BY_SLOT = {
     "evening": DAILY_PAYLOAD_TYPES_26,
 }
 
+# v3 separates immutable section labels from their full report text.  The
+# combined Markdown remains the only textual truth; this is a deterministic
+# presentation projection, not a second writing surface.
+DAILY_VISUAL_PAYLOAD_TYPES_31 = (
+    "quote",
+    "heading_2",
+    "callout",
+    "heading_3",
+    "paragraph",
+    "heading_3",
+    "paragraph",
+    "paragraph",
+    "heading_3",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "heading_3",
+    "paragraph",
+    "heading_3",
+    "paragraph",
+    "heading_3",
+    "callout",
+    "divider",
+    "heading_2",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "heading_3",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+)
+DAILY_VISUAL_PAYLOAD_TYPES_32 = DAILY_VISUAL_PAYLOAD_TYPES_31 + ("paragraph",)
+DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT = {
+    "morning": DAILY_VISUAL_PAYLOAD_TYPES_31,
+    "midday": DAILY_VISUAL_PAYLOAD_TYPES_31,
+    "evening": DAILY_VISUAL_PAYLOAD_TYPES_32,
+}
+
+DAILY_VISUAL_LABELS = {
+    1: "不能做",
+    3: "基本面",
+    5: "技术面",
+    8: "解读",
+    13: "趋势确认",
+    15: "日内支撑/压力",
+    17: "策略",
+    20: "Maker 计划",
+    25: "防守计划",
+}
+
+DAILY_VISUAL_LIMITS = {
+    "heading_max_chars": 12,
+    "quote_warn_chars": 140,
+    "quote_max_chars": 1800,
+    "body_warn_chars": 180,
+    # Hard limits protect the Notion rich_text API boundary, not prose length.
+    # Presentation density thresholds remain warnings so producers never have
+    # an incentive to weaken analysis to make a visual gate pass.
+    "body_max_chars": 1800,
+    "long_body_threshold_chars": 120,
+    "long_body_warn_count": 3,
+    "total_text_warn_chars": 1800,
+    "total_text_max_chars": 12000,
+}
+
 DAILY_PAYLOAD_TEXT_PREFIXES = {
     1: "不能做：",
     2: "基本面",

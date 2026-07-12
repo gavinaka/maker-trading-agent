@@ -270,6 +270,103 @@ class WordQaTests(unittest.TestCase):
         )
         return docx
 
+    def test_word_export_attaches_only_to_hidden_idle_instance(self):
+        script = word_qa._word_com_export_script(
+            Path("C:/reports/input's.docx"),
+            Path("C:/reports/output.pdf"),
+        )
+
+        self.assertIn("GetActiveObject('Word.Application')", script)
+        self.assertIn("(-not [bool]$candidate.Visible)", script)
+        self.assertIn("$candidate.Documents.Count -eq 0", script)
+        self.assertIn("$ownsWord=$false", script)
+        self.assertIn("New-Object -ComObject Word.Application", script)
+        self.assertIn("if($ownsWord){$word.Quit()}", script)
+        self.assertNotIn("if($word){$word.Quit()}", script)
+        self.assertIn("input''s.docx", script)
+
+    def test_logon_session_failure_falls_back_to_interactive_task(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            docx = root / "outputs" / "2026-06-30_morning_render.docx"
+            pdf = (
+                root
+                / "runtime_state"
+                / "2026-06-30"
+                / "word_qa"
+                / "morning"
+                / "attempt-1-test"
+                / "2026-06-30_morning_render.pdf"
+            )
+            with patch.object(
+                word_qa,
+                "_export_word_com",
+                side_effect=RuntimeError("Word COM export failed: 80070520"),
+            ), patch.object(word_qa, "_export_word_via_interactive_task") as broker:
+                backend = word_qa._export_word(
+                    docx,
+                    pdf,
+                    trading_date="2026-06-30",
+                    slot="morning",
+                    docx_sha256="a" * 64,
+                    root=root,
+                )
+            self.assertEqual(backend, "word_com_interactive_task")
+            broker.assert_called_once()
+
+    def test_non_session_com_failure_does_not_use_interactive_task(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            with patch.object(
+                word_qa,
+                "_export_word_com",
+                side_effect=RuntimeError("Word COM export failed: corrupt document"),
+            ), patch.object(word_qa, "_export_word_via_interactive_task") as broker:
+                with self.assertRaisesRegex(RuntimeError, "corrupt document"):
+                    word_qa._export_word(
+                        root / "input.docx",
+                        root / "output.pdf",
+                        trading_date="2026-06-30",
+                        slot="morning",
+                        docx_sha256="a" * 64,
+                        root=root,
+                    )
+            broker.assert_not_called()
+
+    def test_interactive_broker_requires_fresh_ready_heartbeat(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            heartbeat = root / "runtime_state" / word_qa.BROKER_HEARTBEAT
+            heartbeat.parent.mkdir(parents=True)
+            heartbeat.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "status": "ready",
+                        "updated_at": datetime.now().astimezone().isoformat(
+                            timespec="seconds"
+                        ),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = word_qa._assert_interactive_broker_ready(root)
+            self.assertEqual(result["status"], "ready")
+            heartbeat.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "status": "stopped",
+                        "updated_at": datetime.now().astimezone().isoformat(
+                            timespec="seconds"
+                        ),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(word_qa.WordExportError, "stale"):
+                word_qa._assert_interactive_broker_ready(root)
+
     def test_export_cache_and_visual_approval_are_hash_bound(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -323,6 +420,66 @@ class WordQaTests(unittest.TestCase):
                     word_qa.prepare_qa(
                         "2026-06-30", "morning", root=root
                     )
+
+    def test_80070520_failures_allow_one_hash_bound_broker_migration(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            docx = self._seed_render(root)
+            state = root / "runtime_state" / "2026-06-30"
+            (state / "word_qa_morning.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "status": "failed",
+                        "attempts": 2,
+                        "docx_sha256": word_qa.sha256_file(docx),
+                        "failure_reason": "Word COM export failed: 80070520",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "runtime_state" / word_qa.BROKER_HEARTBEAT).write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "status": "ready",
+                        "updated_at": datetime.now().astimezone().isoformat(
+                            timespec="seconds"
+                        ),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def fake_broker(_docx, pdf, **_kwargs):
+                pdf.write_bytes(b"pdf")
+
+            def fake_pages(_pdf, prefix, _poppler):
+                page = prefix.parent / "page-1.png"
+                page.write_bytes(b"png")
+                return [page]
+
+            fake_poppler = root / "pdftoppm.exe"
+            fake_poppler.write_bytes(b"exe")
+            with patch.object(
+                word_qa,
+                "_export_word_com",
+                side_effect=RuntimeError("Word COM export failed: 80070520"),
+            ), patch.object(
+                word_qa, "_export_word_via_interactive_task", fake_broker
+            ), patch.object(word_qa, "_render_pdf", fake_pages), patch.object(
+                word_qa, "_find_pdftoppm", return_value=fake_poppler
+            ):
+                result = word_qa.prepare_qa(
+                    "2026-06-30", "morning", root=root
+                )
+            self.assertEqual(result["status"], "prepared")
+            self.assertEqual(result["attempts"], 3)
+            self.assertEqual(result["backend"], "word_com_interactive_task")
+            self.assertTrue(result["infrastructure_recovery_used"])
+            self.assertEqual(
+                result["attempt_limit_exception"]["previous_attempts"], 2
+            )
 
     def test_visual_rejection_cannot_reexport_unchanged_docx(self):
         with tempfile.TemporaryDirectory() as td:
@@ -474,6 +631,68 @@ class DeliveryEvidenceTests(unittest.TestCase):
             self.assertEqual(evidence["docx_sha256"], sha256_file(
                 root / "outputs" / "2026-06-30_morning_render.docx"
             ))
+
+    def test_delivery_accepts_only_fully_bound_interactive_word_backend(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current, page_id = self._seed(root)
+            qa_path = root / "runtime_state" / "2026-06-30" / "word_qa_morning.json"
+            qa = json.loads(qa_path.read_text(encoding="utf-8"))
+            qa.update(
+                {
+                    "backend": "word_com_interactive_task",
+                    "attempts": 3,
+                    "infrastructure_recovery_used": True,
+                    "attempt_limit_exception": {
+                        "kind": "word_com_logon_session_to_interactive_broker",
+                        "previous_attempts": 2,
+                        "previous_failure_reason": "Word COM export failed: 80070520",
+                    },
+                }
+            )
+            qa_path.write_text(json.dumps(qa), encoding="utf-8")
+            pdf = Path(qa["pdf_path"])
+            request_id = "a" * 32
+            request = {
+                "schema_version": "1.0",
+                "request_id": request_id,
+                "trading_date": "2026-06-30",
+                "slot": "morning",
+                "docx_path": qa["docx_path"],
+                "docx_sha256": qa["docx_sha256"],
+                "pdf_path": qa["pdf_path"],
+            }
+            response = {
+                **request,
+                "status": "success",
+                "backend": "word_com_interactive_task",
+                "pdf_sha256": qa["pdf_sha256"],
+            }
+            (pdf.parent / "broker_request.json").write_text(
+                json.dumps(request), encoding="utf-8"
+            )
+            (pdf.parent / "broker_response.json").write_text(
+                json.dumps(response), encoding="utf-8"
+            )
+            evidence = validate_delivery_evidence(
+                "2026-06-30",
+                "morning",
+                page_id,
+                current=current,
+                root=root,
+            )
+            self.assertEqual(evidence["docx_sha256"], qa["docx_sha256"])
+
+            qa.pop("infrastructure_recovery_used")
+            qa_path.write_text(json.dumps(qa), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "recovery_used"):
+                validate_delivery_evidence(
+                    "2026-06-30",
+                    "morning",
+                    page_id,
+                    current=current,
+                    root=root,
+                )
 
     def test_delivery_rejects_pass_recorded_before_qa(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1375,13 +1594,21 @@ class PublishEvidenceTests(unittest.TestCase):
 
             payload = daily_payload_builder.build_daily_payload(report, root=root)
 
-            self.assertEqual(payload["schema_version"], "daily-publish-payload-v2")
+            self.assertEqual(payload["schema_version"], "daily-publish-payload-v3")
             self.assertEqual(payload["date"], date)
             self.assertEqual(payload["verifier_mode"], slot)
-            self.assertEqual(len(payload["children"]), 26)
+            self.assertEqual(len(payload["children"]), 32)
             self.assertEqual(
                 daily_payload_builder.block_plain_text(payload["children"][1]),
+                "不能做",
+            )
+            self.assertEqual(
+                daily_payload_builder.block_plain_text(payload["children"][2]),
                 "不能做：不能在压力下方追涨，不能在支撑带直接追空。",
+            )
+            self.assertEqual(
+                daily_payload_builder.block_plain_text(payload["children"][3]),
+                "基本面",
             )
             self.assertEqual(
                 daily_payload_builder.block_plain_text(payload["children"][-1]),
@@ -1418,9 +1645,81 @@ class PublishEvidenceTests(unittest.TestCase):
             payload = daily_payload_builder.build_daily_payload(report, root=root)
 
             self.assertEqual(
-                daily_payload_builder.block_plain_text(payload["children"][15]),
+                daily_payload_builder.block_plain_text(payload["children"][21]),
                 "BTC（策略）：执行概率 45%（已执行 0%）　胜率 61%",
             )
+
+    def test_visual_v3_shape_separates_labels_and_enforces_density_budget(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(self._strict_daily_combined_text(date, slot), encoding="utf-8")
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+            payload = daily_payload_builder.build_daily_payload(report, root=root)
+
+            result = publish_report.validate_daily_payload_shape(
+                payload, date, slot, report_text=report.read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(result["schema_version"], "daily-publish-payload-v3")
+            self.assertEqual(result["visual_contract"]["status"], "passed")
+            self.assertLessEqual(result["visual_contract"]["heading_max_chars"], 12)
+            self.assertEqual(payload["children"][2]["type"], "callout")
+            self.assertEqual(payload["children"][18]["type"], "callout")
+
+            payload["children"][3]["heading_3"]["rich_text"][0]["text"]["content"] = (
+                "基本面标题不允许承载一整段分析"
+            )
+            with self.assertRaisesRegex(ValueError, "visual label drift|heading exceeds"):
+                publish_report.validate_daily_payload_shape(payload, date, slot)
+
+    def test_visual_v3_shape_rejects_oversized_body_without_truncating_report(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(self._strict_daily_combined_text(date, slot), encoding="utf-8")
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+            payload = daily_payload_builder.build_daily_payload(report, root=root)
+            payload["children"][4]["paragraph"]["rich_text"][0]["text"]["content"] = "长" * 1801
+
+            with self.assertRaisesRegex(ValueError, "body exceeds visual budget"):
+                publish_report.validate_daily_payload_shape(payload, date, slot)
+
+    def test_visual_v3_projection_preserves_deep_analysis_verbatim(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            deep_fundamental = "基本面：" + "深度证据链与反证逻辑" * 80
+            source = self._strict_daily_combined_text(date, slot)
+            source = source.replace(
+                "基本面：中性偏多（Farside 最新 Bitcoin ETF Flow 为 +223.5 US$m；FedWatch 未给出降息交易）价格已兑现部分",
+                deep_fundamental,
+            )
+            report.write_text(source, encoding="utf-8")
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+
+            payload = daily_payload_builder.build_daily_payload(report, root=root)
+            projected = daily_payload_builder.block_plain_text(payload["children"][4])
+            self.assertEqual(projected, deep_fundamental)
+            self.assertEqual(len(projected), len(deep_fundamental))
+            result = publish_report.validate_daily_payload_shape(payload, date, slot)
+            self.assertEqual(result["visual_contract"]["status"], "passed")
+            self.assertIn("body_density", result["visual_contract"]["warnings"])
 
     def test_publish_rejects_strict_daily_payload_not_derived_from_combined(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1524,6 +1823,16 @@ class PublishEvidenceTests(unittest.TestCase):
                 title="🌙 2026.7.5 晚间日报（20:00 评分点）",
                 children=[],
             )
+
+    def test_frozen_verifier_binds_live_text_to_preflight_children_signature(self):
+        expected = "a" * 64
+        with patch.object(
+            notion_push_lib,
+            "run_python_gate",
+            return_value={"returncode": 0},
+        ) as gate:
+            notion_push_lib.run_frozen_verifier("page-id", "morning", expected)
+        self.assertEqual(gate.call_args.args[1], ["page-id", "morning", expected])
 
     def test_daily_color_template_normalizes_gold_run_distribution(self):
         children = self._daily_payload_children()

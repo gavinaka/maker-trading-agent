@@ -52,6 +52,14 @@ DELIVERY_OPTIONAL_EVIDENCE_BINDINGS = (
 )
 
 
+def _notion_visual_flag_matches(delivery: dict, evidence: dict) -> bool:
+    """Require the explicit flag for v3 while preserving historical v2 records."""
+    expected = evidence.get("notion_visual_contract_pass")
+    if expected is True:
+        return delivery.get("notion_visual_contract_pass") is True
+    return "notion_visual_contract_pass" not in delivery
+
+
 def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -250,6 +258,7 @@ def _delivery_recorded(trading_date: str, slot: str, root: Path) -> bool:
         ),
         "page_id": bool(PAGE_ID_RE.fullmatch(page_id)),
         "flags": all(delivery.get(flag) is True for flag in DELIVERY_REQUIRED_FLAGS),
+        "notion_visual_contract": _notion_visual_flag_matches(delivery, evidence),
         "published_at": bool(delivery.get("published_at"))
         and delivery.get("published_at") == evidence.get("published_at"),
         "minimum_evidence": all(
@@ -262,6 +271,16 @@ def _delivery_recorded(trading_date: str, slot: str, root: Path) -> bool:
 
 
 def _delivery_complete(trading_date: str, slot: str, root: Path) -> bool:
+    from runtime.pretrade_gate import (
+        pretrade_gate_required,
+        validate_pretrade_gate_contract,
+    )
+
+    if pretrade_gate_required(trading_date, slot):
+        try:
+            validate_pretrade_gate_contract(trading_date, slot, root=root)
+        except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            return False
     delivery = load_json(_delivery_path(trading_date, slot, root))
     if not delivery:
         return False
@@ -302,6 +321,7 @@ def _delivery_complete(trading_date: str, slot: str, root: Path) -> bool:
 
     return (
         delivery.get("published_at") == evidence.get("published_at")
+        and _notion_visual_flag_matches(delivery, evidence)
         and _delivery_evidence_matches(delivery.get("evidence"), evidence)
     )
 

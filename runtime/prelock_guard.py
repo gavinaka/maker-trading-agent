@@ -227,6 +227,7 @@ def prelock_guard_targets(
             f"runtime_state/{trading_date}/transition_{slot}.json",
             f"runtime_state/{trading_date}/golden_reasoning_{slot}.json",
             f"runtime_state/{trading_date}/prelock_guard_{slot}.json",
+            f"runtime_state/{trading_date}/pretrade_gate.json",
             f"runtime_state/{trading_date}/usage.jsonl",
         }
         if relative in current_runtime_allowed:

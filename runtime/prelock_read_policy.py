@@ -77,6 +77,7 @@ def _is_current_runtime_file(relative: str, trading_date: str, slot: str) -> boo
         f"reasoning_readiness_{slot}.json",
         f"decision_input_{slot}.json",
         f"decision_contract_{slot}.json",
+        "pretrade_gate.json",
         "usage.jsonl",
     }
     if suffix in allowed_exact:
@@ -258,6 +259,7 @@ def prelock_policy_manifest(
             f"runtime_state/{trading_date}/prelock_guard_{slot}.json",
             f"runtime_state/{trading_date}/reasoning_work_{slot}.md",
             f"runtime_state/{trading_date}/reasoning_readiness_{slot}.json",
+            f"runtime_state/{trading_date}/pretrade_gate.json",
             f"runtime_state/{trading_date}/authority_phase_{slot}_<phase>.md",
             f"runtime_state/{trading_date}/captures/{slot}/**",
             f"runtime_state/{trading_date}/evidence/{slot}/**",

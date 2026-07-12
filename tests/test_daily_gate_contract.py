@@ -39,6 +39,9 @@ class DailyGateContractTests(unittest.TestCase):
         self.assertIn("唯一事前硬门禁", sop)
         self.assertIn("开仓前状态门禁", sop)
         self.assertIn("exactly one pre-report and pre-trade gate", skill)
+        self.assertIn("runtime_state/<date>/pretrade_gate.json", sop)
+        self.assertIn("record-pretrade-gate", skill)
+        self.assertIn("prompt/automation-memory summary", skill)
 
     def test_end_of_day_review_cannot_be_a_gate_input(self):
         for relative_path in AUTHORITY_FILES:
@@ -59,6 +62,7 @@ class DailyGateContractTests(unittest.TestCase):
         sop = (ROOT / "sessions" / "日报SOP.md").read_text(encoding="utf-8")
         self.assertIn("硬停并要求人工确认", sop)
         self.assertIn("禁止用其它日志替代门禁", sop)
+        self.assertIn("禁止 `--gate-summary`", sop)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,8 @@ from runtime.report_contract import (
     validate_report_contract_manifest,
 )
 from runtime.state_store import atomic_json_write
+from outputs.daily_payload_builder import build_daily_payload
+from outputs.report_structure_gate import assert_combined_structure
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +77,39 @@ def _card_images(cards: Path, trading_date: str, slot: str, root: Path) -> list[
     return images
 
 
+def validate_draft_eligibility(
+    report: Path,
+    trading_date: str,
+    slot: str,
+    *,
+    root: Path = ROOT,
+) -> dict[str, Any]:
+    """Run every deterministic text consumer before certifying recoverable bytes."""
+    lines = report.read_text(encoding="utf-8").splitlines()
+    assert_combined_structure(lines, trading_date, slot)
+    completed = subprocess.run(
+        [sys.executable, str(root / "outputs" / "report_lint.py"), str(report)],
+        cwd=root,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stdout + "\n" + completed.stderr).strip()
+        raise ValueError("draft is not eligible for certification: report lint failed:\n" + detail)
+    payload = build_daily_payload(report, root=root)
+    if len(payload.get("image_paths") or []) != 3:
+        raise ValueError("draft is not eligible for certification: payload requires 3 cards")
+    return {
+        "report_structure": True,
+        "report_lint": True,
+        "daily_payload_derivation": True,
+        "blockbeats_cards": True,
+    }
+
+
 def certify_draft_recovery(
     trading_date: str,
     slot: str,
@@ -83,6 +120,9 @@ def certify_draft_recovery(
 ) -> tuple[dict[str, Any], Path]:
     report, cards = _expected_output_paths(trading_date, slot, report, cards, root)
     images = _card_images(cards, trading_date, slot, root)
+    eligibility = validate_draft_eligibility(
+        report, trading_date, slot, root=root
+    )
     _, contract_path = validate_report_contract_manifest(
         trading_date, slot, report, root=root
     )
@@ -111,6 +151,7 @@ def certify_draft_recovery(
         "reasoning_readiness": _file_record(readiness_path, root),
         "golden_reasoning_manifest": _file_record(golden_path, root),
         "report_contract": _file_record(contract_path, root) if contract_path else None,
+        "draft_eligibility": eligibility,
     }
     target = manifest_path(trading_date, slot, root=root)
     atomic_json_write(target, payload)
