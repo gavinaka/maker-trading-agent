@@ -707,14 +707,21 @@ def normalize_methodology(
         item = frames.get(timeframe)
         if not isinstance(item, dict):
             raise ValueError(f"TradingView timeframe missing: {timeframe}")
-        normalized_frames[timeframe] = {
+        normalized_frame = {
             "price": _decimal(item.get("price"), f"TradingView {timeframe}.price"),
-            "sma20": _decimal(item.get("sma20"), f"TradingView {timeframe}.sma20"),
             "structure": _enum(
                 item.get("structure"), {"bullish", "bearish", "range"},
                 f"TradingView {timeframe}.structure"
             ),
         }
+        # 15m is an execution-only timeframe for Maker price action and
+        # intraday support/resistance. SMA20 belongs to the scored 1D/4H/1H
+        # structure chain and has never been a required 15m trading input.
+        if timeframe != "15m" or item.get("sma20") is not None:
+            normalized_frame["sma20"] = _decimal(
+                item.get("sma20"), f"TradingView {timeframe}.sma20"
+            )
+        normalized_frames[timeframe] = normalized_frame
     normalized_multi = {
         "observation_id": tradingview["id"],
         "claim_id": _claim(

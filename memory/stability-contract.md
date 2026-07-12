@@ -14,7 +14,7 @@ metadata:
 
 ## 一、禁飘逸（不自由发挥/不偏离模板与流程）
 - 只做 SOP/模板/用户明确要求的事；**想偏离=先问，不擅自改格式/字段/流程**。
-- 新出稿严格按 **`daily-publish-payload-v3` 视觉契约** 造（固定短标题、完整正文相邻承载、配色、配图位），不即兴换结构；2026.6.2 冻结金标仅用于历史 `v2` 复验。
+- 新出稿严格按 **`daily-publish-payload-v4` 手工金标契约** 造（内联标签、自然交易结论、三图固定位置、前台/审计分层），禁止开场系统摘要、callout、divider 与泛化 Maker 标题；完整推理留在后附和证据层。旧 `v2/v3` 仅用于历史复验。
 - **门 ①（防漂移）**：push 后必跑
   `py outputs/notion_verify_against_yesterday.py <今日id> morning|evening|review`
   → 新页必须同时得到 `STRUCTURE_PASS + VISUAL_CONTRACT_PASS`；正文密度 WARN 不得通过删减推理消除，只有结构漂移或接近 Notion API 上限才硬停。历史 `v2` 才逐块对照 6/2 金标。

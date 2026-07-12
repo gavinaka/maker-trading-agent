@@ -198,7 +198,7 @@
         "required_value_paths": ["timeframes", "volume_profile"],
         "evaluation_sequence": ["read_1d_to_15m_transition", "evaluate_chart_components", "use_vrvp_as_liquidity_primary"],
         "conflict_rule": "多周期冲突时保留周期分歧并降低机会质量，不强行合并成单一趋势。",
-        "missing_data_rule": "四个周期、SMA20或结构字段不完整时盘面评分不可认证。",
+        "missing_data_rule": "日线、4小时、1小时的价格、SMA20与结构，以及15分钟的价格与结构任一不完整时不可认证；15分钟SMA20不是交易系统必需输入。",
         "forbidden_inference": ["attribute_coinglass_liquidation_map_to_tradingview", "orderflow_score", "fundamental_context"],
         "direct_claim_types": ["chart_interpretation"],
         "score_bucket": "chart_30",

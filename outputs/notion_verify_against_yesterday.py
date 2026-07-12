@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Notion 出稿稳定性自检器（机械化·不靠记忆）。
-新 `v3` 页校验固定短标题、完整正文容器、视觉密度、配色与图片位置；
+新 `v4` 页校验手工金标内联语法、前后台分层、配色与图片位置；
+`v3` 页仅保留历史复验能力；
 历史 `v2` 页继续对比【2026.6.2 固定金标模板】。
 2026-06-03 用户拍板：以 6/2 为冻结模板长期对照（非"昨日"，避免错误逐日传播）。
 
@@ -123,11 +124,12 @@ def daily_semantic_scan(pid):
             issues.append((index, "empty_text_block", text))
         if "??" in text:
             issues.append((index, "encoding_corruption", text))
+    manual_gold_v4 = bool(blocks) and _plain_block(blocks[0]).startswith("不能做：")
     visual_v3 = any(
         block.get("type") == "heading_2" and _plain_block(block) == "不能做"
         for block in blocks
     )
-    cannot_index = 2 if visual_v3 else 1
+    cannot_index = 0 if manual_gold_v4 else 2 if visual_v3 else 1
     if len(blocks) > cannot_index:
         cannot_do = _plain_block(blocks[cannot_index])
         if not cannot_do.startswith("不能做：") or cannot_do == "不能做：":
@@ -140,8 +142,11 @@ def daily_semantic_scan(pid):
 
 
 def daily_visual_contract_scan(pid):
-    """Validate live typography density for the v3 deterministic projection."""
+    """Validate live v4 hand-written grammar or historical v3 projection."""
     from daily_publish_contract import (
+        DAILY_MANUAL_GOLD_PREFIXES,
+        DAILY_MANUAL_GOLD_TYPES_23,
+        DAILY_MANUAL_GOLD_TYPES_24,
         DAILY_VISUAL_LABELS,
         DAILY_VISUAL_LIMITS,
         DAILY_VISUAL_PAYLOAD_TYPES_31,
@@ -151,6 +156,24 @@ def daily_visual_contract_scan(pid):
     blocks = children(pid)
     text_blocks = [block for block in blocks if block.get("type") != "image"]
     actual_types = tuple(block.get("type") for block in text_blocks)
+    if actual_types in {DAILY_MANUAL_GOLD_TYPES_23, DAILY_MANUAL_GOLD_TYPES_24}:
+        issues = []
+        for index, prefixes in DAILY_MANUAL_GOLD_PREFIXES.items():
+            text = _plain_block(text_blocks[index])
+            if not text.startswith(prefixes):
+                issues.append((index + 1, "manual_gold_prefix_drift", text))
+        if any(block.get("type") in {"quote", "callout", "divider"} for block in text_blocks):
+            issues.append((0, "frontstage_audit_separation", "system_chrome_present"))
+        return True, issues, {
+            "status": "passed" if not issues else "failed",
+            "template": "daily-manual-gold-contract-v4",
+            "heading_max_chars": 0,
+            "body_max_chars": 0,
+            "quote_chars": 0,
+            "long_body_count": 0,
+            "total_text_chars": sum(len(_plain_block(block)) for block in text_blocks),
+            "warnings": [],
+        }
     if actual_types not in {
         DAILY_VISUAL_PAYLOAD_TYPES_31,
         DAILY_VISUAL_PAYLOAD_TYPES_32,
@@ -321,18 +344,22 @@ def main():
     )
     if visual_v3:
         from daily_publish_contract import (
+            DAILY_MANUAL_GOLD_TYPES_23,
+            DAILY_MANUAL_GOLD_TYPES_24,
             DAILY_VISUAL_PAYLOAD_TYPES_31,
             DAILY_VISUAL_PAYLOAD_TYPES_32,
         )
+        manual_gold_v4 = visual_summary.get("template") == "daily-manual-gold-contract-v4"
         text_types = (
-            DAILY_VISUAL_PAYLOAD_TYPES_32
-            if ref == "evening"
-            else DAILY_VISUAL_PAYLOAD_TYPES_31
+            DAILY_MANUAL_GOLD_TYPES_24 if ref == "evening" else DAILY_MANUAL_GOLD_TYPES_23
+        ) if manual_gold_v4 else (
+            DAILY_VISUAL_PAYLOAD_TYPES_32 if ref == "evening" else DAILY_VISUAL_PAYLOAD_TYPES_31
         )
         live_types = list(text_types)
-        live_types[4:4] = ["image", "image", "image"]
+        image_index = 2 if manual_gold_v4 else 4
+        live_types[image_index:image_index] = ["image", "image", "image"]
         B = [(block_type, [], "") for block_type in live_types]
-        label = "v3视觉契约"
+        label = visual_summary.get("template", "日报展示契约")
     print(f"今日块数={len(A)}  {label}块数={len(B)}")
     # ① 结构门：块类型序列对照金标（颜色不再硬比金标——金标自身配色不一致，
     #    配色权威改由 report_colors 按【情绪词→颜色唯一规则】逐 run 校验，见门①b）
@@ -382,7 +409,7 @@ def main():
             f"expected={expected_children_signature} actual={live_signature}"
         )
     else:
-        print("<<< v3 缺少 preflight children_signature_sha256")
+        print("<<< 当前展示契约缺少 preflight children_signature_sha256")
 
     semantic_ok = True
     if ref in ("morning", "midday", "evening"):
@@ -469,7 +496,7 @@ def main():
 
     if title_ok and struct_ok and semantic_ok and color_ok and meta_ok and visual_ok and content_binding_ok:
         if visual_v3:
-            print("\n[PASS] STRUCTURE_PASS + VISUAL_CONTRACT_PASS — 标题 + 块结构/图片 + 视觉密度 + 语义配色 + 正文完整性")
+            print("\n[PASS] STRUCTURE_PASS + VISUAL_CONTRACT_PASS — 标题 + 手工金标语法/块结构/图片 + 语义配色 + 正文完整性")
         else:
             print("\n[PASS] LEGACY_STRUCTURE_PASS — 历史 v2 标题 + 金标块结构/图片 + 语义配色 + 正文完整性")
         return 0

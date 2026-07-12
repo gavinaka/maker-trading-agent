@@ -85,6 +85,61 @@ DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT = {
     "evening": DAILY_VISUAL_PAYLOAD_TYPES_32,
 }
 
+# v4 is the user-approved delivery grammar distilled from the hand-written
+# Notion reports.  It keeps conclusions inline with their labels, removes the
+# system-style opening summary/callouts/divider, and keeps the complete audit
+# trail in combined.md / Word appendix rather than exposing it as UI chrome.
+DAILY_MANUAL_GOLD_TYPES_23 = (
+    "heading_2",  # 不能做：...
+    "heading_3",  # 基本面：...
+    "heading_3",  # 技术面
+    "paragraph",  # 盘口（合约）：
+    "paragraph",  # 盘口读数
+    "heading_3",  # 解读：...
+    "paragraph",  # 盘面：
+    "paragraph",  # 日线级别：
+    "paragraph",  # 小时级别：
+    "heading_3",  # 趋势确认：...
+    "heading_3",  # 日内支撑/压力
+    "heading_3",  # 策略
+    "paragraph",  # 策略正文
+    "heading_2",  # BTC（策略）：...
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "heading_3",  # 防守计划
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+    "paragraph",
+)
+DAILY_MANUAL_GOLD_TYPES_24 = DAILY_MANUAL_GOLD_TYPES_23 + ("paragraph",)
+DAILY_MANUAL_GOLD_TYPES_BY_SLOT = {
+    "morning": DAILY_MANUAL_GOLD_TYPES_23,
+    "midday": DAILY_MANUAL_GOLD_TYPES_23,
+    "evening": DAILY_MANUAL_GOLD_TYPES_24,
+}
+
+DAILY_MANUAL_GOLD_PREFIXES = {
+    0: ("不能做：",),
+    1: ("基本面：",),
+    2: ("技术面",),
+    3: ("盘口",),
+    5: ("解读：",),
+    6: ("盘面",),
+    7: ("日线级别：",),
+    8: ("小时级别：",),
+    9: ("趋势确认：",),
+    10: ("日内支撑：",),
+    11: ("策略",),
+    13: ("BTC（策略）：",),
+    18: ("第一层：",),
+    19: ("第二层：",),
+    20: ("注意事项：",),
+    21: ("取消", "⚠️取消"),
+}
+
 DAILY_VISUAL_LABELS = {
     1: "不能做",
     3: "基本面",
@@ -116,7 +171,11 @@ DAILY_VISUAL_BODY_PREFIXES = {
     27: ("第二层：",),
     28: ("注意事项：",),
     29: ("取消", "⚠️取消"),
-    30: ("独立边界", "持仓校准"),
+    # Morning/midday end at block 30 with the continuity boundary. Evening
+    # inserts one additional "核心：" body at block 30 and moves that same
+    # boundary to the final block 31. The final-block validator still requires
+    # FINAL_TEXT_PREFIXES, so accepting 核心 here cannot weaken the boundary.
+    30: ("核心：", "独立边界", "持仓校准"),
 }
 
 DAILY_VISUAL_LIMITS = {

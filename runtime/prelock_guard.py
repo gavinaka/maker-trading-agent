@@ -88,13 +88,28 @@ def _is_current_slot_recovery_artifact(
     the caller must explicitly opt in after validating the existing readiness
     manifest against the requested immutable capture.
     """
-    if relative in {
+    if _is_current_slot_reasoning_recovery_artifact(relative, trading_date, slot):
+        return True
+    return _is_current_slot_draft_recovery_artifact(relative, trading_date, slot)
+
+
+def _is_current_slot_reasoning_recovery_artifact(
+    relative: str, trading_date: str, slot: str
+) -> bool:
+    return relative in {
         f"runtime_state/{trading_date}/reasoning_input_{slot}.json",
         f"runtime_state/{trading_date}/reasoning_contract_{slot}.json",
         f"runtime_state/{trading_date}/adversarial_review_input_{slot}.json",
         f"runtime_state/{trading_date}/adversarial_review_{slot}.json",
         f"runtime_state/{trading_date}/decision_input_{slot}.json",
         f"runtime_state/{trading_date}/decision_contract_{slot}.json",
+    }
+
+
+def _is_current_slot_draft_recovery_artifact(
+    relative: str, trading_date: str, slot: str
+) -> bool:
+    if relative in {
         f"outputs/{trading_date}_{slot}_cards.json",
         f"outputs/{trading_date}_{slot}_combined.md",
     }:
@@ -112,6 +127,8 @@ def _is_current_slot_generated_runtime_state(
 ) -> bool:
     resolved_state = "base.json" if slot == "morning" else f"resolved_{slot}.json"
     return relative in {
+        f"runtime_state/{trading_date}/reasoning_readiness_{slot}.json",
+        f"runtime_state/{trading_date}/reasoning_lock_{slot}.json",
         f"runtime_state/{trading_date}/analysis_lock_{slot}.json",
         f"runtime_state/{trading_date}/analysis_{slot}.json",
         f"runtime_state/{trading_date}/decision_{slot}.json",
@@ -204,10 +221,24 @@ def prelock_guard_targets(
     *,
     root: Path = ROOT,
     preserve_certified_recovery_artifacts: bool = False,
+    preserve_certified_draft_artifacts: bool = False,
 ) -> list[Path]:
     """Return existing files that must be hidden before independent analysis."""
     targets: list[Path] = []
     seen: set[str] = set()
+
+    # Recovery rebinds the transition to a new workflow lease. The previous
+    # readiness and independent lock therefore bind stale hashes even when the
+    # certified reasoning inputs themselves are safe to reuse.
+    for name in (
+        f"reasoning_readiness_{slot}.json",
+        f"reasoning_lock_{slot}.json",
+    ):
+        path = root / "runtime_state" / trading_date / name
+        if path.is_file():
+            relative = _safe_relative(path, root)
+            targets.append(path)
+            seen.add(relative)
     context_log = root / "sessions" / "context_log.md"
     if context_log.is_file():
         relative = _safe_relative(context_log, root)
@@ -236,10 +267,12 @@ def prelock_guard_targets(
         }
         if relative in current_runtime_allowed:
             continue
-        if preserve_certified_recovery_artifacts and _is_current_slot_recovery_artifact(
-            relative,
-            trading_date,
-            slot,
+        if preserve_certified_recovery_artifacts and _is_current_slot_reasoning_recovery_artifact(
+            relative, trading_date, slot
+        ):
+            continue
+        if preserve_certified_draft_artifacts and _is_current_slot_draft_recovery_artifact(
+            relative, trading_date, slot
         ):
             continue
         if relative.startswith(
@@ -274,6 +307,7 @@ def activate_prelock_guard(
     *,
     root: Path = ROOT,
     preserve_certified_recovery_artifacts: bool = False,
+    preserve_certified_draft_artifacts: bool = False,
 ) -> tuple[dict, Path]:
     """Move prior-judgment artifacts into a slot-local quarantine.
 
@@ -293,6 +327,7 @@ def activate_prelock_guard(
         preserve_certified_recovery_artifacts=(
             preserve_certified_recovery_artifacts
         ),
+        preserve_certified_draft_artifacts=preserve_certified_draft_artifacts,
     ):
         relative = _safe_relative(target, root)
         quarantine = _quarantine_path(root, trading_date, slot, relative)
@@ -319,6 +354,9 @@ def activate_prelock_guard(
         "policy": "pre_analysis_prior_judgment_files_quarantined_until_lock",
         "certified_recovery_artifacts_preserved": bool(
             preserve_certified_recovery_artifacts
+        ),
+        "certified_draft_artifacts_preserved": bool(
+            preserve_certified_draft_artifacts
         ),
         "safe_read_policy": prelock_policy_manifest(
             trading_date,

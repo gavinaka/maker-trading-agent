@@ -9,6 +9,46 @@ from runtime import reasoning_lock
 
 
 class ReasoningLockTests(unittest.TestCase):
+    def test_file_record_matches_reasoning_readiness_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "artifact.json"
+            path.write_text("{}\n", encoding="utf-8")
+
+            record = reasoning_lock._file_record(path, root)
+
+            self.assertEqual(
+                set(record), {"path", "sha256", "bytes", "mtime"}
+            )
+
+    def test_stale_lock_can_only_be_superseded_under_active_prelock_guard(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "runtime_state" / self.DATE
+            state.mkdir(parents=True)
+            stale = state / f"reasoning_lock_{self.SLOT}.json"
+            stale.write_text('{"stale":true}\n', encoding="utf-8")
+            guard = state / f"prelock_guard_{self.SLOT}.json"
+            guard.write_text('{"status":"active"}\n', encoding="utf-8")
+
+            with (
+                patch.object(
+                    reasoning_lock,
+                    "validate_reasoning_readiness_manifest",
+                    side_effect=ValueError("stop after supersede"),
+                ),
+            ):
+                with self.assertRaisesRegex(ValueError, "stop after supersede"):
+                    reasoning_lock.write_reasoning_lock(
+                        self.DATE, self.SLOT, root=root
+                    )
+
+            self.assertFalse(stale.exists())
+            self.assertEqual(
+                len(list(state.glob(f"reasoning_lock_{self.SLOT}.superseded-*.json"))),
+                1,
+            )
+
     DATE = "2026-07-12"
     SLOT = "midday"
 

@@ -186,12 +186,60 @@ class PrelockGuardTests(unittest.TestCase):
                 "midday",
                 root=root,
                 preserve_certified_recovery_artifacts=True,
+                preserve_certified_draft_artifacts=True,
             )
             self.assertTrue(payload["certified_recovery_artifacts_preserved"])
+            self.assertTrue(payload["certified_draft_artifacts_preserved"])
             for path in current:
                 self.assertTrue(path.exists(), path)
             for path in still_quarantined:
                 self.assertFalse(path.exists(), path)
+
+    def test_recovery_quarantines_stale_reasoning_boundary_and_supersedes_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "runtime_state" / "2026-07-07"
+            readiness = state / "reasoning_readiness_midday.json"
+            lock = state / "reasoning_lock_midday.json"
+            for path in (readiness, lock):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("old\n", encoding="utf-8")
+
+            payload, _ = activate_prelock_guard(
+                "2026-07-07",
+                "midday",
+                root=root,
+                preserve_certified_recovery_artifacts=True,
+            )
+            quarantined = {entry["original_path"] for entry in payload["entries"]}
+            self.assertIn(
+                "runtime_state/2026-07-07/reasoning_readiness_midday.json",
+                quarantined,
+            )
+            self.assertIn(
+                "runtime_state/2026-07-07/reasoning_lock_midday.json",
+                quarantined,
+            )
+
+            readiness.write_text("new readiness\n", encoding="utf-8")
+            lock.write_text("new lock\n", encoding="utf-8")
+            restored, _ = restore_prelock_guard(
+                "2026-07-07",
+                "midday",
+                root=root,
+                reason="reasoning_lock_success",
+            )
+
+            self.assertEqual(readiness.read_text(encoding="utf-8"), "new readiness\n")
+            self.assertEqual(lock.read_text(encoding="utf-8"), "new lock\n")
+            self.assertIn(
+                "runtime_state/2026-07-07/reasoning_readiness_midday.json",
+                restored["superseded_current_outputs"],
+            )
+            self.assertIn(
+                "runtime_state/2026-07-07/reasoning_lock_midday.json",
+                restored["superseded_current_outputs"],
+            )
 
     def test_restore_tolerates_regenerated_python_cache_collision(self):
         with tempfile.TemporaryDirectory() as directory:

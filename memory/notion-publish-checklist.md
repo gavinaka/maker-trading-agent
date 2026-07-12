@@ -11,7 +11,7 @@ metadata:
 
 **Why**：2026-06-03 用户连续纠错（漏配图→漏块类型→漏字体颜色），原因是「反应式补丁」。要求**深度修稳定性**：用脚本机械比对，过不了就不算完成。
 
-> 🟥 **活跃结构金标=`daily-publish-payload-v3`**：固定短标题 + 相邻完整正文 + 三图固定位置；正文只做容器重排，禁止摘要、截断或降低推理深度。2026.6.2 冻结模板只用于历史 `v2` 页面兼容复验，不得反向限制新报告的分析长度。review 分支仅供历史页面兼容复验，不得创建新页面。
+> 🟥 **活跃结构金标=`daily-publish-payload-v4`**：手工报告内联标签 + 自然交易结论 + 三图固定位置；前台禁止系统摘要、callout、divider、泛化 Maker 标题和审计元叙事，完整推理保留在后附/Word/运行证据。旧 `v2/v3` 只用于历史页面兼容复验。review 分支仅供历史页面兼容复验，不得创建新页面。
 > 🟥🟥 **配色权威 ≠ 金标颜色**（2026-06-03 用户拍板·关键修正）。金标自身配色不一致（同一个「中性偏空」早间金标涂红、晚间金标涂橙），**绑死金标颜色会把语义涂错**（典型：解读结论「中性偏空」被机械对成红＝看着像利空＝"渲染不到位"）。改为：**配色按【情绪词→颜色】确定性唯一规则**，早晚统一一套，由 `outputs/report_colors.py` 逐 run 校验。
 
 ## 唯一色规则（用户书面约定·长期标准·见 report_colors.py；**2026-06-12 用户迭代：中性偏多→绿、中性偏空→红、其余不变**）
@@ -23,7 +23,7 @@ metadata:
 - 🔑 **颜色跟情绪词走、不跟金标块位置走**（这是对旧记忆的反转）。~~**「中性偏空」恒黄**（基本面 label + 解读 label 都黄·非红非橙）~~【❌已订正 2026-06-12：用户迭代为**中性偏空→红、中性偏多→绿**，2026-06-03"中性偏空恒黄"口径废止；SENTIMENT 表已同步】；日内支撑/压力的「标签」run 默认色、只有「数值」run 上色（支撑绿/压力红）。
 
 ## 唯一正确流程（每次早/晚 Notion 出稿都照走）
-1. **Daily payload 先机械派生**：新日报只允许 `py outputs/daily_payload_builder.py outputs/<date>_<slot>_combined.md` 生成 `daily-publish-payload-v3`；`combined.md` 是正文唯一真相源。固定标签进入短 heading，完整原文逐字进入相邻 paragraph/callout。禁止手写 `children` JSON、复制日期专用 `_notion_push_*` / `_prepare_*`，禁止补写 combined 不存在的字段，更禁止为了视觉门压缩或删减推理。
+1. **Daily payload 先机械派生**：新日报只允许 `py outputs/daily_payload_builder.py outputs/<date>_<slot>_combined.md` 生成 `daily-publish-payload-v4`；`combined.md` 是正文唯一真相源。Notion 只投影手工金标前台语法，完整审计推理仍在 `③ 后附` 和证据层。禁止手写 `children` JSON、复制日期专用 `_notion_push_*` / `_prepare_*`，禁止补写 combined 不存在的字段，更禁止为了视觉门压缩或删减推理。
 2. **任何写入前先过时效+lint+派生签名**：`assert_source_freshness(...)`（Coinglass/Exo/TV四档≤4h；BlockBeats/FedWatch当日）→`run_report_lint(...)`→`publish_report.py` 重新从 combined 派生并校验 `payload_source.kind=combined_md_to_notion_payload`；失败即重采/重评分/重出稿。
 3. **事务式 staging 发布**：snapshot全部旧同名前缀页→唯一staging标题建新页→上传三图→落库检查→改最终标题。准备阶段失败只归档staging、旧页保留。
 4. **改最终标题后立即跑结构+配色双门**（脚本默认对照 6/2 金标）：

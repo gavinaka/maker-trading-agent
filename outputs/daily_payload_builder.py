@@ -19,6 +19,7 @@ from typing import Any
 try:
     from .daily_publish_contract import (
         DAILY_PAYLOAD_TYPES_BY_SLOT,
+        DAILY_MANUAL_GOLD_TYPES_BY_SLOT,
         DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT,
         FINAL_TEXT_PREFIXES,
         REQUIRED_SOURCE_LABELS,
@@ -34,6 +35,7 @@ try:
 except ImportError:  # pragma: no cover - script execution from outputs/
     from daily_publish_contract import (
         DAILY_PAYLOAD_TYPES_BY_SLOT,
+        DAILY_MANUAL_GOLD_TYPES_BY_SLOT,
         DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT,
         FINAL_TEXT_PREFIXES,
         REQUIRED_SOURCE_LABELS,
@@ -51,6 +53,11 @@ except ImportError:  # pragma: no cover - script execution from outputs/
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_NAME = "daily_payload_builder"
 GENERATOR_VERSION = "1.0"
+GENERATOR_VERSION_BY_SCHEMA = {
+    "daily-publish-payload-v2": GENERATOR_VERSION,
+    "daily-publish-payload-v3": GENERATOR_VERSION,
+    "daily-publish-payload-v4": "2.0",
+}
 
 
 def sha256_file(path: Path) -> str:
@@ -278,7 +285,7 @@ def parse_daily_text_contract(
 
 
 def daily_text_values_from_combined(
-    lines: list[str], trading_date: str, slot: str, *, visual_v3: bool = True
+    lines: list[str], trading_date: str, slot: str, *, presentation: str = "manual_gold_v4"
 ) -> list[str]:
     contract = parse_daily_text_contract(lines, trading_date, slot)
     legacy_values = [
@@ -304,7 +311,7 @@ def daily_text_values_from_combined(
         "防守计划",
         *contract["defense"],
     ]
-    if visual_v3:
+    if presentation == "visual_v3":
         values = [
             legacy_values[0],
             "不能做",
@@ -335,6 +342,29 @@ def daily_text_values_from_combined(
             *legacy_values[20:],
         ]
         expected = len(DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT[slot])
+    elif presentation == "manual_gold_v4":
+        values = [
+            legacy_values[1],
+            legacy_values[2],
+            legacy_values[3],
+            legacy_values[4],
+            legacy_values[5],
+            legacy_values[6],
+            legacy_values[7],
+            legacy_values[8],
+            legacy_values[9],
+            legacy_values[10],
+            legacy_values[11],
+            legacy_values[12],
+            legacy_values[13],
+            legacy_values[15],
+            legacy_values[16],
+            legacy_values[17],
+            legacy_values[18],
+            legacy_values[19],
+            *legacy_values[20:],
+        ]
+        expected = len(DAILY_MANUAL_GOLD_TYPES_BY_SLOT[slot])
     else:
         values = legacy_values
         expected = len(DAILY_PAYLOAD_TYPES_BY_SLOT[slot])
@@ -347,14 +377,16 @@ def daily_text_values_from_combined(
 
 
 def daily_children_from_combined(
-    lines: list[str], trading_date: str, slot: str, *, visual_v3: bool = True
+    lines: list[str], trading_date: str, slot: str, *, presentation: str = "manual_gold_v4"
 ) -> list[dict]:
     values = daily_text_values_from_combined(
-        lines, trading_date, slot, visual_v3=visual_v3
+        lines, trading_date, slot, presentation=presentation
     )
     block_types = (
-        DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT[slot]
-        if visual_v3
+        DAILY_MANUAL_GOLD_TYPES_BY_SLOT[slot]
+        if presentation == "manual_gold_v4"
+        else DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT[slot]
+        if presentation == "visual_v3"
         else DAILY_PAYLOAD_TYPES_BY_SLOT[slot]
     )
     return [
@@ -410,7 +442,7 @@ def blockbeat_card_paths(trading_date: str, slot: str, *, root: Path = ROOT) -> 
 
 
 def build_daily_payload(
-    report_path: Path, *, root: Path = ROOT, schema_version: str = "daily-publish-payload-v3"
+    report_path: Path, *, root: Path = ROOT, schema_version: str = "daily-publish-payload-v4"
 ) -> dict:
     root = Path(root).resolve()
     report_path = Path(report_path)
@@ -423,11 +455,15 @@ def build_daily_payload(
         raise ValueError("combined report filename must start with YYYY-MM-DD_slot_")
     trading_date, slot = match.groups()
     lines = report.read_text(encoding="utf-8").splitlines()
-    visual_v3 = schema_version == "daily-publish-payload-v3"
-    if schema_version not in {"daily-publish-payload-v2", "daily-publish-payload-v3"}:
+    presentation = {
+        "daily-publish-payload-v2": "legacy_v2",
+        "daily-publish-payload-v3": "visual_v3",
+        "daily-publish-payload-v4": "manual_gold_v4",
+    }.get(schema_version)
+    if presentation is None:
         raise ValueError(f"unsupported daily payload schema: {schema_version}")
     children = daily_children_from_combined(
-        lines, trading_date, slot, visual_v3=visual_v3
+        lines, trading_date, slot, presentation=presentation
     )
     source_specs = source_specs_from_transition(trading_date, slot, root=root)
     image_paths = blockbeat_card_paths(trading_date, slot, root=root)
@@ -452,7 +488,7 @@ def build_daily_payload(
             "schema_version": "daily-payload-source-v1",
             "kind": "combined_md_to_notion_payload",
             "generator": GENERATOR_NAME,
-            "generator_version": GENERATOR_VERSION,
+            "generator_version": GENERATOR_VERSION_BY_SCHEMA[schema_version],
             "report_path": _relative(report, root),
             "report_sha256": report_sha,
             "children_signature_sha256": _json_hash(signature),

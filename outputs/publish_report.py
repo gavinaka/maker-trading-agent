@@ -35,6 +35,8 @@ from daily_publish_contract import (
     CRITICAL_REPORT_TEXT_PREFIXES,
     DAILY_PAYLOAD_TEXT_PREFIXES,
     DAILY_PAYLOAD_TYPES_BY_SLOT,
+    DAILY_MANUAL_GOLD_PREFIXES,
+    DAILY_MANUAL_GOLD_TYPES_BY_SLOT,
     DAILY_VISUAL_BODY_PREFIXES,
     DAILY_VISUAL_LABELS,
     DAILY_VISUAL_LIMITS,
@@ -266,8 +268,11 @@ def validate_daily_payload_shape(
         raise ValueError("daily payload shape gate requires children array")
     schema_version = payload.get("schema_version", "daily-publish-payload-v2")
     visual_v3 = schema_version == "daily-publish-payload-v3"
+    manual_gold_v4 = schema_version == "daily-publish-payload-v4"
     expected_types = (
-        DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT[report_slot]
+        DAILY_MANUAL_GOLD_TYPES_BY_SLOT[report_slot]
+        if manual_gold_v4
+        else DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT[report_slot]
         if visual_v3
         else DAILY_PAYLOAD_TYPES_BY_SLOT[report_slot]
     )
@@ -309,7 +314,30 @@ def validate_daily_payload_shape(
     }[report_slot]
     if expected_slot not in str(payload.get("title", "")):
         raise ValueError(f"daily Notion payload title must contain {expected_slot}")
-    if visual_v3:
+    if manual_gold_v4:
+        for index, expected_prefixes in DAILY_MANUAL_GOLD_PREFIXES.items():
+            text = _rich_text_plain(children[index])
+            if not text.startswith(expected_prefixes):
+                raise ValueError(
+                    "daily Notion manual-gold body drift: "
+                    f"block {index + 1} expected one of {expected_prefixes!r}, got {text!r}"
+                )
+        forbidden_types = {"quote", "callout", "divider"}
+        present_forbidden = sorted(forbidden_types & set(actual_types))
+        if present_forbidden:
+            raise ValueError(
+                "daily Notion manual-gold presentation forbids system chrome: "
+                + ", ".join(present_forbidden)
+            )
+        if any(_rich_text_plain(block) == "Maker 计划" for block in children):
+            raise ValueError("daily Notion manual-gold presentation forbids generic Maker heading")
+        visual_contract = {
+            "status": "passed",
+            "template": "daily-manual-gold-contract-v4",
+            "reference_grammar": "handwritten-notion-inline-labels",
+            "frontstage_audit_separation": True,
+        }
+    elif visual_v3:
         for index, expected_label in DAILY_VISUAL_LABELS.items():
             text = _rich_text_plain(children[index])
             if text != expected_label:
@@ -450,7 +478,9 @@ def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) ->
         )
     schema_version = shape.get("schema_version") if isinstance(shape, dict) else None
     expected_count = (
-        {"morning": 31, "midday": 31, "evening": 32}
+        {"morning": 23, "midday": 23, "evening": 24}
+        if schema_version == "daily-publish-payload-v4"
+        else {"morning": 31, "midday": 31, "evening": 32}
         if schema_version == "daily-publish-payload-v3"
         else {"morning": 25, "midday": 25, "evening": 26}
     ).get(str(manifest.get("slot", "")))
@@ -458,7 +488,7 @@ def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) ->
     visual_contract_ok = (
         isinstance(visual_contract, dict)
         and visual_contract.get("status") == "passed"
-        if schema_version == "daily-publish-payload-v3"
+        if schema_version in {"daily-publish-payload-v3", "daily-publish-payload-v4"}
         else visual_contract is None
         or (
             isinstance(visual_contract, dict)
@@ -475,7 +505,9 @@ def _publish_manifest_has_quality_evidence(manifest: dict, trading_date: str) ->
         and isinstance(colors, dict)
         and colors.get("status") == "passed"
         and colors.get("template") == (
-            "daily-visual-colors-v3"
+            "daily-manual-gold-colors-v4"
+            if schema_version == "daily-publish-payload-v4"
+            else "daily-visual-colors-v3"
             if schema_version == "daily-publish-payload-v3"
             else "daily-gold-run-colors-v1"
         )

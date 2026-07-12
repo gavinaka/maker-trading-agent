@@ -37,6 +37,9 @@ def _file_record(path: Path, root: Path) -> dict[str, Any]:
         "path": resolved.relative_to(root.resolve()).as_posix(),
         "sha256": _sha256_file(resolved),
         "bytes": resolved.stat().st_size,
+        "mtime": datetime.fromtimestamp(resolved.stat().st_mtime).astimezone().isoformat(
+            timespec="seconds"
+        ),
     }
 
 
@@ -60,9 +63,28 @@ def write_reasoning_lock(
 ) -> tuple[dict[str, Any], Path]:
     target = manifest_path(trading_date, slot, root=root)
     if target.is_file():
-        return validate_reasoning_lock(
-            target, trading_date, slot, root=root
-        ), target
+        try:
+            return validate_reasoning_lock(
+                target, trading_date, slot, root=root
+            ), target
+        except ValueError:
+            guard_path = (
+                root / "runtime_state" / trading_date / f"prelock_guard_{slot}.json"
+            )
+            guard = json.loads(guard_path.read_text(encoding="utf-8")) if guard_path.is_file() else {}
+            analysis_lock = (
+                root / "runtime_state" / trading_date / f"analysis_lock_{slot}.json"
+            )
+            if guard.get("status") != "active" or analysis_lock.exists():
+                raise
+            stale_sha256 = _sha256_file(target)
+            audit_target = target.with_name(
+                f"reasoning_lock_{slot}.superseded-{stale_sha256[:16]}.json"
+            )
+            if audit_target.exists() and _sha256_file(audit_target) != stale_sha256:
+                raise RuntimeError("stale reasoning lock supersede audit collision")
+            if not audit_target.exists():
+                target.replace(audit_target)
     readiness, readiness_path = validate_reasoning_readiness_manifest(
         trading_date, slot, root=root
     )

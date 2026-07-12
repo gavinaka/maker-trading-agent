@@ -798,8 +798,56 @@ class DeliveryEvidenceTests(unittest.TestCase):
             )
             self.assertEqual(evidence["published_at"], payload["published_at"])
 
+    def test_strict_delivery_accepts_manual_gold_v4_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            current, page_id = self._seed(root, date="2026-07-05")
+            publish = root / "runtime_state" / "2026-07-05" / "publish_morning.json"
+            payload = json.loads(publish.read_text(encoding="utf-8"))
+            payload["notion_payload_shape"] = {
+                "status": "passed",
+                "schema_version": "daily-publish-payload-v4",
+                "block_count_before_images": 23,
+                "image_count": 3,
+                "visual_contract": {
+                    "status": "passed",
+                    "template": "daily-manual-gold-contract-v4",
+                },
+            }
+            payload["notion_payload_source"] = {
+                "status": "passed",
+                "kind": "combined_md_to_notion_payload",
+                "generator": "daily_payload_builder",
+                "generator_version": "1.0",
+            }
+            payload["notion_payload_colors"] = {
+                "status": "passed",
+                "template": "daily-manual-gold-colors-v4",
+            }
+            payload["frozen_verifier"] = {
+                "script": "C:\\repo\\outputs\\notion_verify_against_yesterday.py",
+                "args": [page_id, "morning"],
+                "returncode": 0,
+                "stdout": "[PASS] STRUCTURE_PASS + VISUAL_CONTRACT_PASS\n",
+                "stderr": "",
+            }
+            publish.write_text(json.dumps(payload), encoding="utf-8")
+
+            evidence = validate_delivery_evidence(
+                "2026-07-05", "morning", page_id, current=current, root=root
+            )
+            self.assertEqual(evidence["published_at"], payload["published_at"])
+
 
 class PublishEvidenceTests(unittest.TestCase):
+    def test_visual_body_prefix_contract_accounts_for_evening_core_block(self):
+        self.assertIn("核心：", publish_report.DAILY_VISUAL_BODY_PREFIXES[30])
+        self.assertIn("独立边界", publish_report.DAILY_VISUAL_BODY_PREFIXES[30])
+        self.assertEqual(
+            publish_report.DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT["evening"][-2:],
+            ("paragraph", "paragraph"),
+        )
+
     def _text_block(self, block_type: str, text: str) -> dict:
         return {
             "object": "block",
@@ -1594,22 +1642,20 @@ class PublishEvidenceTests(unittest.TestCase):
 
             payload = daily_payload_builder.build_daily_payload(report, root=root)
 
-            self.assertEqual(payload["schema_version"], "daily-publish-payload-v3")
+            self.assertEqual(payload["schema_version"], "daily-publish-payload-v4")
             self.assertEqual(payload["date"], date)
             self.assertEqual(payload["verifier_mode"], slot)
-            self.assertEqual(len(payload["children"]), 32)
+            self.assertEqual(len(payload["children"]), 24)
             self.assertEqual(
-                daily_payload_builder.block_plain_text(payload["children"][1]),
-                "不能做",
-            )
-            self.assertEqual(
-                daily_payload_builder.block_plain_text(payload["children"][2]),
+                daily_payload_builder.block_plain_text(payload["children"][0]),
                 "不能做：不能在压力下方追涨，不能在支撑带直接追空。",
             )
             self.assertEqual(
-                daily_payload_builder.block_plain_text(payload["children"][3]),
-                "基本面",
+                payload["children"][1]["type"],
+                "heading_3",
             )
+            self.assertTrue(daily_payload_builder.block_plain_text(payload["children"][1]).startswith("基本面："))
+            self.assertFalse(any(block["type"] in {"quote", "callout", "divider"} for block in payload["children"]))
             self.assertEqual(
                 daily_payload_builder.block_plain_text(payload["children"][-1]),
                 "独立边界：本报告判断仅来自当次六源与开仓前状态门禁。",
@@ -1645,7 +1691,7 @@ class PublishEvidenceTests(unittest.TestCase):
             payload = daily_payload_builder.build_daily_payload(report, root=root)
 
             self.assertEqual(
-                daily_payload_builder.block_plain_text(payload["children"][21]),
+                daily_payload_builder.block_plain_text(payload["children"][13]),
                 "BTC（策略）：执行概率 45%（已执行 0%）　胜率 61%",
             )
 
@@ -1660,7 +1706,9 @@ class PublishEvidenceTests(unittest.TestCase):
             report.write_text(self._strict_daily_combined_text(date, slot), encoding="utf-8")
             self._seed_publish_binding(root, date=date, slot=slot)
             self._seed_blockbeat_cards(root, date, slot)
-            payload = daily_payload_builder.build_daily_payload(report, root=root)
+            payload = daily_payload_builder.build_daily_payload(
+                report, root=root, schema_version="daily-publish-payload-v3"
+            )
 
             result = publish_report.validate_daily_payload_shape(
                 payload, date, slot, report_text=report.read_text(encoding="utf-8")
@@ -1678,7 +1726,36 @@ class PublishEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "visual label drift|heading exceeds"):
                 publish_report.validate_daily_payload_shape(payload, date, slot)
 
-    def test_visual_v3_shape_rejects_oversized_body_without_truncating_report(self):
+    def test_manual_gold_v4_matches_handwritten_frontstage_grammar(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(self._strict_daily_combined_text(date, slot), encoding="utf-8")
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+
+            payload = daily_payload_builder.build_daily_payload(report, root=root)
+            color_result = daily_color_template.style_daily_payload_children(payload["children"])
+            result = publish_report.validate_daily_payload_shape(
+                payload, date, slot, report_text=report.read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(payload["schema_version"], "daily-publish-payload-v4")
+            self.assertEqual(len(payload["children"]), 23)
+            self.assertEqual(payload["children"][0]["type"], "heading_2")
+            self.assertTrue(daily_payload_builder.block_plain_text(payload["children"][0]).startswith("不能做："))
+            self.assertTrue(daily_payload_builder.block_plain_text(payload["children"][1]).startswith("基本面："))
+            self.assertTrue(daily_payload_builder.block_plain_text(payload["children"][13]).startswith("BTC（策略）："))
+            self.assertFalse(any(block["type"] in {"quote", "callout", "divider"} for block in payload["children"]))
+            self.assertEqual(result["visual_contract"]["template"], "daily-manual-gold-contract-v4")
+            self.assertTrue(result["visual_contract"]["frontstage_audit_separation"])
+            self.assertEqual(color_result["template"], "daily-manual-gold-colors-v4")
+
+    def test_manual_gold_v4_rejects_format_drift(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             date = "2026-07-05"
@@ -1690,6 +1767,25 @@ class PublishEvidenceTests(unittest.TestCase):
             self._seed_publish_binding(root, date=date, slot=slot)
             self._seed_blockbeat_cards(root, date, slot)
             payload = daily_payload_builder.build_daily_payload(report, root=root)
+            payload["children"][0]["heading_2"]["rich_text"][0]["text"]["content"] = "不能做"
+
+            with self.assertRaisesRegex(ValueError, "manual-gold body drift"):
+                publish_report.validate_daily_payload_shape(payload, date, slot)
+
+    def test_visual_v3_shape_rejects_oversized_body_without_truncating_report(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            date = "2026-07-05"
+            slot = "morning"
+            outputs = root / "outputs"
+            outputs.mkdir(parents=True)
+            report = outputs / f"{date}_{slot}_combined.md"
+            report.write_text(self._strict_daily_combined_text(date, slot), encoding="utf-8")
+            self._seed_publish_binding(root, date=date, slot=slot)
+            self._seed_blockbeat_cards(root, date, slot)
+            payload = daily_payload_builder.build_daily_payload(
+                report, root=root, schema_version="daily-publish-payload-v3"
+            )
             payload["children"][4]["paragraph"]["rich_text"][0]["text"]["content"] = "长" * 1801
 
             with self.assertRaisesRegex(ValueError, "body exceeds visual budget"):
@@ -1706,7 +1802,9 @@ class PublishEvidenceTests(unittest.TestCase):
             report.write_text(self._strict_daily_combined_text(date, slot), encoding="utf-8")
             self._seed_publish_binding(root, date=date, slot=slot)
             self._seed_blockbeat_cards(root, date, slot)
-            payload = daily_payload_builder.build_daily_payload(report, root=root)
+            payload = daily_payload_builder.build_daily_payload(
+                report, root=root, schema_version="daily-publish-payload-v3"
+            )
             payload["children"][14]["paragraph"]["rich_text"][0]["text"]["content"] = (
                 "多头趋势仍成立，但缺少固定前缀"
             )
@@ -1732,7 +1830,9 @@ class PublishEvidenceTests(unittest.TestCase):
             self._seed_publish_binding(root, date=date, slot=slot)
             self._seed_blockbeat_cards(root, date, slot)
 
-            payload = daily_payload_builder.build_daily_payload(report, root=root)
+            payload = daily_payload_builder.build_daily_payload(
+                report, root=root, schema_version="daily-publish-payload-v3"
+            )
             projected = daily_payload_builder.block_plain_text(payload["children"][4])
             self.assertEqual(projected, deep_fundamental)
             self.assertEqual(len(projected), len(deep_fundamental))
@@ -1755,7 +1855,7 @@ class PublishEvidenceTests(unittest.TestCase):
             self._seed_publish_binding(root, date=date, slot=slot)
             self._seed_blockbeat_cards(root, date, slot)
             payload_obj = daily_payload_builder.build_daily_payload(report, root=root)
-            payload_obj["children"][23]["paragraph"]["rich_text"][0]["text"]["content"] = (
+            payload_obj["children"][21]["paragraph"]["rich_text"][0]["text"]["content"] = (
                 "取消价不等于止损：这是 combined 里没有的手写漂移。"
             )
             payload = outputs / f"{date}_{slot}_publish_payload.json"

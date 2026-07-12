@@ -161,7 +161,9 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
     schema_version = shape.get("schema_version") if isinstance(shape, dict) else None
     visual_contract = shape.get("visual_contract") if isinstance(shape, dict) else None
     expected_payload_count = (
-        {"morning": 31, "midday": 31, "evening": 32}
+        {"morning": 23, "midday": 23, "evening": 24}
+        if schema_version == "daily-publish-payload-v4"
+        else {"morning": 31, "midday": 31, "evening": 32}
         if schema_version == "daily-publish-payload-v3"
         else {"morning": 25, "midday": 25, "evening": 26}
     ).get(str(publish.get("slot", "")))
@@ -176,13 +178,13 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
         and shape.get("image_count") == 3,
         "notion_visual_contract": (
             isinstance(visual_contract, dict)
-            if schema_version == "daily-publish-payload-v3"
+            if schema_version in {"daily-publish-payload-v3", "daily-publish-payload-v4"}
             else visual_contract is None or isinstance(visual_contract, dict)
         ),
         "notion_visual_contract_passed": (
             isinstance(visual_contract, dict)
             and visual_contract.get("status") == "passed"
-            if schema_version == "daily-publish-payload-v3"
+            if schema_version in {"daily-publish-payload-v3", "daily-publish-payload-v4"}
             else visual_contract is None
             or visual_contract.get("status") in {"passed", "legacy"}
         ),
@@ -197,7 +199,9 @@ def _validate_strict_publish_quality_evidence(publish: dict, trading_date: str) 
         "notion_payload_colors_template": isinstance(colors, dict)
         and colors.get("template")
         == (
-            "daily-visual-colors-v3"
+            "daily-manual-gold-colors-v4"
+            if schema_version == "daily-publish-payload-v4"
+            else "daily-visual-colors-v3"
             if schema_version == "daily-publish-payload-v3"
             else "daily-gold-run-colors-v1"
         ),

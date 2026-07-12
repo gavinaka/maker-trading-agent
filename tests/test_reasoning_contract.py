@@ -625,6 +625,28 @@ class ReasoningContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "opportunity_quality_not_direction"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
+    def test_15m_sma20_is_optional_but_scored_timeframe_sma20_is_required(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            del payload["observations"][5]["values"]["timeframes"]["15m"]["sma20"]
+            contract = build_reasoning_contract(
+                payload, capture_manifest_path=capture, root=root
+            )
+            self.assertNotIn(
+                "sma20", contract["methodology"]["multi_timeframe_transition"]
+                ["timeframes"]["15m"]
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            del payload["observations"][5]["values"]["timeframes"]["1h"]["sma20"]
+            with self.assertRaisesRegex(ValueError, "TradingView 1h.sma20"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
     def test_liquidation_map_must_be_coinglass_auxiliary_not_tradingview(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

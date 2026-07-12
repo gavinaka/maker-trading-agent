@@ -344,11 +344,24 @@ def _certified_recovery_artifacts_available(
         )
         if not reasoning_valid:
             return False
+        return True
+    except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+        return False
+
+
+def _certified_draft_recovery_artifacts_available(
+    trading_date: str,
+    slot: str,
+    capture_manifest_path: Path,
+    lease: dict,
+) -> bool:
+    if not _certified_recovery_artifacts_available(
+        trading_date, slot, capture_manifest_path, lease
+    ):
+        return False
+    try:
         validate_recovery_draft_artifacts(
-            trading_date,
-            slot,
-            capture_manifest_path,
-            root=ROOT,
+            trading_date, slot, capture_manifest_path, root=ROOT
         )
         return True
     except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
@@ -883,6 +896,11 @@ def main() -> int:
                 lease,
             )
         )
+        preserve_certified_draft_artifacts = (
+            _certified_draft_recovery_artifacts_available(
+                args.date, args.slot, args.capture_manifest, lease
+            )
+        )
         _, context_target, context_reused = ensure_context_pack(args.date, args.slot)
         delta_manifest = load_json(args.capture_manifest.resolve())
         full_recollection_performed = bool(
@@ -944,6 +962,9 @@ def main() -> int:
             preserve_certified_recovery_artifacts=(
                 preserve_certified_recovery_artifacts
             ),
+            preserve_certified_draft_artifacts=(
+                preserve_certified_draft_artifacts
+            ),
         )
         event_id = (
             f"{args.date}:{args.slot}:prepare:{transition['state_version']}:"
@@ -973,6 +994,9 @@ def main() -> int:
                 ),
                 "certified_recovery_artifacts_preserved": (
                     preserve_certified_recovery_artifacts
+                ),
+                "certified_draft_artifacts_preserved": (
+                    preserve_certified_draft_artifacts
                 ),
             },
             **usage_values(args),

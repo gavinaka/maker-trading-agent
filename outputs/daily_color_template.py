@@ -16,11 +16,15 @@ try:
     from .daily_publish_contract import (
         DAILY_VISUAL_PAYLOAD_TYPES_31,
         DAILY_VISUAL_PAYLOAD_TYPES_32,
+        DAILY_MANUAL_GOLD_TYPES_23,
+        DAILY_MANUAL_GOLD_TYPES_24,
     )
 except ImportError:  # pragma: no cover - direct script/import from outputs/
     from daily_publish_contract import (
         DAILY_VISUAL_PAYLOAD_TYPES_31,
         DAILY_VISUAL_PAYLOAD_TYPES_32,
+        DAILY_MANUAL_GOLD_TYPES_23,
+        DAILY_MANUAL_GOLD_TYPES_24,
     )
 
 
@@ -69,6 +73,14 @@ DAILY_TEXT_BLOCK_TYPE_SEQUENCES = {
     DAILY_TEXT_BLOCK_TYPES_26,
     DAILY_VISUAL_PAYLOAD_TYPES_31,
     DAILY_VISUAL_PAYLOAD_TYPES_32,
+    DAILY_MANUAL_GOLD_TYPES_23,
+    DAILY_MANUAL_GOLD_TYPES_24,
+}
+
+MANUAL_GOLD_V4_TO_LEGACY_STYLE_INDEX = {
+    0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 7, 7: 8, 8: 9,
+    9: 10, 10: 11, 11: 12, 12: 13, 13: 15, 14: 16, 15: 17,
+    16: 18, 17: 19, 18: 20, 19: 21, 20: 22, 21: 23, 22: 24, 23: 25,
 }
 
 VISUAL_V3_TO_LEGACY_STYLE_INDEX = {
@@ -484,10 +496,11 @@ def _run_signature(runs: list[dict]) -> list[tuple[str, str, bool]]:
 
 
 def expected_signature_for_block(
-    index: int, block: dict, *, visual_v3: bool = False
+    index: int, block: dict, *, visual_v3: bool = False, manual_gold_v4: bool = False
 ) -> list[tuple[str, str, bool]]:
     text = _plain(block)
-    style_index = VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index
+    style_index = (MANUAL_GOLD_V4_TO_LEGACY_STYLE_INDEX.get(index) if manual_gold_v4
+                   else VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index)
     runs = _style_by_index(style_index, text) if style_index is not None else [_run(text)]
     if runs is None:
         block_type = block.get("type")
@@ -516,10 +529,12 @@ def style_daily_payload_children(children: list[dict]) -> dict:
         DAILY_VISUAL_PAYLOAD_TYPES_31,
         DAILY_VISUAL_PAYLOAD_TYPES_32,
     }
+    manual_gold_v4 = actual_types in {DAILY_MANUAL_GOLD_TYPES_23, DAILY_MANUAL_GOLD_TYPES_24}
     changed = 0
     checked = 0
     for index, block in enumerate(text_blocks):
-        style_index = VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index
+        style_index = (MANUAL_GOLD_V4_TO_LEGACY_STYLE_INDEX.get(index) if manual_gold_v4
+                       else VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index)
         runs = _style_by_index(style_index, _plain(block)) if style_index is not None else [_run(_plain(block))]
         if runs is None:
             continue
@@ -531,7 +546,8 @@ def style_daily_payload_children(children: list[dict]) -> dict:
             changed += 1
     return {
         "status": "passed",
-        "template": "daily-visual-colors-v3" if visual_v3 else "daily-gold-run-colors-v1",
+        "template": ("daily-manual-gold-colors-v4" if manual_gold_v4
+                     else "daily-visual-colors-v3" if visual_v3 else "daily-gold-run-colors-v1"),
         "checked_blocks": checked,
         "changed_blocks": changed,
     }
@@ -566,16 +582,19 @@ def audit_daily_blocks(blocks: list[dict]) -> tuple[list[dict], dict]:
         DAILY_VISUAL_PAYLOAD_TYPES_31,
         DAILY_VISUAL_PAYLOAD_TYPES_32,
     }
-    template = "daily-visual-colors-v3" if visual_v3 else "daily-gold-run-colors-v1"
+    manual_gold_v4 = actual_types in {DAILY_MANUAL_GOLD_TYPES_23, DAILY_MANUAL_GOLD_TYPES_24}
+    template = ("daily-manual-gold-colors-v4" if manual_gold_v4
+                else "daily-visual-colors-v3" if visual_v3 else "daily-gold-run-colors-v1")
     violations = []
     checked = 0
     for index, block in enumerate(text_blocks):
-        style_index = VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index
+        style_index = (MANUAL_GOLD_V4_TO_LEGACY_STYLE_INDEX.get(index) if manual_gold_v4
+                       else VISUAL_V3_TO_LEGACY_STYLE_INDEX.get(index) if visual_v3 else index)
         runs = _style_by_index(style_index, _plain(block)) if style_index is not None else [_run(_plain(block))]
         if runs is None:
             continue
         checked += 1
-        expected = expected_signature_for_block(index, block, visual_v3=visual_v3)
+        expected = expected_signature_for_block(index, block, visual_v3=visual_v3, manual_gold_v4=manual_gold_v4)
         actual = actual_signature_for_block(block)
         if actual != expected:
             violations.append(

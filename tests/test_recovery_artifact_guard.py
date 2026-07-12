@@ -122,6 +122,28 @@ class RecoveryArtifactGuardTests(unittest.TestCase):
                         lease,
                     )
                 )
+                report = root / "outputs" / "2026-07-11_midday_combined.md"
+                report.parent.mkdir(parents=True, exist_ok=True)
+                report.write_text("uncertified report\n", encoding="utf-8")
+                self.assertTrue(
+                    session_runner._certified_recovery_artifacts_available(
+                        "2026-07-11",
+                        "midday",
+                        capture,
+                        lease,
+                    )
+                )
+                with patch.object(
+                    session_runner,
+                    "validate_recovery_draft_artifacts",
+                    side_effect=FileNotFoundError("missing draft certification"),
+                ):
+                    self.assertFalse(
+                        session_runner._certified_draft_recovery_artifacts_available(
+                            "2026-07-11", "midday", capture, lease
+                        )
+                    )
+                report.unlink()
                 decision.write_text('{"changed":true}\n', encoding="utf-8")
                 self.assertFalse(
                     session_runner._certified_recovery_artifacts_available(
@@ -141,6 +163,7 @@ class RecoveryArtifactGuardTests(unittest.TestCase):
                 {},
             )
         )
+
 
 
 if __name__ == "__main__":
