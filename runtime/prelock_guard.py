@@ -130,6 +130,7 @@ def _is_current_slot_generated_runtime_state(
     return relative in {
         f"runtime_state/{trading_date}/reasoning_readiness_{slot}.json",
         f"runtime_state/{trading_date}/reasoning_lock_{slot}.json",
+        f"runtime_state/{trading_date}/continuity_input_{slot}.json",
         f"runtime_state/{trading_date}/continuity_contract_{slot}.json",
         f"runtime_state/{trading_date}/report_contract_{slot}.json",
         f"runtime_state/{trading_date}/analysis_lock_{slot}.json",
@@ -236,6 +237,7 @@ def prelock_guard_targets(
     for name in (
         f"reasoning_readiness_{slot}.json",
         f"reasoning_lock_{slot}.json",
+        f"continuity_input_{slot}.json",
         f"continuity_contract_{slot}.json",
         f"report_contract_{slot}.json",
     ):

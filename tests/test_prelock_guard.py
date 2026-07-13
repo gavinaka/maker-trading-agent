@@ -279,8 +279,10 @@ class PrelockGuardTests(unittest.TestCase):
             root = Path(directory)
             runtime = root / "runtime_state" / "2026-07-07"
             runtime.mkdir(parents=True, exist_ok=True)
+            continuity_input = runtime / "continuity_input_morning.json"
             continuity = runtime / "continuity_contract_morning.json"
             report = runtime / "report_contract_morning.json"
+            continuity_input.write_text("old continuity input\n", encoding="utf-8")
             continuity.write_text("old continuity\n", encoding="utf-8")
             report.write_text("old report contract\n", encoding="utf-8")
 
@@ -291,14 +293,20 @@ class PrelockGuardTests(unittest.TestCase):
                 preserve_certified_recovery_artifacts=True,
                 discard_stale_generated_on_abandon=True,
             )
+            self.assertFalse(continuity_input.exists())
             self.assertFalse(continuity.exists())
             self.assertFalse(report.exists())
 
             restored, _ = restore_prelock_guard(
                 "2026-07-07", "morning", root=root, reason="abandon-session"
             )
+            self.assertFalse(continuity_input.exists())
             self.assertFalse(continuity.exists())
             self.assertFalse(report.exists())
+            self.assertIn(
+                "runtime_state/2026-07-07/continuity_input_morning.json",
+                restored["superseded_current_outputs"],
+            )
             self.assertIn(
                 "runtime_state/2026-07-07/continuity_contract_morning.json",
                 restored["superseded_current_outputs"],
