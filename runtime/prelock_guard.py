@@ -97,6 +97,7 @@ def _is_current_slot_reasoning_recovery_artifact(
     relative: str, trading_date: str, slot: str
 ) -> bool:
     return relative in {
+        f"runtime_state/{trading_date}/reasoning_work_{slot}.md",
         f"runtime_state/{trading_date}/reasoning_input_{slot}.json",
         f"runtime_state/{trading_date}/reasoning_contract_{slot}.json",
         f"runtime_state/{trading_date}/adversarial_review_input_{slot}.json",
@@ -241,6 +242,7 @@ def prelock_guard_targets(
             seen.add(relative)
     if not preserve_certified_recovery_artifacts:
         for name in (
+            f"reasoning_work_{slot}.md",
             f"reasoning_input_{slot}.json",
             f"reasoning_contract_{slot}.json",
             f"adversarial_review_input_{slot}.json",

@@ -245,8 +245,10 @@ class PrelockGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             stale = root / "runtime_state" / "2026-07-07" / "reasoning_contract_morning.json"
+            stale_work = root / "runtime_state" / "2026-07-07" / "reasoning_work_morning.md"
             stale.parent.mkdir(parents=True, exist_ok=True)
             stale.write_text("old reasoning\n", encoding="utf-8")
+            stale_work.write_text("old reasoning work\n", encoding="utf-8")
 
             payload, _ = activate_prelock_guard(
                 "2026-07-07",
@@ -255,14 +257,20 @@ class PrelockGuardTests(unittest.TestCase):
                 discard_stale_generated_on_abandon=True,
             )
             self.assertFalse(stale.exists())
+            self.assertFalse(stale_work.exists())
             self.assertTrue(payload["discard_stale_generated_on_abandon"])
 
             restored, _ = restore_prelock_guard(
                 "2026-07-07", "morning", root=root, reason="abandon-session"
             )
             self.assertFalse(stale.exists())
+            self.assertFalse(stale_work.exists())
             self.assertIn(
                 "runtime_state/2026-07-07/reasoning_contract_morning.json",
+                restored["superseded_current_outputs"],
+            )
+            self.assertIn(
+                "runtime_state/2026-07-07/reasoning_work_morning.md",
                 restored["superseded_current_outputs"],
             )
 
