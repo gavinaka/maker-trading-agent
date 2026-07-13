@@ -965,6 +965,7 @@ def main() -> int:
             preserve_certified_draft_artifacts=(
                 preserve_certified_draft_artifacts
             ),
+            discard_stale_generated_on_abandon=args.replace_prepared_transition,
         )
         event_id = (
             f"{args.date}:{args.slot}:prepare:{transition['state_version']}:"

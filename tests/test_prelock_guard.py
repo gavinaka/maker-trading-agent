@@ -241,6 +241,31 @@ class PrelockGuardTests(unittest.TestCase):
                 restored["superseded_current_outputs"],
             )
 
+    def test_logic_replacement_abandon_does_not_resurrect_stale_generated_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stale = root / "runtime_state" / "2026-07-07" / "reasoning_contract_morning.json"
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("old reasoning\n", encoding="utf-8")
+
+            payload, _ = activate_prelock_guard(
+                "2026-07-07",
+                "morning",
+                root=root,
+                discard_stale_generated_on_abandon=True,
+            )
+            self.assertFalse(stale.exists())
+            self.assertTrue(payload["discard_stale_generated_on_abandon"])
+
+            restored, _ = restore_prelock_guard(
+                "2026-07-07", "morning", root=root, reason="abandon-session"
+            )
+            self.assertFalse(stale.exists())
+            self.assertIn(
+                "runtime_state/2026-07-07/reasoning_contract_morning.json",
+                restored["superseded_current_outputs"],
+            )
+
     def test_restore_tolerates_regenerated_python_cache_collision(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

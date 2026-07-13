@@ -308,6 +308,7 @@ def activate_prelock_guard(
     root: Path = ROOT,
     preserve_certified_recovery_artifacts: bool = False,
     preserve_certified_draft_artifacts: bool = False,
+    discard_stale_generated_on_abandon: bool = False,
 ) -> tuple[dict, Path]:
     """Move prior-judgment artifacts into a slot-local quarantine.
 
@@ -358,6 +359,9 @@ def activate_prelock_guard(
         "certified_draft_artifacts_preserved": bool(
             preserve_certified_draft_artifacts
         ),
+        "discard_stale_generated_on_abandon": bool(
+            discard_stale_generated_on_abandon
+        ),
         "safe_read_policy": prelock_policy_manifest(
             trading_date,
             slot,
@@ -391,7 +395,13 @@ def restore_prelock_guard(
         _safe_relative(original, root)
         _safe_relative(quarantine, root)
         superseded_current_artifact = (
-            reason in {"analysis_lock_success", "reasoning_lock_success"}
+            (
+                reason in {"analysis_lock_success", "reasoning_lock_success"}
+                or (
+                    reason == "abandon-session"
+                    and payload.get("discard_stale_generated_on_abandon") is True
+                )
+            )
             and (
                 _is_current_slot_generated_output(original_relative, trading_date, slot)
                 or _is_current_slot_recovery_artifact(
