@@ -239,6 +239,20 @@ def prelock_guard_targets(
             relative = _safe_relative(path, root)
             targets.append(path)
             seen.add(relative)
+    if not preserve_certified_recovery_artifacts:
+        for name in (
+            f"reasoning_input_{slot}.json",
+            f"reasoning_contract_{slot}.json",
+            f"adversarial_review_input_{slot}.json",
+            f"adversarial_review_{slot}.json",
+            f"decision_input_{slot}.json",
+            f"decision_contract_{slot}.json",
+        ):
+            path = root / "runtime_state" / trading_date / name
+            if path.is_file():
+                relative = _safe_relative(path, root)
+                targets.append(path)
+                seen.add(relative)
     context_log = root / "sessions" / "context_log.md"
     if context_log.is_file():
         relative = _safe_relative(context_log, root)
