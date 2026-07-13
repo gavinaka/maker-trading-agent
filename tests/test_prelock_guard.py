@@ -274,6 +274,40 @@ class PrelockGuardTests(unittest.TestCase):
                 restored["superseded_current_outputs"],
             )
 
+    def test_recovery_always_retires_post_reasoning_contracts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "runtime_state" / "2026-07-07"
+            runtime.mkdir(parents=True, exist_ok=True)
+            continuity = runtime / "continuity_contract_morning.json"
+            report = runtime / "report_contract_morning.json"
+            continuity.write_text("old continuity\n", encoding="utf-8")
+            report.write_text("old report contract\n", encoding="utf-8")
+
+            payload, _ = activate_prelock_guard(
+                "2026-07-07",
+                "morning",
+                root=root,
+                preserve_certified_recovery_artifacts=True,
+                discard_stale_generated_on_abandon=True,
+            )
+            self.assertFalse(continuity.exists())
+            self.assertFalse(report.exists())
+
+            restored, _ = restore_prelock_guard(
+                "2026-07-07", "morning", root=root, reason="abandon-session"
+            )
+            self.assertFalse(continuity.exists())
+            self.assertFalse(report.exists())
+            self.assertIn(
+                "runtime_state/2026-07-07/continuity_contract_morning.json",
+                restored["superseded_current_outputs"],
+            )
+            self.assertIn(
+                "runtime_state/2026-07-07/report_contract_morning.json",
+                restored["superseded_current_outputs"],
+            )
+
     def test_restore_tolerates_regenerated_python_cache_collision(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
