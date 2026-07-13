@@ -132,6 +132,18 @@ class EfficiencyContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             format_phase_part_output(payload, rendered, part_index=len(parts) + 1)
 
+    def test_transport_part_budget_has_host_truncation_headroom(self):
+        self.assertEqual(MAX_TRANSPORT_PART_BYTES, 16 * 1024)
+        rendered = "中文权威规则与方法论。\n" * 5000
+        payload = {
+            "schema_version": "authority-phase-contract-v2",
+            "complete": True,
+            "bundle_bytes": len(rendered.encode("utf-8")),
+        }
+        for index in range(1, len(split_phase_transport(rendered)) + 1):
+            output = format_phase_part_output(payload, rendered, part_index=index)
+            self.assertLess(len(output.encode("utf-8")), 20 * 1024)
+
     def test_transport_handles_empty_and_overlong_multibyte_lines(self):
         self.assertEqual(split_phase_transport(""), [""])
         with self.assertRaises(ValueError):

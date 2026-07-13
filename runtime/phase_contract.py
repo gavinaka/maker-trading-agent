@@ -18,7 +18,10 @@ from runtime.context_pack import authority_manifest, authority_read_plan, author
 
 MAX_PHASE_SOURCE_BYTES = 72 * 1024
 MAX_PHASE_BUNDLE_BYTES = 76 * 1024
-MAX_TRANSPORT_PART_BYTES = 28 * 1024
+# 28 KiB produced 10,024-token Chinese authority outputs and was truncated by
+# the Codex host before the END marker.  Keep enough headroom for the JSON
+# header and Chinese token expansion; completeness is preserved via more parts.
+MAX_TRANSPORT_PART_BYTES = 16 * 1024
 MAX_TRANSPORT_OUTPUT_BYTES = 32 * 1024
 BEGIN_BUNDLE_MARKER = "---BEGIN_AUTHORITY_BUNDLE---"
 END_BUNDLE_MARKER = "---END_AUTHORITY_BUNDLE---"
