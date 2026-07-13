@@ -1043,6 +1043,10 @@ def normalize_report_projection(
         if surface == "visible":
             visible_claim_types.update(claims[ref]["claim_type"] for ref in claim_refs)
         text = _text(item.get("text"), f"report projection {item_id}.text", 20)
+        if "代表入场" in text:
+            raise ValueError(
+                f"report projection {item_id}.text contains lint-forbidden representative entry wording"
+            )
         value_refs = item.get("value_refs")
         if not isinstance(value_refs, list):
             raise ValueError(f"report projection {item_id}.value_refs must be an array")

@@ -458,6 +458,14 @@ class ReasoningContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not render bound value"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
+    def test_projection_rejects_report_lint_forbidden_representative_entry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["report_projection"]["items"][0]["text"] += "，不得写成代表入场价。"
+            with self.assertRaisesRegex(ValueError, "lint-forbidden representative entry"):
+                build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
+
     def test_account_priority_cannot_drift(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
