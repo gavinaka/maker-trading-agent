@@ -22,6 +22,16 @@ class AutomationMemoryGuardTests(unittest.TestCase):
             self.assertEqual(result["status"], "blocked")
             self.assertIn("score", result["violations"])
 
+    def test_mechanical_error_codes_do_not_match_embedded_trading_words(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "memory.md"
+            path.write_text(
+                "error=AUTHORITY_BUNDLE_TRUNCATED_WORKFLOW_ENTRY_PART_1\n"
+                "phase=analysis_orderflow\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(inspect_memory(path)["status"], "clean")
+
 
 if __name__ == "__main__":
     unittest.main()

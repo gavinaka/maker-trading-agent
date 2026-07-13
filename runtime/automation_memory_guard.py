@@ -13,8 +13,8 @@ PROHIBITED = {
     "direction": r"多头|空头|偏多|偏空|观望|做多|做空|long\b|short\b|direction",
     "score": r"总分|盘口分|盘面分|评分\s*[:：=]?\s*\d|score\s*[:=]",
     "probability": r"胜率|执行概率|win\s*rate|probability\s*[:=]",
-    "levels": r"支撑|压力|阻力|入场|止损|止盈|撤单|support|resistance|entry|stop\s*loss|take\s*profit",
-    "position": r"仓位|持仓|挂单|订单|盈亏|position|order|pnl",
+    "levels": r"支撑|压力|阻力|入场|止损|止盈|撤单|\bsupport\b|\bresistance\b|\bentry\b|\bstop\s*loss\b|\btake\s*profit\b",
+    "position": r"仓位|持仓|挂单|订单|盈亏|\bposition\b|\border\b|\bpnl\b",
 }
 AUTOMATION_SCOPES = ("morning", "midday", "evening", "weekly", "monthly")
 
