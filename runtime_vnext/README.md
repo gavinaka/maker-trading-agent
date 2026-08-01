@@ -25,8 +25,11 @@ store makes a best-effort, non-blocking write of `sample_outcome.json`.  This is
 an immutable mechanical export for the external Technical expert evaluator,
 not a fifth production gate.  It contains counts, hashes, contract booleans,
 defect-code fingerprints, and the sealed rate-expectation provider/method/source
-class only; production stages must never read it.  New exports use
-`vnext-sample-outcome-v4`; v1-v3 artifacts remain immutable read-only inputs.
+class only; production stages must never read it.  A new
+`methodology-manifest-v3` run exports `vnext-sample-outcome-v6` with the sealed
+semantic, release, and combined-manifest hashes.  v1-v5 artifacts remain
+immutable read-only legacy inputs; a legacy v2-manifest run that is missing an
+outcome still emits v5 and never invents a semantic identity.
 Only `cme_fedwatch_ui + cme_target_rate_probability + cme_canonical` can add a
 clean stability sample.  Kalshi Plan C remains an observation even when every
 mechanical contract passes; it adds no stability increment, switch eligibility,
@@ -111,6 +114,13 @@ cutover approval.
 Every newly created run is `daily-run-vnext-v2`. Its mode is immutable, and
 the explicit approval reference is persisted only as a SHA-256 digest plus the
 fixed authorization kind for that mode; raw approval text is never stored.
+The current authority profile is additive within that run schema and seals
+exactly `semantic_contract_sha256`, `release_sha256`, and
+`methodology_manifest_sha256`.  It never mixes those fields with the legacy
+`methodology_sha256` combined binding.  Semantic identity alone defines the
+sample epoch; release and combined identities remain mandatory rollback and
+bisect evidence, so a release-only refactor does not silently reset the clean
+cohort.
 Legacy v1 terminal runs remain readable for audit only. A legacy v1
 non-terminal run cannot infer a mode or resume execution and must be explicitly
 retired before replacement.

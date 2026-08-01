@@ -28,24 +28,17 @@ from runtime.golden_methodology import (
     validate_oi_price_context,
 )
 
+from .domain_ir.registry import (
+    POLICY_SOURCE_KEYS,
+    STRUCTURED_EVIDENCE_SOURCES,
+    VISUAL_EVIDENCE_SOURCES,
+)
 from .methodology import canonical_sha256, sha256_file
 from .reasoning_submission import (
     load_reasoning_submission_contract,
     project_observation_mechanical_fields,
     validate_methodology_submission_shape,
 )
-
-
-STRUCTURED_SOURCES = {"BlockBeats", "Farside"}
-VISUAL_SOURCES = {"Coinglass", "Exocharts", "FedWatch", "TradingView"}
-POLICY_SOURCE_NAMES = {
-    "BlockBeats": "blockbeats",
-    "Coinglass": "coinglass",
-    "Exocharts": "exocharts",
-    "FedWatch": "fedwatch",
-    "Farside": "farside_btc_etf",
-    "TradingView": "tradingview",
-}
 
 
 @dataclass(frozen=True)
@@ -372,7 +365,7 @@ def validate_visual_artifacts(
     """Reject non-PNG or implausibly small screenshot evidence at gate one."""
 
     issues = validate_tradingview_profile_capture_binding(evidence)
-    for source in sorted(VISUAL_SOURCES):
+    for source in sorted(VISUAL_EVIDENCE_SOURCES):
         if source == "FedWatch" and _fedwatch_is_plan_c(evidence):
             continue
         png_count = 0
@@ -422,7 +415,7 @@ def _validate_common_observation(
     issues: list[SemanticIssue],
 ) -> None:
     path = f"observations.{_text(item.get('id')) or source}"
-    is_structured = source in STRUCTURED_SOURCES or (
+    is_structured = source in STRUCTURED_EVIDENCE_SOURCES or (
         source == "FedWatch" and _fedwatch_is_plan_c(evidence)
     )
     expected_kind = "structured_observation" if is_structured else "visual_judgment"
@@ -2060,7 +2053,7 @@ def validate_reasoning_semantics(
     by_source: dict[str, list[dict[str, Any]]] = {}
     for item in observations.values():
         by_source.setdefault(_text(item.get("source")), []).append(item)
-    for source in POLICY_SOURCE_NAMES:
+    for source in POLICY_SOURCE_KEYS:
         matches = by_source.get(source, [])
         if len(matches) != 1:
             issues.append(SemanticIssue("observation.source_cardinality", f"{source} requires exactly one current-slot observation", "observations"))
@@ -2126,7 +2119,7 @@ def validate_reasoning_semantics(
     translated_observations = {
         item_id: {
             **item,
-            "source": POLICY_SOURCE_NAMES.get(_text(item.get("source")), ""),
+            "source": POLICY_SOURCE_KEYS.get(_text(item.get("source")), ""),
             "values": item.get("metrics"),
         }
         for item_id, item in observations.items()

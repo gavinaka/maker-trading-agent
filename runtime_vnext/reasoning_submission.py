@@ -17,6 +17,17 @@ from typing import Any
 
 from runtime.golden_methodology import get_methodology_runtime_inventory
 
+from .domain_ir.projection import (
+    deterministic_contract_sections,
+    reference_trigger_operator,
+)
+from .domain_ir.registry import (
+    CLAIM_TYPES,
+    CONTRACT_SOURCES,
+    REGISTRY,
+    TOP_LEVEL_FIELD_ORDER,
+    TRIGGER_SCALAR_CLAUSE_FIELDS,
+)
 from .reasoning_pipeline import (
     PIPELINE_UNIT_FIELDS,
     SOURCE_UNIT_BY_NAME,
@@ -52,8 +63,10 @@ def load_reasoning_submission_contract(*, root: Path = ROOT) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if (
         not isinstance(payload, dict)
-        or payload.get("schema_version") != "reasoning-submission-contract-v6"
-        or payload.get("certified_schema_version") != "reasoning-model-v5"
+        or payload.get("schema_version")
+        != REGISTRY.reasoning_submission_schema_version
+        or payload.get("certified_schema_version")
+        != REGISTRY.reasoning_model_schema_version
         or payload.get("additional_fields_allowed") is not False
     ):
         raise ValueError("reasoning submission contract is invalid")
@@ -870,7 +883,6 @@ def _project_relative_trigger_operators(
     if current_reference is None:
         return
 
-    scalar_clause_fields = {"owner_type", "owner_id", "field", "operator", "value"}
     allowed_claim_types = set(policy["claim_types"])
     for claim in claims:
         if (
@@ -905,21 +917,15 @@ def _project_relative_trigger_operators(
         if (
             len(references) != 1
             or len(relatives) != 1
-            or set(references[0]) != scalar_clause_fields
-            or set(relatives[0]) != scalar_clause_fields
+            or set(references[0]) != TRIGGER_SCALAR_CLAUSE_FIELDS
+            or set(relatives[0]) != TRIGGER_SCALAR_CLAUSE_FIELDS
         ):
             continue
 
-        reference_target = references[0]["value"]
-        same_state = (
-            type(reference_target) is type(current_reference)
-            and reference_target == current_reference
+        references[0]["operator"] = reference_trigger_operator(
+            current_reference,
+            references[0]["value"],
         )
-        references[0]["operator"] = policy[
-            "reference_operator_when_target_equals_current"
-            if same_state
-            else "reference_operator_when_target_differs_current"
-        ]
         relatives[0]["operator"] = policy["relative_operator"]
 
 
@@ -1298,15 +1304,7 @@ def validate_contract_runtime_compatibility(
             )
         )
         runtime_inventory = None
-    expected_sources = {
-        "BlockBeats",
-        "Coinglass",
-        "Exocharts",
-        "FedWatch",
-        "FedWatchPlanC",
-        "Farside",
-        "TradingView",
-    }
+    expected_sources = set(CONTRACT_SOURCES)
     if set(contract["observation_fields_by_source"]) != expected_sources:
         issues.append(
             SubmissionShapeIssue(
@@ -1315,22 +1313,7 @@ def validate_contract_runtime_compatibility(
                 "observation_fields_by_source",
             )
         )
-    expected_claim_types = {
-        "cannot_do",
-        "chart_interpretation",
-        "etf_confirmation",
-        "fundamental_context",
-        "fundamental_event_realization",
-        "fundamental_price_realization",
-        "invalidation_path",
-        "liquidation_confirmation",
-        "liquidity_hunt",
-        "main_account_thesis",
-        "maker_thesis",
-        "market_regime",
-        "orderflow_interpretation",
-        "strongest_counterevidence",
-    }
+    expected_claim_types = set(CLAIM_TYPES)
     if set(contract["claim_fields_by_type"]) != expected_claim_types:
         issues.append(
             SubmissionShapeIssue(
@@ -1339,18 +1322,7 @@ def validate_contract_runtime_compatibility(
                 "claim_fields_by_type",
             )
         )
-    expected_top_level = {
-        "schema_version",
-        "trading_date",
-        "slot",
-        "evidence_snapshot_sha256",
-        "reasoning_authority_sha256",
-        "observations",
-        "claims",
-        "methodology",
-        "scenario_tree",
-        "pipeline_units",
-    }
+    expected_top_level = set(TOP_LEVEL_FIELD_ORDER)
     if set(contract["top_level"]["field_order"]) != expected_top_level:
         issues.append(
             SubmissionShapeIssue(
@@ -1367,147 +1339,10 @@ def validate_contract_runtime_compatibility(
             "server_owned_bindings": {},
         }
     )
-    expected_projection = {
-        "schema_version": "reasoning-server-projection-v4",
-        "server_owned_paths": [
-            "schema_version",
-            "trading_date",
-            "slot",
-            "evidence_snapshot_sha256",
-            "reasoning_authority_sha256",
-            "observations[*].id",
-            "observations[*].kind",
-            "observations[*].source",
-            "observations[*].observed_at",
-            "observations[*].evidence_refs",
-            "observations[kind=structured_observation].structured_binding",
-            "observations[kind=visual_judgment].visual_review.metrics_sha256",
-            "observations[kind=visual_judgment].visual_review.evidence_sha256",
-            *expected_leaf_ownership["server_owned_subtrees"],
-            *expected_leaf_ownership["server_owned_bindings"],
-            "scenario_tree",
-            "claims[claim_type=orderflow_interpretation].direction",
-            (
-                "claims[claim_type=strongest_counterevidence|invalidation_path]."
-                "trigger_logic.clauses[source=Coinglass,field=final_direction,"
-                "paired_with=Exocharts].operator"
-            ),
-            (
-                "claims[claim_type=strongest_counterevidence|invalidation_path]."
-                "trigger_logic.clauses[source=Exocharts,"
-                "field=cross_check_result].operator"
-            ),
-            "pipeline_units",
-        ],
-        "observation_source_order": list(SOURCE_UNIT_BY_NAME),
-        "observation_id_by_source": {
-            "BlockBeats": "obs_bb",
-            "FedWatch": "obs_fw",
-            "Farside": "obs_fs",
-            "Coinglass": "obs_cg",
-            "Exocharts": "obs_exo",
-            "TradingView": "obs_tv",
-        },
-        "observation_kind_by_contract_source": {
-            "BlockBeats": "structured_observation",
-            "FedWatch": "visual_judgment",
-            "FedWatchPlanC": "structured_observation",
-            "Farside": "structured_observation",
-            "Coinglass": "visual_judgment",
-            "Exocharts": "visual_judgment",
-            "TradingView": "visual_judgment",
-        },
-        "observation_mechanical_ownership": {
-            "schema_version": "observation-mechanical-ownership-v1",
-            "evidence_refs_semantics": (
-                "sealed_same_source_artifact_inventory_not_visual_read_proof"
-            ),
-            "structured_artifact_filename_by_contract_source": {
-                "BlockBeats": "blockbeats.json",
-                "Farside": "farside_btc_etf.json",
-                "FedWatchPlanC": "fedwatch.json",
-            },
-            "structured_binding_fields": [
-                "artifact_path",
-                "artifact_sha256",
-                "metrics_sha256",
-            ],
-            "visual_review_hash_fields": [
-                "metrics_sha256",
-                "evidence_sha256",
-            ],
-            "model_owned_visual_proof_paths": [
-                "observations[*].visual_citations[*].evidence_ref",
-                "observations[*].visual_citations[*].metric_paths",
-                "observations[*].visual_citations[*].crop",
-                "claims[claim_type=invalidation_path].structural_noise_buffer.visual_evidence_ref",
-            ],
-        },
-        "account_claim_bindings": {
-            "main_claim_id": {
-                "claim_type": "main_account_thesis",
-                "account": "main",
-            },
-            "maker_claim_id": {
-                "claim_type": "maker_thesis",
-                "account": "maker",
-            },
-            "main_regime_claim_id": {
-                "claim_type": "market_regime",
-                "account": "main",
-            },
-            "maker_regime_claim_id": {
-                "claim_type": "market_regime",
-                "account": "maker",
-            },
-            "main_counter_claim_id": {
-                "claim_type": "strongest_counterevidence",
-                "account": "main",
-            },
-            "maker_counter_claim_id": {
-                "claim_type": "strongest_counterevidence",
-                "account": "maker",
-            },
-            "main_invalidation_claim_id": {
-                "claim_type": "invalidation_path",
-                "account": "main",
-            },
-            "maker_invalidation_claim_id": {
-                "claim_type": "invalidation_path",
-                "account": "maker",
-            },
-        },
-        "methodology_leaf_ownership": expected_leaf_ownership,
-        "methodology_trigger_claim_ids_policy_path": (
-            "gold_methodology.account_trigger_logic.scenario_control_binding."
-            "methodology_trigger_claim_ids_source"
-        ),
-        "orderflow_direction_policy_path": (
-            "maker_score.orderflow.final_direction_to_claim_direction"
-        ),
-        "relative_trigger_operator_projection": {
-            "schema_version": "relative-trigger-operator-projection-v1",
-            "claim_types": ["strongest_counterevidence", "invalidation_path"],
-            "required_mode": "all",
-            "relative_source": "Exocharts",
-            "relative_field": "cross_check_result",
-            "relative_operator": "equals_at_trigger",
-            "reference_source": "Coinglass",
-            "reference_field": "final_direction",
-            "reference_operator_when_target_equals_current": (
-                "equals_at_trigger"
-            ),
-            "reference_operator_when_target_differs_current": "becomes",
-            "projection_scope": "operators_only",
-            "missing_or_ambiguous_behavior": (
-                "leave_unmodified_for_gate_rejection"
-            ),
-            "clause_presence_order_target_and_relation_mutation_forbidden": True,
-        },
-        "producer_values_at_server_owned_paths_authoritative": False,
-        "projection_must_run_inside_reasoning_attempt": True,
-        "business_judgment_repair_forbidden": True,
-    }
+    expected_contract_sections = deterministic_contract_sections(
+        methodology_leaf_ownership=expected_leaf_ownership
+    )
+    expected_projection = expected_contract_sections["server_projection"]
     if contract.get("server_projection") != expected_projection:
         issues.append(
             SubmissionShapeIssue(
@@ -1562,20 +1397,7 @@ def validate_contract_runtime_compatibility(
                 "server_projection.relative_trigger_operator_projection",
             )
         )
-    expected_scaffold_policy = {
-        "schema_version": "reasoning-submission-scaffold-v6",
-        "business_semantics_checked": False,
-        "attempt_created": False,
-        "null_means_producer_must_supply": False,
-        "model_owned_null_means_producer_must_supply": True,
-        "server_owned_null_means_pending_projection": True,
-        "authority_constants_may_be_prefilled": True,
-        "business_direction_or_action_may_be_prefilled": False,
-        "authority_transition_codes_may_be_prefilled": True,
-        "server_projection_is_authoritative": True,
-        "claim_topology_visible_before_attempt": True,
-        "typed_narrative_ownership_visible_before_attempt": True,
-    }
+    expected_scaffold_policy = expected_contract_sections["scaffold_policy"]
     if contract.get("scaffold_policy") != expected_scaffold_policy:
         issues.append(
             SubmissionShapeIssue(
@@ -1584,13 +1406,10 @@ def validate_contract_runtime_compatibility(
                 "scaffold_policy",
             )
         )
-    if contract.get("visual_citation_policy") != {
-        "schema_version": "visual-citation-leaf-policy-v1",
-        "empty_collections_are_metric_leaves": True,
-        "empty_collection_semantics": (
-            "observable_absence_requires_bounded_citation"
-        ),
-    }:
+    if (
+        contract.get("visual_citation_policy")
+        != expected_contract_sections["visual_citation_policy"]
+    ):
         issues.append(
             SubmissionShapeIssue(
                 "reasoning_contract.visual_citation_policy",
@@ -1598,67 +1417,7 @@ def validate_contract_runtime_compatibility(
                 "visual_citation_policy",
             )
         )
-    expected_claim_topology = {
-        "schema_version": "claim-topology-v1",
-        "support_selection_owner": "model",
-        "server_support_edge_injection_allowed": False,
-        "direct_observation_support_policy": (
-            "exact_for_listed_claim_types_claim_only_otherwise"
-        ),
-        "exact_direct_observation_sources_by_claim_type": {
-            "fundamental_context": ["BlockBeats", "FedWatch", "Farside"],
-            "orderflow_interpretation": ["Coinglass", "Exocharts"],
-            "chart_interpretation": ["TradingView"],
-            "etf_confirmation": ["Coinglass", "Farside"],
-            "liquidation_confirmation": ["Coinglass"],
-        },
-        "required_reachable_claim_types_by_claim_type": {
-            "fundamental_price_realization": [
-                "fundamental_context",
-                "chart_interpretation",
-            ],
-            "market_regime": [
-                "fundamental_price_realization",
-                "orderflow_interpretation",
-                "chart_interpretation",
-            ],
-            "liquidation_confirmation": ["chart_interpretation"],
-            "liquidity_hunt": [
-                "chart_interpretation",
-                "liquidation_confirmation",
-            ],
-            "main_account_thesis": [
-                "market_regime",
-                "fundamental_price_realization",
-                "etf_confirmation",
-            ],
-            "maker_thesis": [
-                "market_regime",
-                "orderflow_interpretation",
-                "chart_interpretation",
-                "liquidity_hunt",
-            ],
-            "strongest_counterevidence": ["market_regime"],
-            "invalidation_path": ["market_regime"],
-            "cannot_do": [
-                "maker_thesis",
-                "strongest_counterevidence",
-                "invalidation_path",
-                "market_regime",
-            ],
-        },
-        "required_direct_claim_types_by_claim_type": {
-            "fundamental_event_realization": [
-                "fundamental_context",
-                "chart_interpretation",
-            ],
-            "fundamental_price_realization": [
-                "fundamental_context",
-                "chart_interpretation",
-            ],
-            "liquidation_confirmation": ["chart_interpretation"],
-        },
-    }
+    expected_claim_topology = expected_contract_sections["claim_topology"]
     if contract.get("claim_topology") != expected_claim_topology:
         issues.append(
             SubmissionShapeIssue(
@@ -1667,23 +1426,9 @@ def validate_contract_runtime_compatibility(
                 "claim_topology",
             )
         )
-    expected_typed_narrative_ownership = {
-        "schema_version": "typed-narrative-ownership-v1",
-        "typed_control_paths": [
-            "claims[claim_type=fundamental_price_realization].realization_state",
-            "claims[claim_type=etf_confirmation].price_relation",
-            "claims[claim_type=liquidation_confirmation].confirmation_result",
-            "observations[source=TradingView].metrics.chart_scoring_basis",
-        ],
-        "audit_narrative_paths": [
-            "claims[claim_type=fundamental_price_realization].conclusion",
-            "claims[claim_type=etf_confirmation].conclusion",
-            "claims[claim_type=liquidation_confirmation].conclusion",
-            "observations[source=TradingView].metrics.chart_component_rationales",
-        ],
-        "prose_keyword_inference_allowed": False,
-        "compiler_typed_projection_required": True,
-    }
+    expected_typed_narrative_ownership = expected_contract_sections[
+        "typed_narrative_ownership"
+    ]
     if (
         contract.get("typed_narrative_ownership")
         != expected_typed_narrative_ownership
@@ -1739,40 +1484,14 @@ def validate_contract_runtime_compatibility(
             )
         )
     scenario_ownership = contract.get("scenario_ownership")
-    expected_scenario_items = [
-        {
-            "id": f"scenario_{account}_{scenario_type}",
-            "account": account,
-            "scenario_type": scenario_type,
-            "owner_claim_type": (
-                "main_account_thesis"
-                if (account, scenario_type) == ("main", "base")
-                else "maker_thesis"
-                if (account, scenario_type) == ("maker", "base")
-                else "strongest_counterevidence"
-                if scenario_type == "counter"
-                else "invalidation_path"
-            ),
-        }
-        for account in ("main", "maker")
-        for scenario_type in ("base", "counter", "invalidation")
+    expected_scenario_ownership = expected_contract_sections["scenario_ownership"]
+    expected_transition_codes = expected_scenario_ownership[
+        "transition_code_by_type"
     ]
-    expected_transition_codes = {
-        "base": "retain_certified_assessment",
-        "counter": "reassess_on_typed_counter",
-        "invalidation": "invalidate_and_recollect_evidence",
-    }
     if (
-        not isinstance(scenario_ownership, dict)
-        or scenario_ownership.get("schema_version") != "scenario-ownership-v1"
-        or scenario_ownership.get("items") != expected_scenario_items
-        or scenario_ownership.get("transition_code_by_type")
-        != expected_transition_codes
-        or scenario_ownership.get("producer_free_prose_allowed") is not False
-        or scenario_ownership.get("execution_lifecycle_owner")
-        != "decision_and_continuity"
+        scenario_ownership != expected_scenario_ownership
         or contract.get("scenario_fields")
-        != ["id", "account", "scenario_type", "owner_claim_id"]
+        != expected_contract_sections["scenario_fields"]
     ):
         issues.append(
             SubmissionShapeIssue(

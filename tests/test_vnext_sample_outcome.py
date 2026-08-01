@@ -14,7 +14,7 @@ from runtime.host_capability import (
 from runtime_vnext.artifacts import ArtifactStore
 from runtime_vnext.controller import RunController
 from runtime_vnext.errors import WorkflowFailure
-from runtime_vnext.methodology import canonical_sha256
+from runtime_vnext.methodology import build_methodology_manifest, canonical_sha256
 from runtime_vnext.sample_outcome import (
     STAGES,
     validate_sample_outcome,
@@ -22,28 +22,63 @@ from runtime_vnext.sample_outcome import (
 )
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
 class VNextSampleOutcomeTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.store = ArtifactStore(self.root)
-        methodology = {
-            "schema_version": "methodology-manifest-v2",
-            "policy": "test-authority-epoch",
-            "phases": {},
-        }
-        methodology["manifest_sha256"] = canonical_sha256(methodology)
-        self.authority_epoch = methodology["manifest_sha256"]
+        self.store = ArtifactStore(
+            self.root,
+            authority_root=REPO_ROOT,
+        )
+        self.current_methodology = build_methodology_manifest()
         self.store.create_run(
             "2026-07-14",
             "midday",
-            methodology_manifest=methodology,
+            methodology_manifest=self.current_methodology,
             run_mode="shadow",
             authorization_ref="test-shadow-sample-outcome-approval",
             run_id="run-sample-outcome",
         )
         self.run_root = self.store.run_root(
             "2026-07-14", "midday", "run-sample-outcome"
+        )
+
+        legacy_methodology = {
+            "schema_version": "methodology-manifest-v2",
+            "policy": "test-authority-epoch",
+            "phases": {},
+        }
+        legacy_methodology["manifest_sha256"] = canonical_sha256(
+            legacy_methodology
+        )
+        self.authority_epoch = legacy_methodology["manifest_sha256"]
+        run_path = self.run_root / "run.json"
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+        for field in (
+            "semantic_contract_sha256",
+            "release_sha256",
+            "methodology_manifest_sha256",
+        ):
+            run.pop(field)
+        run["methodology_sha256"] = self.authority_epoch
+        run.pop("run_sha256")
+        run["run_sha256"] = canonical_sha256(run)
+        run_path.write_text(
+            json.dumps(run, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (self.run_root / "methodology_manifest.json").write_text(
+            json.dumps(
+                legacy_methodology,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
         )
 
     def tearDown(self) -> None:
@@ -147,6 +182,65 @@ class VNextSampleOutcomeTests(unittest.TestCase):
             payload,
         )
         self.assertEqual(path.read_bytes(), original)
+
+    def test_v3_manifest_emits_v6_authority_triple_without_legacy_alias(self) -> None:
+        v3_root = self.root / "v3"
+        self.store = ArtifactStore(
+            v3_root,
+            authority_root=REPO_ROOT,
+        )
+        methodology = self.current_methodology
+        self.store.create_run(
+            "2026-07-15",
+            "midday",
+            methodology_manifest=methodology,
+            run_mode="shadow",
+            authorization_ref="test-shadow-v6-outcome-approval",
+            run_id="run-sample-outcome-v6",
+        )
+        self.run_root = self.store.run_root(
+            "2026-07-15", "midday", "run-sample-outcome-v6"
+        )
+        self._complete(shadow=True)
+
+        payload = json.loads(
+            (self.run_root / "sample_outcome.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(payload["schema_version"], "vnext-sample-outcome-v6")
+        self.assertEqual(
+            payload["bindings"],
+            {
+                "run_sha256": payload["bindings"]["run_sha256"],
+                "checkpoint_sha256": payload["bindings"]["checkpoint_sha256"],
+                "semantic_contract_sha256": methodology[
+                    "semantic_contract_sha256"
+                ],
+                "release_sha256": methodology["release_sha256"],
+                "methodology_manifest_sha256": methodology["manifest_sha256"],
+            },
+        )
+        self.assertNotIn("authority_epoch_sha256", payload["bindings"])
+
+        tampered = json.loads(json.dumps(payload))
+        tampered["bindings"]["release_sha256"] = "c" * 64
+        tampered["sample_outcome_sha256"] = hashlib.sha256(
+            json.dumps(
+                {
+                    key: value
+                    for key, value in tampered.items()
+                    if key != "sample_outcome_sha256"
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        (self.run_root / "sample_outcome.json").write_text(
+            json.dumps(tampered, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "authority triple differs"):
+            write_sample_outcome(repo_root=v3_root, run_root=self.run_root)
 
     def test_morning_full_base_is_fresh_full_recollection(self) -> None:
         self.evidence_capture_mode = "full_base"
@@ -387,20 +481,14 @@ class VNextSampleOutcomeTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            store = ArtifactStore(root)
-            methodology = {
-                "schema_version": "methodology-manifest-v2",
-                "policy": "test-authority-epoch",
-                "phases": {},
-            }
-            methodology["manifest_sha256"] = canonical_sha256(methodology)
+            store = ArtifactStore(root, authority_root=REPO_ROOT)
             for stale_effort in ("high", "max", "ultra"):
                 with self.subTest(stale_effort=stale_effort):
                     with self.assertRaisesRegex(ValueError, "xhigh reasoning effort"):
                         store.create_run(
                             "2026-07-15",
                             "midday",
-                            methodology_manifest=methodology,
+                            methodology_manifest=self.current_methodology,
                             requested_effort=stale_effort,
                             run_mode="shadow",
                             authorization_ref="test-xhigh-request-policy",
@@ -408,7 +496,6 @@ class VNextSampleOutcomeTests(unittest.TestCase):
                         )
 
     def test_vnext_host_capability_accepts_xhigh_or_above_and_rejects_high(self) -> None:
-        controller = RunController(self.root)
         for actual_effort in ("xhigh", "max", "ultra"):
             with self.subTest(actual_effort=actual_effort):
                 payload = {
@@ -423,35 +510,27 @@ class VNextSampleOutcomeTests(unittest.TestCase):
                     "thread_id": f"thread-{actual_effort}",
                 }
                 payload["manifest_sha256"] = canonical_sha256(payload)
-                if actual_effort == "xhigh":
-                    controller.record_host_capability(self.run_root, payload)
-                else:
-                    with tempfile.TemporaryDirectory() as directory:
-                        root = Path(directory)
-                        local_store = ArtifactStore(root)
-                        methodology = {
-                            "schema_version": "methodology-manifest-v2",
-                            "policy": "test-authority-epoch",
-                            "phases": {},
-                        }
-                        methodology["manifest_sha256"] = canonical_sha256(methodology)
-                        local_store.create_run(
-                            "2026-07-14",
-                            "midday",
-                            methodology_manifest=methodology,
-                            run_mode="shadow",
-                            authorization_ref="test-xhigh-host-policy",
-                            run_id=f"run-host-{actual_effort}",
-                        )
-                        local_controller = RunController(root)
-                        payload["thread_id"] = f"thread-{actual_effort}"
-                        payload["manifest_sha256"] = canonical_sha256(payload)
-                        local_controller.record_host_capability(
-                            local_store.run_root(
-                                "2026-07-14", "midday", f"run-host-{actual_effort}"
-                            ),
-                            payload,
-                        )
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    local_store = ArtifactStore(
+                        root,
+                        authority_root=REPO_ROOT,
+                    )
+                    local_store.create_run(
+                        "2026-07-14",
+                        "midday",
+                        methodology_manifest=self.current_methodology,
+                        run_mode="shadow",
+                        authorization_ref="test-xhigh-host-policy",
+                        run_id=f"run-host-{actual_effort}",
+                    )
+                    local_controller = RunController(root)
+                    local_controller.record_host_capability(
+                        local_store.run_root(
+                            "2026-07-14", "midday", f"run-host-{actual_effort}"
+                        ),
+                        payload,
+                    )
 
         below = {
             "schema_version": "codex-host-capability-v2",
@@ -465,11 +544,52 @@ class VNextSampleOutcomeTests(unittest.TestCase):
             "thread_id": "thread-high",
         }
         below["manifest_sha256"] = canonical_sha256(below)
-        with self.assertRaisesRegex(
-            WorkflowFailure,
-            "host capability is not verified at the requested model/effort",
-        ):
-            controller.record_host_capability(self.run_root, below)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local_store = ArtifactStore(
+                root,
+                authority_root=REPO_ROOT,
+            )
+            local_store.create_run(
+                "2026-07-14",
+                "midday",
+                methodology_manifest=self.current_methodology,
+                run_mode="shadow",
+                authorization_ref="test-below-xhigh-host-policy",
+                run_id="run-host-high",
+            )
+            with self.assertRaisesRegex(
+                WorkflowFailure,
+                "host capability is not verified at the requested model/effort",
+            ):
+                RunController(root).record_host_capability(
+                    local_store.run_root(
+                        "2026-07-14", "midday", "run-host-high"
+                    ),
+                    below,
+                )
+
+    def test_new_run_rejects_legacy_methodology_manifest(self) -> None:
+        legacy = {
+            "schema_version": "methodology-manifest-v2",
+            "policy": "historical-test-envelope",
+            "phases": {},
+        }
+        legacy["manifest_sha256"] = canonical_sha256(legacy)
+        with tempfile.TemporaryDirectory() as directory:
+            store = ArtifactStore(
+                Path(directory),
+                authority_root=REPO_ROOT,
+            )
+            with self.assertRaisesRegex(ValueError, "methodology-manifest-v3"):
+                store.create_run(
+                    "2026-07-15",
+                    "midday",
+                    methodology_manifest=legacy,
+                    run_mode="shadow",
+                    authorization_ref="test-legacy-authority-rejected",
+                    run_id="run-legacy-authority-rejected",
+                )
 
     def test_host_capability_v2_extends_effort_domain_without_changing_legacy_default(self) -> None:
         for actual_effort, minimum_effort in (
@@ -572,11 +692,12 @@ class VNextSampleOutcomeTests(unittest.TestCase):
     def test_governance_contract_keeps_observer_external_and_nonblocking(self) -> None:
         contract_path = Path(__file__).resolve().parents[1] / "governance" / "vnext_sample_outcome_contract.json"
         contract = json.loads(contract_path.read_text(encoding="utf-8"))
-        self.assertEqual(contract["schema_version"], "vnext-sample-outcome-contract-v5")
-        self.assertEqual(contract["emitted_schema"], "vnext-sample-outcome-v5")
+        self.assertEqual(contract["schema_version"], "vnext-sample-outcome-contract-v6")
+        self.assertEqual(contract["emitted_schema"], "vnext-sample-outcome-v6")
         self.assertEqual(
             contract["accepted_legacy_schemas"],
             [
+                "vnext-sample-outcome-v5",
                 "vnext-sample-outcome-v4",
                 "vnext-sample-outcome-v3",
                 "vnext-sample-outcome-v2",
@@ -588,6 +709,11 @@ class VNextSampleOutcomeTests(unittest.TestCase):
         self.assertFalse(contract["consumer_boundary"]["may_modify_code_or_methodology_automatically"])
         self.assertFalse(
             contract["consumer_boundary"]["legacy_without_authority_epoch_may_count_as_clean"]
+        )
+        self.assertFalse(
+            contract["consumer_boundary"][
+                "legacy_combined_identity_may_count_as_current_semantic_clean"
+            ]
         )
         self.assertFalse(contract["consumer_boundary"]["cross_epoch_clean_accumulation"])
         self.assertFalse(

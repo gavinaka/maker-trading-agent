@@ -21,19 +21,19 @@ from .effort_policy import (
     satisfies_requested_effort,
 )
 from .errors import FailureClass, RetryScope, WorkflowFailure
-from .gates import (
-    GateResult,
-    evaluate_decision,
-    evaluate_delivery,
-    evaluate_evidence,
-    evaluate_reasoning,
-    evaluate_shadow_delivery,
+from .gates import GateResult
+from .domain_ir.report_projection import (
+    project_blockbeats_cards_spec,
+    project_canonical_report_model,
+    project_report_bindings,
 )
 from .methodology import (
     build_methodology_manifest,
     canonical_sha256,
     load_scoring_policy,
-    sha256_file,
+    validate_run_authority_binding,
+    validate_run_authority_profile,
+    verify_manifest_files,
 )
 from .reasoning_submission import (
     assemble_reasoning_submission,
@@ -42,14 +42,25 @@ from .reasoning_submission import (
     validate_contract_runtime_compatibility,
 )
 from .report_compiler import (
-    build_canonical_report_model,
-    evaluate_gold_template_fidelity,
-    evaluate_human_reasoning_depth,
     load_presentation_contract,
     render_blockbeats_cards,
     render_combined_markdown,
+)
+from .validation.decision_main import validate_main_decision as evaluate_decision
+from .validation.delivery import (
+    validate_delivery as evaluate_delivery,
+    validate_shadow_delivery as evaluate_shadow_delivery,
+)
+from .validation.evidence import validate_evidence as evaluate_evidence
+from .validation.reasoning_shape import (
+    validate_reasoning_shape as evaluate_reasoning,
+)
+from .validation.report_quality import (
+    evaluate_gold_template_fidelity,
+    evaluate_human_reasoning_depth,
     run_compatibility_lint,
 )
+from .validation.report_projection import certify_report_projection_input
 from .legacy_capture_adapter import adapt_legacy_capture
 
 
@@ -66,46 +77,28 @@ REPLAY_AUTHORIZATION_REF = re.compile(
 class RunController:
     def __init__(self, repo_root: Path) -> None:
         self.repo_root = repo_root.resolve()
-        self.store = ArtifactStore(self.repo_root)
+        self.store = ArtifactStore(
+            self.repo_root,
+            authority_root=self.repo_root,
+        )
 
     def _load_methodology(self, run_root: Path) -> dict[str, Any]:
         run = self.store.load_run(run_root)
-        payload = json.loads((run_root / "methodology_manifest.json").read_text(encoding="utf-8"))
-        if (
-            payload.get("schema_version") != "methodology-manifest-v2"
-            or payload.get("manifest_sha256") != canonical_sha256(payload)
-            or run.get("methodology_sha256") != payload.get("manifest_sha256")
-        ):
-            raise WorkflowFailure(FailureClass.MANUAL_REVIEW, "methodology manifest changed or is invalid")
-        for phase, value in (payload.get("phases") or {}).items():
-            if not isinstance(value, dict) or value.get("phase_sha256") != canonical_sha256({"files": value.get("files")}):
-                raise WorkflowFailure(FailureClass.MANUAL_REVIEW, f"methodology phase changed: {phase}")
-        control_plane = payload.get("control_plane")
-        if (
-            not isinstance(control_plane, dict)
-            or control_plane.get("control_sha256")
-            != canonical_sha256({"files": control_plane.get("files")})
-        ):
-            raise WorkflowFailure(FailureClass.MANUAL_REVIEW, "control-plane authority is invalid")
-        changed = []
-        for record in control_plane.get("files") or []:
-            path = (self.repo_root / str(record.get("path", ""))).resolve()
-            try:
-                path.relative_to(self.repo_root)
-            except ValueError:
-                changed.append(str(record.get("path", "")))
-                continue
-            if (
-                not path.is_file()
-                or path.stat().st_size != record.get("bytes")
-                or sha256_file(path) != record.get("sha256")
-            ):
-                changed.append(str(record.get("path", "")))
-        if changed:
+        try:
+            payload = json.loads(
+                (run_root / "methodology_manifest.json").read_text(encoding="utf-8")
+            )
+            validate_run_authority_binding(run, payload)
+            verify_manifest_files(
+                payload,
+                root=self.repo_root,
+                include_control=True,
+            )
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
             raise WorkflowFailure(
                 FailureClass.MANUAL_REVIEW,
-                "control-plane authority changed after run start: " + ", ".join(changed),
-            )
+                "methodology manifest changed or is invalid",
+            ) from exc
         return payload
 
     def _capture_failure_defect_code(
@@ -155,28 +148,18 @@ class RunController:
 
     def _assert_methodology_phase(self, run_root: Path, phase: str) -> dict[str, Any]:
         payload = self._load_methodology(run_root)
-        phase_payload = (payload.get("phases") or {}).get(phase)
-        if not isinstance(phase_payload, dict):
-            raise WorkflowFailure(FailureClass.MANUAL_REVIEW, f"methodology phase is missing: {phase}")
-        changed = []
-        for record in phase_payload.get("files", []):
-            path = (self.repo_root / str(record.get("path", ""))).resolve()
-            try:
-                path.relative_to(self.repo_root)
-            except ValueError:
-                changed.append(str(record.get("path", "")))
-                continue
-            if (
-                not path.is_file()
-                or path.stat().st_size != record.get("bytes")
-                or sha256_file(path) != record.get("sha256")
-            ):
-                changed.append(str(record.get("path", "")))
-        if changed:
+        try:
+            verify_manifest_files(
+                payload,
+                root=self.repo_root,
+                phase=phase,
+                include_control=False,
+            )
+        except ValueError as exc:
             raise WorkflowFailure(
                 FailureClass.MANUAL_REVIEW,
-                f"methodology phase changed during the run: {phase}; files={','.join(changed)}",
-            )
+                f"methodology phase changed during the run: {phase}",
+            ) from exc
         return payload
 
     def _assert_reasoning_contract_compatibility(
@@ -318,7 +301,17 @@ class RunController:
 
     def _execution_run(self, run_root: Path) -> dict[str, Any]:
         run = self.store.load_run(run_root)
-        if run.get("schema_version") != "daily-run-vnext-v2":
+        try:
+            authority_profile = validate_run_authority_profile(run)
+        except ValueError as exc:
+            raise WorkflowFailure(
+                FailureClass.MANUAL_REVIEW,
+                "vNext run authority binding is invalid",
+            ) from exc
+        if (
+            run.get("schema_version") != "daily-run-vnext-v2"
+            or authority_profile != "semantic-release-v3"
+        ):
             checkpoint = self.store.load_checkpoint(run_root)
             status = checkpoint.get("status")
             detail = (
@@ -905,7 +898,7 @@ class RunController:
         methodology = self._assert_methodology_phase(run_root, "report")
         attempt, attempt_root = self.store.begin_attempt(run_root, "report")
         try:
-            model = build_canonical_report_model(
+            projection_input = certify_report_projection_input(
                 evidence=evidence,
                 reasoning=reasoning,
                 decision=decision,
@@ -913,6 +906,8 @@ class RunController:
                 report_contract_sha256=methodology["phases"]["report"]["phase_sha256"],
                 root=self.repo_root,
             )
+            model = project_canonical_report_model(projection_input)
+            report_bindings = project_report_bindings(projection_input)
             markdown = render_combined_markdown(model)
             presentation_contract = load_presentation_contract(self.repo_root)
             depth_gate = evaluate_human_reasoning_depth(
@@ -939,15 +934,14 @@ class RunController:
                     ),
                 )
             model_record = self.store.write_payload(attempt_root, "canonical_report.json", model)
+            report_bindings_record = self.store.write_payload(
+                attempt_root,
+                "report_bindings.json",
+                report_bindings,
+            )
             report_filename = f"{decision['trading_date']}_{decision['slot']}_combined.md"
             report_record = self.store.write_text(attempt_root, report_filename, markdown)
-            cards_spec = {
-                "schema_version": "blockbeats-cards-vnext-v1",
-                "trading_date": decision["trading_date"],
-                "slot": decision["slot"],
-                "evidence_snapshot_sha256": decision["evidence_snapshot_sha256"],
-                "cards": model["blockbeats_cards"],
-            }
+            cards_spec = project_blockbeats_cards_spec(projection_input)
             cards_spec_record = self.store.write_payload(
                 attempt_root,
                 "blockbeats_cards.json",
@@ -975,6 +969,7 @@ class RunController:
             "defects": [],
             "facts": {
                 "canonical_model_sha256": model["model_sha256"],
+                "report_bindings_sha256": report_bindings_record["sha256"],
                 "report_sha256": report_record["sha256"],
                 "cards_spec_sha256": cards_spec_record["sha256"],
                 "card_sha256s": [record["sha256"] for record in card_records],
@@ -989,6 +984,7 @@ class RunController:
             attempt,
             {
                 "canonical_report": model_record,
+                "report_bindings": report_bindings_record,
                 "combined": report_record,
                 "cards_spec": cards_spec_record,
                 **{
@@ -1009,6 +1005,11 @@ class RunController:
             )
         self._assert_methodology_phase(run_root, "report")
         report_outputs = self.store.load_checkpoint(run_root)["completed"]["report"]["outputs"]
+        self.store.load_stage_output_record(
+            run_root,
+            "report",
+            "report_bindings",
+        )
         expected_report = report_outputs["combined"]
         expected_cards = {
             name: report_outputs[name]
@@ -1056,6 +1057,11 @@ class RunController:
             )
         self._assert_methodology_phase(run_root, "report")
         report_outputs = self.store.load_checkpoint(run_root)["completed"]["report"]["outputs"]
+        self.store.load_stage_output_record(
+            run_root,
+            "report",
+            "report_bindings",
+        )
         expected_report = report_outputs["combined"]
         expected_cards = {
             name: report_outputs[name]

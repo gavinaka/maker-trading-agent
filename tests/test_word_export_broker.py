@@ -81,6 +81,7 @@ class WordExportBrokerTests(unittest.TestCase):
             "run_mode": "shadow",
             "authorization_kind": "explicit_shadow_test_approval",
             "authorization_ref_sha256": "b" * 64,
+            "methodology_sha256": "c" * 64,
         }
         run["run_sha256"] = canonical_sha256(run)
         (run_root / "run.json").write_text(json.dumps(run), encoding="utf-8")

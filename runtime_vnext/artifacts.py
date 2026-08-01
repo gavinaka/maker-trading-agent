@@ -14,7 +14,12 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .effort_policy import REQUESTED_EFFORT, REQUESTED_MODEL
-from .methodology import canonical_sha256, sha256_file
+from .methodology import (
+    canonical_sha256,
+    sha256_file,
+    validate_current_methodology_manifest,
+    validate_run_authority_profile,
+)
 
 
 STAGES = ("evidence", "reasoning", "decision", "report", "delivery")
@@ -101,8 +106,18 @@ def _pid_is_alive(pid: int) -> bool:
 
 
 class ArtifactStore:
-    def __init__(self, repo_root: Path) -> None:
+    def __init__(
+        self,
+        repo_root: Path,
+        *,
+        authority_root: Path | None = None,
+    ) -> None:
         self.repo_root = repo_root.resolve()
+        self.authority_root = (
+            self.repo_root
+            if authority_root is None
+            else authority_root.resolve()
+        )
         self.state_root = self.repo_root / "runtime_state_vnext"
 
     def slot_root(self, trading_date: str, slot: str) -> Path:
@@ -151,6 +166,10 @@ class ArtifactStore:
         ).hexdigest()
         if allow_shadow_repeat and run_mode != "shadow":
             raise ValueError("allow_shadow_repeat is only valid for shadow runs")
+        methodology_identity = validate_current_methodology_manifest(
+            methodology_manifest,
+            root=self.authority_root,
+        )
         run_id = run_id or f"run-{uuid.uuid4().hex}"
         if not re.fullmatch(r"run-[A-Za-z0-9_.-]{4,80}", run_id):
             raise ValueError("vNext run id must use the run- prefix and 4..80 safe characters")
@@ -236,8 +255,18 @@ class ArtifactStore:
                 "requested_model": requested_model,
                 "requested_effort": requested_effort,
                 "host_capability_required": True,
-                "methodology_sha256": methodology_manifest["manifest_sha256"],
             }
+            run.update(
+                {
+                    "semantic_contract_sha256": (
+                        methodology_identity.semantic_contract_sha256
+                    ),
+                    "release_sha256": methodology_identity.release_sha256,
+                    "methodology_manifest_sha256": (
+                        methodology_identity.manifest_sha256
+                    ),
+                }
+            )
             if supersedes_run_id is not None:
                 run["supersedes_run_id"] = supersedes_run_id
                 run["supersedes_terminal_status"] = current_checkpoint.get("status")
@@ -508,6 +537,10 @@ class ArtifactStore:
                 )
             ):
                 raise RuntimeError("vNext run mode authorization binding is invalid")
+            try:
+                validate_run_authority_profile(payload)
+            except ValueError as exc:
+                raise RuntimeError("vNext run authority binding is invalid") from exc
         expected_root = self.run_root(
             str(payload.get("trading_date", "")).strip(),
             str(payload.get("slot", "")).strip(),

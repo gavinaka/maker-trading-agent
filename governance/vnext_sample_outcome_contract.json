@@ -1,7 +1,8 @@
 {
-  "schema_version": "vnext-sample-outcome-contract-v5",
-  "emitted_schema": "vnext-sample-outcome-v5",
+  "schema_version": "vnext-sample-outcome-contract-v6",
+  "emitted_schema": "vnext-sample-outcome-v6",
   "accepted_legacy_schemas": [
+    "vnext-sample-outcome-v5",
     "vnext-sample-outcome-v4",
     "vnext-sample-outcome-v3",
     "vnext-sample-outcome-v2",
@@ -23,7 +24,10 @@
   "allowed_information": [
     "run identity and terminal status",
     "run and checkpoint hashes",
-    "authority epoch SHA-256 copied from the immutable run methodology binding",
+    "semantic contract SHA-256 copied from the immutable v3 run methodology binding",
+    "release SHA-256 copied from the immutable v3 run methodology binding",
+    "combined methodology manifest SHA-256 copied from the immutable v3 run methodology binding",
+    "legacy combined authority epoch SHA-256 only for immutable v1-v5 outcomes",
     "evidence provenance mode limited to fresh full recollection immutable replay or unknown",
     "sealed rate-expectation provider id method class and sample source class",
     "per-stage attempt failure and orphan counts",
@@ -45,6 +49,7 @@
     "consumer_failure_may_block_delivery": false,
     "may_modify_code_or_methodology_automatically": false,
     "legacy_without_authority_epoch_may_count_as_clean": false,
+    "legacy_combined_identity_may_count_as_current_semantic_clean": false,
     "cross_epoch_clean_accumulation": false,
     "kalshi_plan_c_may_count_as_clean": false
   }

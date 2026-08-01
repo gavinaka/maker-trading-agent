@@ -12,35 +12,39 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Iterable
 
-
-FAILURE_ORDER: tuple[str, ...] = (
-    "non_directional_thesis",
-    "no_certified_entry_zone",
-    "entry_zone_binding_invalid",
-    "entry_zone_role_invalid",
-    "maker_order_marketable",
-    "entry_semantics_invalid",
-    "cannot_do_conflict",
-    "order_lifecycle_invalid",
-    "structural_stop_invalid",
-    "risk_math_invalid",
-    "defense_trigger_invalid",
+from .domain_ir.registry import (
+    CANNOT_DO_ABSOLUTE_DIRECTION_CONFLICTS,
+    CANNOT_DO_BOTH_PURSUIT,
+    CANNOT_DO_PURSUIT_DIRECTION,
+    DIRECTIONAL_DIRECTIONS,
+    ENTRY_TYPES,
+    EVIDENCE_DIRECTIONS,
+    EVIDENCE_SUBJECT_DIRECTIONS,
+    MAKER_DIRECTIONS,
+    MAKER_FAILURE_ORDER,
+    MAKER_PLAN_STATES,
+    MAKER_SEMANTIC_STATES,
+    ORDER_LIFECYCLE_APPLICABILITY,
+)
+from .domain_ir.types import (
+    Direction,
+    EntryType,
+    EvidenceEffect,
+    MakerPlanState,
+    MakerSemanticState,
+    OrderLifecycleState,
+    ReachDirection,
 )
 
+FAILURE_ORDER = MAKER_FAILURE_ORDER
 ORDER_LIFECYCLE_SCHEMA_VERSION = "maker-order-lifecycle-v1"
 EVIDENCE_POLARITY_SCHEMA_VERSION = "evidence-polarity-v1"
-QUALIFIED_CANDIDATE = "qualified_candidate"
-REJECTED_SUBMITTED_CANDIDATE = "rejected_submitted_candidate"
-DIRECTIONAL_THESIS_ONLY = "directional_thesis_only"
-NON_DIRECTIONAL_OBSERVATION = "non_directional_observation"
-MAKER_SEMANTIC_STATES = frozenset(
-    {
-        QUALIFIED_CANDIDATE,
-        REJECTED_SUBMITTED_CANDIDATE,
-        DIRECTIONAL_THESIS_ONLY,
-        NON_DIRECTIONAL_OBSERVATION,
-    }
+QUALIFIED_CANDIDATE = MakerSemanticState.QUALIFIED_CANDIDATE.value
+REJECTED_SUBMITTED_CANDIDATE = (
+    MakerSemanticState.REJECTED_SUBMITTED_CANDIDATE.value
 )
+DIRECTIONAL_THESIS_ONLY = MakerSemanticState.DIRECTIONAL_THESIS_ONLY.value
+NON_DIRECTIONAL_OBSERVATION = MakerSemanticState.NON_DIRECTIONAL_OBSERVATION.value
 
 
 @dataclass(frozen=True)
@@ -73,13 +77,7 @@ class MakerOrderLifecycle:
 
     @property
     def fill_probability_applicability(self) -> str:
-        return {
-            "fillable": "not_estimated_lifecycle_only",
-            "cancel_blocks_all_entries": "not_applicable_no_legal_fill_path",
-            "entry_before_cancel": "not_applicable_invalid_prefill_cancel",
-            "invalid_geometry": "not_applicable_invalid_geometry",
-            "not_applicable_no_candidate_geometry": "not_applicable_no_candidate_geometry",
-        }[self.state]
+        return ORDER_LIFECYCLE_APPLICABILITY[self.state]
 
     @property
     def reason_code(self) -> str:
@@ -138,9 +136,9 @@ def classify_maker_semantic_state(
     fail closed if any execution-only field survives.
     """
 
-    if plan_state not in {"qualified", "observe"}:
+    if plan_state not in MAKER_PLAN_STATES:
         raise ValueError("Maker plan_state must be qualified or observe")
-    if direction not in {"long", "short", "observe"}:
+    if direction not in MAKER_DIRECTIONS:
         raise ValueError("Maker direction must be long, short or observe")
     if type(plan_constructible) is not bool:
         raise ValueError("Maker plan_constructible must be a boolean")
@@ -152,16 +150,16 @@ def classify_maker_semantic_state(
         raise ValueError("Maker defense_plan must be an object")
 
     candidate_submitted = bool(risk_plan)
-    if plan_state == "qualified":
+    if plan_state == MakerPlanState.QUALIFIED.value:
         if (
-            direction not in {"long", "short"}
+            direction not in DIRECTIONAL_DIRECTIONS
             or not candidate_submitted
             or plan_constructible is not True
             or threshold_eligible is not True
             or not defense_plan
             or position_notional_usdt is None
-            or entry_type not in {"left", "right"}
-            or order_lifecycle_state != "fillable"
+            or entry_type not in ENTRY_TYPES
+            or order_lifecycle_state != OrderLifecycleState.FILLABLE.value
             or entry_reach_probability_applicability != "applicable"
         ):
             raise ValueError(
@@ -170,7 +168,7 @@ def classify_maker_semantic_state(
         return QUALIFIED_CANDIDATE
 
     if candidate_submitted:
-        if direction not in {"long", "short"}:
+        if direction not in DIRECTIONAL_DIRECTIONS:
             raise ValueError("a submitted Maker candidate requires long or short")
         if plan_constructible is True and threshold_eligible is True:
             raise ValueError(
@@ -181,8 +179,9 @@ def classify_maker_semantic_state(
     ghost_fields = (
         position_notional_usdt is not None
         or bool(defense_plan)
-        or entry_type != "not_applicable"
-        or order_lifecycle_state != "not_applicable_no_candidate_geometry"
+        or entry_type != EntryType.NOT_APPLICABLE.value
+        or order_lifecycle_state
+        != OrderLifecycleState.NOT_APPLICABLE_NO_CANDIDATE_GEOMETRY.value
         or entry_reach_probability_applicability
         != "not_applicable_no_certified_entry_geometry"
     )
@@ -192,7 +191,7 @@ def classify_maker_semantic_state(
         )
     if plan_constructible is not False:
         raise ValueError("a Maker state without submitted risk input is not constructible")
-    if direction == "observe":
+    if direction == Direction.OBSERVE.value:
         if constructibility_reason != "non_directional_thesis":
             raise ValueError(
                 "a non-directional Maker observation requires non_directional_thesis"
@@ -224,10 +223,10 @@ def expected_reach_direction(
     if reference_price is None or reference_entry is None:
         return None
     if reference_entry > reference_price:
-        return "up_to_entry"
+        return ReachDirection.UP_TO_ENTRY.value
     if reference_entry < reference_price:
-        return "down_to_entry"
-    return "at_entry"
+        return ReachDirection.DOWN_TO_ENTRY.value
+    return ReachDirection.AT_ENTRY.value
 
 
 def classify_evidence_polarity(
@@ -243,25 +242,25 @@ def classify_evidence_polarity(
     strongest counter to point toward one coherent alternative direction.
     """
 
-    if subject_direction not in {"long", "short", "neutral", "observe"}:
+    if subject_direction not in EVIDENCE_SUBJECT_DIRECTIONS:
         raise ValueError("subject_direction must be long, short, neutral or observe")
-    if evidence_direction not in {"long", "short", "neutral"}:
+    if evidence_direction not in EVIDENCE_DIRECTIONS:
         raise ValueError("evidence_direction must be long, short or neutral")
-    if subject_direction in {"neutral", "observe"}:
-        if evidence_direction == "neutral":
-            effect = "support"
+    if subject_direction in {Direction.NEUTRAL.value, Direction.OBSERVE.value}:
+        if evidence_direction == Direction.NEUTRAL.value:
+            effect = EvidenceEffect.SUPPORT.value
             basis = "typed_neutral_evidence_matches_non_directional_subject"
         else:
-            effect = "counter"
+            effect = EvidenceEffect.COUNTER.value
             basis = "typed_directional_evidence_opposes_non_directional_subject"
-    elif evidence_direction == "neutral":
-        effect = "neutral"
+    elif evidence_direction == Direction.NEUTRAL.value:
+        effect = EvidenceEffect.NEUTRAL.value
         basis = "typed_evidence_has_no_absolute_account_direction"
     elif evidence_direction == subject_direction:
-        effect = "support"
+        effect = EvidenceEffect.SUPPORT.value
         basis = "typed_evidence_direction_matches_subject"
     else:
-        effect = "counter"
+        effect = EvidenceEffect.COUNTER.value
         basis = "typed_evidence_direction_opposes_subject"
     return EvidencePolarity(
         subject_direction=subject_direction,
@@ -281,7 +280,7 @@ def structural_noise_stop_is_outside(
     """Prove a direction-aware stop lies strictly beyond visible noise."""
 
     if (
-        direction not in {"long", "short"}
+        direction not in DIRECTIONAL_DIRECTIONS
         or anchor_price is None
         or noise_outer_boundary is None
         or price_distance is None
@@ -290,7 +289,7 @@ def structural_noise_stop_is_outside(
         or price_distance <= 0
     ):
         return False
-    if direction == "short":
+    if direction == Direction.SHORT.value:
         return anchor_price + price_distance > noise_outer_boundary >= anchor_price
     return anchor_price - price_distance < noise_outer_boundary <= anchor_price
 
@@ -307,9 +306,9 @@ def resting_maker_order_valid(
     if reference_price is None or not values or any(value is None for value in values):
         return False
     clean = tuple(value for value in values if value is not None)
-    if direction == "short":
+    if direction == Direction.SHORT.value:
         return all(value > reference_price for value in clean)
-    if direction == "long":
+    if direction == Direction.LONG.value:
         return all(value < reference_price for value in clean)
     return False
 
@@ -334,36 +333,50 @@ def assess_order_lifecycle(
         or not values
     ):
         return MakerOrderLifecycle(
-            "not_applicable_no_candidate_geometry", False, False
+            OrderLifecycleState.NOT_APPLICABLE_NO_CANDIDATE_GEOMETRY.value,
+            False,
+            False,
         )
     if (
         reference_price <= 0
         or cancel_price <= 0
         or any(value is not None and value <= 0 for value in values)
     ):
-        return MakerOrderLifecycle("invalid_geometry", False, False)
+        return MakerOrderLifecycle(
+            OrderLifecycleState.INVALID_GEOMETRY.value, False, False
+        )
     if (
         cancel_price == reference_price
         or any(value is None or value == reference_price for value in values)
     ):
-        return MakerOrderLifecycle("invalid_geometry", False, False)
+        return MakerOrderLifecycle(
+            OrderLifecycleState.INVALID_GEOMETRY.value, False, False
+        )
     clean = tuple(value for value in values if value is not None)
     if cancel_price in clean:
-        return MakerOrderLifecycle("invalid_geometry", False, False)
+        return MakerOrderLifecycle(
+            OrderLifecycleState.INVALID_GEOMETRY.value, False, False
+        )
     entry_sides = {
         "above" if value > reference_price else "below" for value in clean
     }
     if len(entry_sides) != 1:
-        return MakerOrderLifecycle("invalid_geometry", False, False)
+        return MakerOrderLifecycle(
+            OrderLifecycleState.INVALID_GEOMETRY.value, False, False
+        )
     entry_side = next(iter(entry_sides))
     cancel_side = "above" if cancel_price > reference_price else "below"
     if cancel_side != entry_side:
-        return MakerOrderLifecycle("fillable", True, True)
+        return MakerOrderLifecycle(OrderLifecycleState.FILLABLE.value, True, True)
     cancel_distance = abs(cancel_price - reference_price)
     nearest_entry_distance = min(abs(value - reference_price) for value in clean)
     if cancel_distance < nearest_entry_distance:
-        return MakerOrderLifecycle("cancel_blocks_all_entries", False, True)
-    return MakerOrderLifecycle("entry_before_cancel", True, False)
+        return MakerOrderLifecycle(
+            OrderLifecycleState.CANCEL_BLOCKS_ALL_ENTRIES.value, False, True
+        )
+    return MakerOrderLifecycle(
+        OrderLifecycleState.ENTRY_BEFORE_CANCEL.value, True, False
+    )
 
 
 def cancel_precedes_any_fill(
@@ -378,7 +391,7 @@ def cancel_precedes_any_fill(
         reference_price=reference_price,
         cancel_price=cancel_price,
         entries=entries,
-    ).state == "fillable"
+    ).state == OrderLifecycleState.FILLABLE.value
 
 
 def structure_zone_role_valid(
@@ -404,15 +417,18 @@ def cannot_do_conflicts(
     entry_type: str,
     resting_order_valid: bool | None,
 ) -> bool:
-    if (cannot_do_code, direction) in {("做多", "long"), ("做空", "short")}:
+    if (cannot_do_code, direction) in CANNOT_DO_ABSOLUTE_DIRECTION_CONFLICTS:
         return True
-    right_side_or_marketable = entry_type == "right" or resting_order_valid is False
-    if cannot_do_code == "追多" and direction == "long" and right_side_or_marketable:
-        return True
-    if cannot_do_code == "追空" and direction == "short" and right_side_or_marketable:
+    right_side_or_marketable = (
+        entry_type == EntryType.RIGHT.value or resting_order_valid is False
+    )
+    if (
+        CANNOT_DO_PURSUIT_DIRECTION.get(cannot_do_code) == direction
+        and right_side_or_marketable
+    ):
         return True
     return (
-        cannot_do_code == "追多空"
-        and direction in {"long", "short"}
+        cannot_do_code == CANNOT_DO_BOTH_PURSUIT
+        and direction in DIRECTIONAL_DIRECTIONS
         and right_side_or_marketable
     )

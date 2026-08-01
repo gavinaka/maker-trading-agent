@@ -16,10 +16,17 @@ from pathlib import Path
 from typing import Any
 
 from .effort_policy import REQUESTED_EFFORT, REQUESTED_MODEL
-from .methodology import canonical_sha256, sha256_file
+from .methodology import (
+    MethodologyIdentity,
+    canonical_sha256,
+    sha256_file,
+    validate_run_authority_binding,
+    validate_run_authority_profile,
+)
 
 
-SCHEMA_VERSION = "vnext-sample-outcome-v5"
+SCHEMA_VERSION = "vnext-sample-outcome-v6"
+V5_SCHEMA_VERSION = "vnext-sample-outcome-v5"
 V4_SCHEMA_VERSION = "vnext-sample-outcome-v4"
 V3_SCHEMA_VERSION = "vnext-sample-outcome-v3"
 V2_SCHEMA_VERSION = "vnext-sample-outcome-v2"
@@ -29,20 +36,27 @@ SUPPORTED_SCHEMA_VERSIONS = {
     V2_SCHEMA_VERSION,
     V3_SCHEMA_VERSION,
     V4_SCHEMA_VERSION,
+    V5_SCHEMA_VERSION,
     SCHEMA_VERSION,
 }
 EVIDENCE_PROVENANCE_SCHEMA_VERSIONS = {
     V3_SCHEMA_VERSION,
     V4_SCHEMA_VERSION,
+    V5_SCHEMA_VERSION,
     SCHEMA_VERSION,
 }
-FULL_PROVENANCE_SCHEMA_VERSIONS = {V4_SCHEMA_VERSION, SCHEMA_VERSION}
+FULL_PROVENANCE_SCHEMA_VERSIONS = {
+    V4_SCHEMA_VERSION,
+    V5_SCHEMA_VERSION,
+    SCHEMA_VERSION,
+}
 AUTHORITY_EPOCH_SCHEMA_VERSIONS = {
     V2_SCHEMA_VERSION,
     V3_SCHEMA_VERSION,
     V4_SCHEMA_VERSION,
-    SCHEMA_VERSION,
+    V5_SCHEMA_VERSION,
 }
+TRIPLE_AUTHORITY_SCHEMA_VERSIONS = {SCHEMA_VERSION}
 TERMINAL_STATUSES = {"complete", "shadow_complete", "retired"}
 STAGES = ("evidence", "reasoning", "decision", "report", "delivery")
 EVIDENCE_PROVENANCE_MODES = {
@@ -80,7 +94,7 @@ def _payload_sha256(payload: dict[str, Any], hash_field: str) -> str:
 
 
 def _requested_effort_matches_schema(schema_version: object, effort: object) -> bool:
-    if schema_version == SCHEMA_VERSION:
+    if schema_version in {V5_SCHEMA_VERSION, SCHEMA_VERSION}:
         return effort == REQUESTED_EFFORT
     if schema_version in {V3_SCHEMA_VERSION, V4_SCHEMA_VERSION}:
         return effort == "high"
@@ -137,6 +151,10 @@ def _load_run(repo_root: Path, run_root: Path) -> dict[str, Any]:
             )
         ):
             raise ValueError("invalid vNext run mode authorization binding")
+        try:
+            validate_run_authority_profile(payload)
+        except ValueError as exc:
+            raise ValueError("invalid vNext run authority binding") from exc
     expected = (
         repo_root
         / "runtime_state_vnext"
@@ -164,18 +182,17 @@ def _load_checkpoint(run_root: Path) -> dict[str, Any]:
     return payload
 
 
-def _load_authority_epoch(run_root: Path, run: dict[str, Any]) -> str:
+def _load_authority_identity(
+    run_root: Path,
+    run: dict[str, Any],
+) -> MethodologyIdentity:
     payload = _load_json(run_root / "methodology_manifest.json")
-    recorded_hash = payload.get("manifest_sha256")
-    if (
-        payload.get("schema_version") != "methodology-manifest-v2"
-        or not isinstance(recorded_hash, str)
-        or not SHA256_RE.fullmatch(recorded_hash)
-        or recorded_hash != canonical_sha256(payload)
-        or recorded_hash != run.get("methodology_sha256")
-    ):
-        raise ValueError("sample outcome authority epoch binding is invalid")
-    return recorded_hash
+    try:
+        return validate_run_authority_binding(run, payload)
+    except ValueError as exc:
+        raise ValueError(
+            "sample outcome authority epoch binding is invalid"
+        ) from exc
 
 
 def _load_completed_manifest(
@@ -345,7 +362,12 @@ def build_sample_outcome(*, repo_root: Path, run_root: Path) -> dict[str, Any]:
     run_root.relative_to(repo_root / "runtime_state_vnext")
     run = _load_run(repo_root, run_root)
     checkpoint = _load_checkpoint(run_root)
-    authority_epoch = _load_authority_epoch(run_root, run)
+    authority_identity = _load_authority_identity(run_root, run)
+    schema_version = (
+        V5_SCHEMA_VERSION
+        if authority_identity.legacy_combined_identity
+        else SCHEMA_VERSION
+    )
     if any(checkpoint.get(key) != run.get(key) for key in ("run_id", "trading_date", "slot")):
         raise ValueError("sample outcome run/checkpoint identity mismatch")
 
@@ -394,7 +416,7 @@ def build_sample_outcome(*, repo_root: Path, run_root: Path) -> dict[str, Any]:
     updated_at = _parse_iso(checkpoint.get("updated_at"))
     elapsed_seconds = max(0, int((updated_at - created_at).total_seconds()))
     payload: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "run": {
             "run_id": run["run_id"],
             "trading_date": run["trading_date"],
@@ -408,7 +430,6 @@ def build_sample_outcome(*, repo_root: Path, run_root: Path) -> dict[str, Any]:
         "bindings": {
             "run_sha256": run["run_sha256"],
             "checkpoint_sha256": checkpoint["checkpoint_sha256"],
-            "authority_epoch_sha256": authority_epoch,
         },
         "process": {
             "stage_attempt_counts": stage_attempt_counts,
@@ -428,6 +449,22 @@ def build_sample_outcome(*, repo_root: Path, run_root: Path) -> dict[str, Any]:
             "contains_business_conclusions": False,
         },
     }
+    if authority_identity.legacy_combined_identity:
+        payload["bindings"]["authority_epoch_sha256"] = (
+            authority_identity.manifest_sha256
+        )
+    else:
+        payload["bindings"].update(
+            {
+                "semantic_contract_sha256": (
+                    authority_identity.semantic_contract_sha256
+                ),
+                "release_sha256": authority_identity.release_sha256,
+                "methodology_manifest_sha256": (
+                    authority_identity.manifest_sha256
+                ),
+            }
+        )
     payload["sample_outcome_sha256"] = _payload_sha256(payload, "sample_outcome_sha256")
     validate_sample_outcome(payload)
     return payload
@@ -475,6 +512,14 @@ def validate_sample_outcome(payload: dict[str, Any]) -> None:
     expected_bindings = {"run_sha256", "checkpoint_sha256"}
     if schema_version in AUTHORITY_EPOCH_SCHEMA_VERSIONS:
         expected_bindings.add("authority_epoch_sha256")
+    if schema_version in TRIPLE_AUTHORITY_SCHEMA_VERSIONS:
+        expected_bindings.update(
+            {
+                "semantic_contract_sha256",
+                "release_sha256",
+                "methodology_manifest_sha256",
+            }
+        )
     if not isinstance(bindings, dict) or set(bindings) != expected_bindings:
         raise ValueError("sample outcome bindings are invalid")
     if any(not isinstance(value, str) or not SHA256_RE.fullmatch(value) for value in bindings.values()):
@@ -582,12 +627,33 @@ def write_sample_outcome(*, repo_root: Path, run_root: Path) -> dict[str, Any]:
             != checkpoint.get("checkpoint_sha256")
         ):
             raise ValueError("immutable sample outcome differs from terminal run state")
-        if (
-            existing.get("schema_version") in AUTHORITY_EPOCH_SCHEMA_VERSIONS
-            and existing["bindings"].get("authority_epoch_sha256")
-            != _load_authority_epoch(run_root.resolve(), run)
-        ):
-            raise ValueError("immutable sample outcome authority epoch differs from run")
+        authority_identity = _load_authority_identity(run_root.resolve(), run)
+        if existing.get("schema_version") in AUTHORITY_EPOCH_SCHEMA_VERSIONS:
+            if (
+                not authority_identity.legacy_combined_identity
+                or existing["bindings"].get("authority_epoch_sha256")
+                != authority_identity.manifest_sha256
+            ):
+                raise ValueError(
+                    "immutable sample outcome authority epoch differs from run"
+                )
+        if existing.get("schema_version") in TRIPLE_AUTHORITY_SCHEMA_VERSIONS:
+            expected = {
+                "semantic_contract_sha256": (
+                    authority_identity.semantic_contract_sha256
+                ),
+                "release_sha256": authority_identity.release_sha256,
+                "methodology_manifest_sha256": (
+                    authority_identity.manifest_sha256
+                ),
+            }
+            if authority_identity.legacy_combined_identity or any(
+                existing["bindings"].get(field) != value
+                for field, value in expected.items()
+            ):
+                raise ValueError(
+                    "immutable sample outcome authority triple differs from run"
+                )
         return existing
     payload = build_sample_outcome(repo_root=repo_root, run_root=run_root)
     target.parent.mkdir(parents=True, exist_ok=True)

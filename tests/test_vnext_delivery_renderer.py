@@ -24,19 +24,29 @@ from runtime_vnext.delivery_renderer import (
     reject_run_qa,
 )
 from runtime_vnext.errors import FailureClass, WorkflowFailure
-from runtime_vnext.methodology import canonical_sha256, sha256_file
+from runtime_vnext.methodology import (
+    build_methodology_manifest,
+    canonical_sha256,
+    sha256_file,
+)
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class VNextDeliveryRendererTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name).resolve()
-        self.store = ArtifactStore(self.root)
+        self.store = ArtifactStore(
+            self.root,
+            authority_root=REPO_ROOT,
+        )
         self.run_id = "run-word-qa-test"
         self.store.create_run(
             "2026-07-14",
             "midday",
-            methodology_manifest={"manifest_sha256": "a" * 64},
+            methodology_manifest=build_methodology_manifest(),
             run_mode="shadow",
             authorization_ref="test-shadow-renderer-approval",
             run_id=self.run_id,

@@ -27,6 +27,7 @@ from runtime_vnext.delivery_renderer import (
     WORD_QA_REVIEW_CHECKLIST_VERSION,
     prepare_run_qa,
 )
+from runtime_vnext.domain_ir.registry import REGISTRY
 from runtime_vnext.golden_samples import load_contract
 from runtime_vnext.gates import (
     REQUIRED_REPORT_SECTIONS,
@@ -1780,11 +1781,26 @@ class VNextWorkflowTests(unittest.TestCase):
 
     def test_methodology_manifest_is_phase_scoped_and_contains_additions(self):
         manifest = build_methodology_manifest(root=self.root)
-        self.assertEqual(manifest["schema_version"], "methodology-manifest-v2")
+        self.assertEqual(manifest["schema_version"], "methodology-manifest-v3")
+        self.assertEqual(
+            manifest["policy"],
+            "phase-scoped-semantic-plus-release-authority-v1",
+        )
+        self.assertRegex(manifest["domain_registry_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(set(manifest["phases"]), {"evidence", "reasoning", "report"})
         for phase in manifest["phases"].values():
             self.assertTrue(phase["files"])
+            self.assertEqual(
+                [record["path"] for record in phase["semantic_files"]],
+                [record["path"] for record in phase["files"]],
+            )
             self.assertRegex(phase["phase_sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(
+                phase["semantic_phase_sha256"],
+                r"^[0-9a-f]{64}$",
+            )
+        self.assertRegex(manifest["semantic_contract_sha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(manifest["release_sha256"], r"^[0-9a-f]{64}$")
         self.assertRegex(manifest["manifest_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(
             {record["path"] for record in manifest["control_plane"]["files"]},
@@ -1797,6 +1813,14 @@ class VNextWorkflowTests(unittest.TestCase):
             encoding="utf-8",
         )
         changed = build_methodology_manifest(root=self.root)
+        self.assertEqual(
+            changed["semantic_contract_sha256"],
+            manifest["semantic_contract_sha256"],
+        )
+        self.assertNotEqual(
+            changed["release_sha256"],
+            manifest["release_sha256"],
+        )
         self.assertNotEqual(
             changed["control_plane"]["control_sha256"],
             manifest["control_plane"]["control_sha256"],
@@ -1853,9 +1877,29 @@ class VNextWorkflowTests(unittest.TestCase):
 
     def test_run_v2_hashes_authorization_and_requires_exact_requested_effort(self):
         run = self.controller.store.load_run(self.run_root)
+        methodology = json.loads(
+            (self.run_root / "methodology_manifest.json").read_text(encoding="utf-8")
+        )
         raw_reference = f"test-{self.run_mode}-approval"
         self.assertEqual(run["schema_version"], "daily-run-vnext-v2")
         self.assertEqual(run["run_mode"], self.run_mode)
+        self.assertNotIn("methodology_sha256", run)
+        self.assertEqual(
+            {
+                "semantic_contract_sha256": run["semantic_contract_sha256"],
+                "release_sha256": run["release_sha256"],
+                "methodology_manifest_sha256": run[
+                    "methodology_manifest_sha256"
+                ],
+            },
+            {
+                "semantic_contract_sha256": methodology[
+                    "semantic_contract_sha256"
+                ],
+                "release_sha256": methodology["release_sha256"],
+                "methodology_manifest_sha256": methodology["manifest_sha256"],
+            },
+        )
         self.assertEqual(
             run["authorization_ref_sha256"],
             hashlib.sha256(raw_reference.encode("utf-8")).hexdigest(),
@@ -1880,6 +1924,31 @@ class VNextWorkflowTests(unittest.TestCase):
                         authorization_ref=f"explicit-{stale_effort}-request-must-fail",
                     )
 
+    def test_run_v2_rejects_partial_or_mixed_authority_profiles(self):
+        path = self.run_root / "run.json"
+        original = path.read_bytes()
+        run = json.loads(original.decode("utf-8"))
+
+        for mutation in ("partial", "mixed"):
+            with self.subTest(mutation=mutation):
+                candidate = dict(run)
+                candidate.pop("run_sha256")
+                if mutation == "partial":
+                    candidate.pop("release_sha256")
+                else:
+                    candidate["methodology_sha256"] = candidate[
+                        "methodology_manifest_sha256"
+                    ]
+                candidate["run_sha256"] = canonical_sha256(candidate)
+                path.write_text(
+                    json.dumps(candidate, ensure_ascii=False, indent=2, sort_keys=True)
+                    + "\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(RuntimeError, "authority binding"):
+                    self.controller.store.load_run(self.run_root)
+                path.write_bytes(original)
+
     def test_legacy_nonterminal_run_is_status_only_and_cannot_resume(self):
         run_path = self.run_root / "run.json"
         run = json.loads(run_path.read_text(encoding="utf-8"))
@@ -1897,10 +1966,35 @@ class VNextWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(WorkflowFailure, "explicit retirement"):
             self.controller.record_host_capability(self.run_root, self.host_capability())
 
+    def test_v2_run_with_legacy_authority_profile_is_status_only(self):
+        run_path = self.run_root / "run.json"
+        run = json.loads(run_path.read_text(encoding="utf-8"))
+        legacy_methodology_sha256 = run.pop("methodology_manifest_sha256")
+        run.pop("semantic_contract_sha256")
+        run.pop("release_sha256")
+        run["methodology_sha256"] = legacy_methodology_sha256
+        run.pop("run_sha256")
+        run["run_sha256"] = canonical_sha256(run)
+        run_path.write_text(
+            json.dumps(run, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        self.assertEqual(run["schema_version"], "daily-run-vnext-v2")
+        with self.assertRaisesRegex(WorkflowFailure, "explicit retirement"):
+            self.controller.record_host_capability(
+                self.run_root,
+                self.host_capability(),
+            )
+
     def test_create_run_initialization_failure_releases_owned_active_lease(self):
         isolated = self.root / "initialization-failure"
-        store = ArtifactStore(isolated)
+        store = ArtifactStore(
+            isolated,
+            authority_root=self.root,
+        )
         active_path = isolated / "runtime_state_vnext" / "active_run.json"
+        methodology = build_methodology_manifest(root=self.root)
         with patch(
             "runtime_vnext.artifacts.ArtifactStore._append_event",
             side_effect=OSError("simulated initialization failure"),
@@ -1909,7 +2003,7 @@ class VNextWorkflowTests(unittest.TestCase):
                 store.create_run(
                     "2026-07-14",
                     "morning",
-                    methodology_manifest={"manifest_sha256": "a" * 64},
+                    methodology_manifest=methodology,
                     run_mode="shadow",
                     authorization_ref="test-initialization-failure-approval",
                     run_id="run-initialization-failure",
@@ -4553,15 +4647,37 @@ class VNextWorkflowTests(unittest.TestCase):
 
     def test_complete_flow_compiles_from_model_and_finishes(self):
         self.prepare_through_decision()
-        self.controller.compile_report(self.run_root)
+        report_manifest = self.controller.compile_report(self.run_root)
         status = self.controller.status(self.run_root)
         self.assertEqual(status["next_stage"], "delivery")
         report = self.controller.store.load_stage_payload(self.run_root, "report", "canonical_report")
         self.assertEqual(report["schema_version"], "canonical-report-model-v11")
         report_outputs = self.controller.store.load_checkpoint(self.run_root)["completed"]["report"]["outputs"]
+        report_bindings = self.controller.store.load_stage_payload(
+            self.run_root,
+            "report",
+            "report_bindings",
+        )
         combined = report_outputs["combined"]
         self.assertEqual(len(report["blockbeats_cards"]), 3)
-        for name in ("cards_spec", "card_1", "card_2", "card_3"):
+        self.assertEqual(
+            tuple(
+                (item["section_id"], tuple(item["model_path"]))
+                for item in report_bindings["sections"]
+            ),
+            REGISTRY.report_binding_section_model_paths,
+        )
+        self.assertEqual(
+            report_manifest["gate"]["facts"]["report_bindings_sha256"],
+            report_outputs["report_bindings"]["sha256"],
+        )
+        for name in (
+            "report_bindings",
+            "cards_spec",
+            "card_1",
+            "card_2",
+            "card_3",
+        ):
             self.assertTrue((self.root / report_outputs[name]["path"]).is_file())
         text = (self.root / combined["path"]).read_text(encoding="utf-8")
         self.assertIn("## ③ 后附", text)
@@ -4619,6 +4735,30 @@ class VNextWorkflowTests(unittest.TestCase):
         self.assertTrue(manifest["gate"]["facts"]["gold_template_fidelity"]["passed"])
         self.controller.accept_delivery(self.run_root, self.delivery())
         self.assertEqual(self.controller.status(self.run_root)["status"], "complete")
+
+    def test_delivery_reopens_report_bindings_integrity_record(self):
+        self.prepare_through_decision()
+        self.controller.compile_report(self.run_root)
+        bindings_record = self.controller.store.load_stage_output_record(
+            self.run_root,
+            "report",
+            "report_bindings",
+        )
+        bindings_path = self.root / bindings_record["path"]
+        bindings_path.write_text(
+            bindings_path.read_text(encoding="utf-8") + " ",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ValueError, "stage output changed"):
+            self.controller.accept_delivery(
+                self.run_root,
+                self.delivery(),
+            )
+        self.assertEqual(
+            self.controller.store.attempt_count(self.run_root, "delivery"),
+            0,
+        )
 
     def test_liquidation_fact_projects_certified_timeframes_for_compatibility_lint(self):
         raw_evidence = self.evidence()

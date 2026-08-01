@@ -3,6 +3,8 @@ from __future__ import annotations
 import copy
 import json
 import re
+import shutil
+import tempfile
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -12,11 +14,17 @@ import runtime_vnext.gates as vnext_gates
 import runtime_vnext.report_compiler as vnext_report_compiler
 from runtime_vnext.golden_samples import semantic_invariants
 from runtime_vnext.delivery_renderer import WORD_QA_REVIEW_CHECKLIST_KEYS
+from runtime_vnext.domain_ir.registry import DomainRegistry
 from runtime_vnext.methodology import (
     CONTROL_PLANE_FILES,
     PHASE_FILES,
+    SEMANTIC_CONTRACT_SCHEMA,
     build_methodology_manifest,
+    canonical_sha256,
+    discover_control_plane_files,
     load_scoring_policy,
+    validate_current_methodology_manifest,
+    validate_methodology_manifest,
 )
 
 
@@ -454,6 +462,16 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
             "outputs/word_qa.py",
         ):
             self.assertIn(required, control_files)
+        runtime_python_files = {
+            path.relative_to(ROOT).as_posix()
+            for path in (ROOT / "runtime_vnext").rglob("*.py")
+            if path.is_file()
+        }
+        self.assertTrue(runtime_python_files.issubset(control_files))
+        self.assertEqual(
+            tuple(sorted(control_files)),
+            discover_control_plane_files(root=ROOT),
+        )
         self.assertIn(
             "data_sources/rate_expectation_provider_contract.json",
             PHASE_FILES["evidence"],
@@ -477,8 +495,206 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
             PHASE_FILES["reasoning"],
         )
         manifest = build_methodology_manifest(root=ROOT)
-        self.assertEqual(manifest["schema_version"], "methodology-manifest-v2")
-        self.assertTrue(manifest["manifest_sha256"])
+        self.assertEqual(manifest["schema_version"], "methodology-manifest-v3")
+        identity = validate_methodology_manifest(manifest)
+        self.assertEqual(
+            identity.semantic_contract_sha256,
+            manifest["semantic_contract_sha256"],
+        )
+        self.assertEqual(identity.release_sha256, manifest["release_sha256"])
+        self.assertEqual(identity.manifest_sha256, manifest["manifest_sha256"])
+
+    def test_methodology_three_hashes_separate_semantics_release_and_envelope(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = set(CONTROL_PLANE_FILES) | {
+                relative
+                for relatives in PHASE_FILES.values()
+                for relative in relatives
+            }
+            for relative in inputs:
+                source = ROOT / relative
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+
+            baseline = build_methodology_manifest(root=root)
+            validate_methodology_manifest(baseline)
+
+            scoring_path = root / "scoring" / "scoring_contract.json"
+            scoring_payload = json.loads(scoring_path.read_text(encoding="utf-8"))
+            scoring_path.write_text(
+                json.dumps(scoring_payload, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            reformatted = build_methodology_manifest(root=root)
+            self.assertEqual(
+                reformatted["semantic_contract_sha256"],
+                baseline["semantic_contract_sha256"],
+            )
+            self.assertEqual(reformatted["release_sha256"], baseline["release_sha256"])
+            self.assertNotEqual(
+                reformatted["manifest_sha256"], baseline["manifest_sha256"]
+            )
+
+            added_module = root / "runtime_vnext" / "identity_inventory_probe.py"
+            added_module.write_text("# release inventory probe\n", encoding="utf-8")
+            code_changed = build_methodology_manifest(root=root)
+            self.assertIn(
+                "runtime_vnext/identity_inventory_probe.py",
+                {
+                    record["path"]
+                    for record in code_changed["control_plane"]["files"]
+                },
+            )
+            self.assertEqual(
+                code_changed["semantic_contract_sha256"],
+                reformatted["semantic_contract_sha256"],
+            )
+            self.assertNotEqual(
+                code_changed["release_sha256"], reformatted["release_sha256"]
+            )
+            self.assertNotEqual(
+                code_changed["manifest_sha256"], reformatted["manifest_sha256"]
+            )
+
+            semantic_changed = build_methodology_manifest(
+                root=root,
+                registry=DomainRegistry(schema_version="vnext-domain-registry-test-v3"),
+            )
+            self.assertNotEqual(
+                semantic_changed["semantic_contract_sha256"],
+                code_changed["semantic_contract_sha256"],
+            )
+            self.assertEqual(
+                semantic_changed["release_sha256"], code_changed["release_sha256"]
+            )
+            self.assertNotEqual(
+                semantic_changed["manifest_sha256"], code_changed["manifest_sha256"]
+            )
+
+    def test_production_manifest_rejects_generated_reasoning_view_drift(self):
+        tamper_cases = (
+            (
+                "maker_thesis_direction_deleted",
+                lambda payload: payload["claim_fields_by_type"][
+                    "maker_thesis"
+                ].remove("direction"),
+            ),
+            (
+                "tradingview_observation_fields_reordered",
+                lambda payload: payload["observation_fields_by_source"][
+                    "TradingView"
+                ].reverse(),
+            ),
+            (
+                "top_level_field_order_reordered",
+                lambda payload: payload["top_level"]["field_order"].reverse(),
+            ),
+            (
+                "pipeline_unit_fields_reordered",
+                lambda payload: payload["pipeline_unit_fields"].reverse(),
+            ),
+        )
+
+        for case_name, tamper in tamper_cases:
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inputs = set(CONTROL_PLANE_FILES) | {
+                    relative
+                    for relatives in PHASE_FILES.values()
+                    for relative in relatives
+                }
+                for relative in inputs:
+                    source = ROOT / relative
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, target)
+
+                contract_path = (
+                    root / "scoring" / "reasoning_submission_contract.json"
+                )
+                contract = json.loads(contract_path.read_text(encoding="utf-8"))
+                tamper(contract)
+                contract_path.write_text(
+                    json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "reasoning submission contract deterministic views differ",
+                ):
+                    build_methodology_manifest(root=root)
+
+    def test_methodology_manifest_v2_remains_read_only_compatible(self):
+        legacy = {
+            "schema_version": "methodology-manifest-v2",
+            "policy": "historical-test-envelope",
+            "phases": {},
+        }
+        legacy["manifest_sha256"] = canonical_sha256(legacy)
+        original = copy.deepcopy(legacy)
+        identity = validate_methodology_manifest(legacy)
+        self.assertTrue(identity.legacy_combined_identity)
+        self.assertIsNone(identity.semantic_contract_sha256)
+        self.assertIsNone(identity.release_sha256)
+        self.assertEqual(identity.manifest_sha256, legacy["manifest_sha256"])
+        self.assertEqual(legacy, original)
+
+    def test_methodology_manifest_v3_rejects_identity_tampering(self):
+        manifest = build_methodology_manifest(root=ROOT)
+        tampered = copy.deepcopy(manifest)
+        tampered["release_sha256"] = "0" * 64
+        tampered["manifest_sha256"] = canonical_sha256(tampered)
+        with self.assertRaisesRegex(ValueError, "release hash"):
+            validate_methodology_manifest(tampered)
+
+    def test_current_manifest_rejects_self_consistent_phase_subset(self):
+        manifest = build_methodology_manifest(root=ROOT)
+        tampered = copy.deepcopy(manifest)
+        phase_name = next(
+            name
+            for name, value in tampered["phases"].items()
+            if len(value["files"]) > 1
+        )
+        phase = tampered["phases"][phase_name]
+        removed = phase["files"].pop()
+        removed_semantic = phase["semantic_files"].pop()
+        self.assertEqual(removed["path"], removed_semantic["path"])
+        phase["phase_sha256"] = canonical_sha256({"files": phase["files"]})
+        phase["semantic_phase_sha256"] = canonical_sha256(
+            {"files": phase["semantic_files"]}
+        )
+        tampered["semantic_contract_sha256"] = canonical_sha256(
+            {
+                "schema_version": SEMANTIC_CONTRACT_SCHEMA,
+                "domain_registry_sha256": tampered["domain_registry_sha256"],
+                "phase_semantic_sha256": {
+                    name: value["semantic_phase_sha256"]
+                    for name, value in sorted(tampered["phases"].items())
+                },
+            }
+        )
+        tampered["manifest_sha256"] = canonical_sha256(tampered)
+
+        validate_methodology_manifest(tampered)
+        with self.assertRaisesRegex(ValueError, "differs from the current release"):
+            validate_current_methodology_manifest(tampered, root=ROOT)
+
+    def test_current_manifest_rejects_different_registry_identity(self):
+        foreign_registry = DomainRegistry(
+            schema_version="vnext-domain-registry-foreign-test-v1"
+        )
+        manifest = build_methodology_manifest(
+            root=ROOT,
+            registry=foreign_registry,
+        )
+
+        validate_methodology_manifest(manifest)
+        with self.assertRaisesRegex(ValueError, "differs from the current release"):
+            validate_current_methodology_manifest(manifest, root=ROOT)
 
     def test_vnext_delivery_control_authority_has_one_machine_owned_sequence(self):
         skill = _read(".agents/skills/daily-report/SKILL.md")

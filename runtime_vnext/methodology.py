@@ -4,9 +4,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
+from runtime.golden_methodology import get_methodology_runtime_inventory
+
+from .domain_ir.canonical import canonical_json_bytes
+from .domain_ir.legacy_v6_adapter import (
+    deterministic_projection_drift,
+    scoring_projection_drift,
+)
+from .domain_ir.registry import REGISTRY, DomainRegistry
 from .reasoning_submission import (
     load_reasoning_submission_contract,
     validate_contract_runtime_compatibility,
@@ -58,27 +68,9 @@ PHASE_FILES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-CONTROL_PLANE_FILES: tuple[str, ...] = (
+EXPLICIT_CONTROL_PLANE_FILES: tuple[str, ...] = (
     "AGENTS.md",
     ".agents/skills/daily-report/SKILL.md",
-    "runtime_vnext/artifacts.py",
-    "runtime_vnext/cli.py",
-    "runtime_vnext/controller.py",
-    "runtime_vnext/delivery_renderer.py",
-    "runtime_vnext/effort_policy.py",
-    "runtime_vnext/errors.py",
-    "runtime_vnext/gates.py",
-    "runtime_vnext/golden_samples.py",
-    "runtime_vnext/legacy_capture_adapter.py",
-    "runtime_vnext/methodology.py",
-    "runtime_vnext/plan_semantics.py",
-    "runtime_vnext/pretrade_gate.py",
-    "runtime_vnext/rate_expectation.py",
-    "runtime_vnext/report_compiler.py",
-    "runtime_vnext/reasoning_pipeline.py",
-    "runtime_vnext/reasoning_submission.py",
-    "runtime_vnext/sample_outcome.py",
-    "runtime_vnext/semantic_validation.py",
     "governance/vnext_daily_workflow.md",
     "governance/vnext_sample_outcome_contract.json",
     "runtime/golden_methodology.py",
@@ -113,10 +105,67 @@ CONTROL_PLANE_FILES: tuple[str, ...] = (
     "outputs/render_from_combined.py",
 )
 
+
+def discover_control_plane_files(*, root: Path = ROOT) -> tuple[str, ...]:
+    """Return the exact release inventory without hand-listing package modules."""
+
+    root = root.resolve()
+    runtime_root = (root / "runtime_vnext").resolve()
+    try:
+        runtime_root.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("runtime_vnext control-plane root escapes repository") from exc
+    if not runtime_root.is_dir():
+        raise ValueError("runtime_vnext control-plane root is missing")
+
+    discovered: set[str] = set(EXPLICIT_CONTROL_PLANE_FILES)
+    for candidate in runtime_root.rglob("*.py"):
+        resolved = candidate.resolve()
+        try:
+            relative = resolved.relative_to(root)
+        except ValueError as exc:
+            raise ValueError(
+                f"runtime_vnext control-plane file escapes repository: {candidate}"
+            ) from exc
+        if not resolved.is_file():
+            continue
+        discovered.add(relative.as_posix())
+    return tuple(sorted(discovered))
+
+
+# Compatibility import surface for tests and tools that inspect the current
+# release inventory.  Manifest construction calls discovery again against its
+# supplied root, so an added package module cannot be hidden by import timing.
+CONTROL_PLANE_FILES: tuple[str, ...] = discover_control_plane_files(root=ROOT)
+
 ADDITIVE_METHOD_MARKERS = {
     "scoring/chart_methodology.md": ("VRVP", "流动性猎杀"),
     "scoring/scoring_contract.json": ("liquidation", "etf"),
 }
+
+MANIFEST_V2_SCHEMA = "methodology-manifest-v2"
+MANIFEST_V3_SCHEMA = "methodology-manifest-v3"
+SEMANTIC_CONTRACT_SCHEMA = "vnext-semantic-contract-v1"
+RELEASE_IDENTITY_SCHEMA = "vnext-runtime-release-v1"
+MANIFEST_V3_POLICY = "phase-scoped-semantic-plus-release-authority-v1"
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+@dataclass(frozen=True)
+class MethodologyIdentity:
+    manifest_schema_version: str
+    semantic_contract_sha256: str | None
+    release_sha256: str | None
+    manifest_sha256: str
+    legacy_combined_identity: bool
+
+
+LEGACY_RUN_AUTHORITY_FIELD = "methodology_sha256"
+V3_RUN_AUTHORITY_FIELDS = (
+    "semantic_contract_sha256",
+    "release_sha256",
+    "methodology_manifest_sha256",
+)
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -140,13 +189,61 @@ def canonical_sha256(payload: dict[str, Any]) -> str:
     )
 
 
-def build_methodology_manifest(*, root: Path = ROOT) -> dict[str, Any]:
+def _semantic_file_record(path: Path, relative: str) -> dict[str, str]:
+    if path.suffix.lower() == ".json":
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"semantic JSON authority is invalid: {relative}") from exc
+        digest = sha256_bytes(canonical_json_bytes(value))
+        normalization = "canonical-json-v1"
+    else:
+        digest = sha256_file(path)
+        normalization = "exact-utf8-bytes-v1"
+    return {
+        "path": relative,
+        "normalization": normalization,
+        "semantic_sha256": digest,
+    }
+
+
+def _semantic_contract_sha256(
+    domain_registry_sha256: str,
+    phases: Mapping[str, Mapping[str, Any]],
+) -> str:
+    return canonical_sha256(
+        {
+            "schema_version": SEMANTIC_CONTRACT_SCHEMA,
+            "domain_registry_sha256": domain_registry_sha256,
+            "phase_semantic_sha256": {
+                phase: value["semantic_phase_sha256"]
+                for phase, value in sorted(phases.items())
+            },
+        }
+    )
+
+
+def _release_sha256(control_sha256: str) -> str:
+    return canonical_sha256(
+        {
+            "schema_version": RELEASE_IDENTITY_SCHEMA,
+            "control_sha256": control_sha256,
+        }
+    )
+
+
+def build_methodology_manifest(
+    *,
+    root: Path = ROOT,
+    registry: DomainRegistry = REGISTRY,
+) -> dict[str, Any]:
     root = root.resolve()
     phases: dict[str, dict[str, Any]] = {}
     missing: list[str] = []
     marker_failures: list[str] = []
     for phase, relatives in PHASE_FILES.items():
-        records = []
+        records: list[dict[str, Any]] = []
+        semantic_records: list[dict[str, str]] = []
         for relative in relatives:
             path = (root / relative).resolve()
             path.relative_to(root)
@@ -164,8 +261,15 @@ def build_methodology_manifest(*, root: Path = ROOT) -> dict[str, Any]:
                     "bytes": path.stat().st_size,
                 }
             )
-        phase_payload = {"files": records}
-        phase_payload["phase_sha256"] = canonical_sha256(phase_payload)
+            semantic_records.append(_semantic_file_record(path, relative))
+        phase_payload = {
+            "files": records,
+            "semantic_files": semantic_records,
+        }
+        phase_payload["phase_sha256"] = canonical_sha256({"files": records})
+        phase_payload["semantic_phase_sha256"] = canonical_sha256(
+            {"files": semantic_records}
+        )
         phases[phase] = phase_payload
     if missing:
         raise ValueError("methodology files missing: " + ", ".join(sorted(missing)))
@@ -175,7 +279,23 @@ def build_methodology_manifest(*, root: Path = ROOT) -> dict[str, Any]:
             + ", ".join(sorted(marker_failures))
         )
     full_policy = load_scoring_policy(root=root)
+    if scoring_projection_drift(full_policy):
+        raise ValueError(
+            "scoring contract deterministic views differ from the domain registry"
+        )
     submission_contract = load_reasoning_submission_contract(root=root)
+    methodology_inventory = get_methodology_runtime_inventory(
+        policy=full_policy["gold_methodology"],
+        profile="vnext_submission",
+    )
+    if deterministic_projection_drift(
+        submission_contract,
+        methodology_leaf_ownership=methodology_inventory["leaf_ownership"],
+    ):
+        raise ValueError(
+            "reasoning submission contract deterministic views differ from "
+            "the domain registry"
+        )
     contract_issues = validate_contract_runtime_compatibility(
         submission_contract,
         full_policy=full_policy,
@@ -188,8 +308,8 @@ def build_methodology_manifest(*, root: Path = ROOT) -> dict[str, Any]:
                 for item in contract_issues
             )
         )
-    control_records = []
-    for relative in CONTROL_PLANE_FILES:
+    control_records: list[dict[str, Any]] = []
+    for relative in discover_control_plane_files(root=root):
         path = (root / relative).resolve()
         path.relative_to(root)
         if not path.is_file():
@@ -203,14 +323,341 @@ def build_methodology_manifest(*, root: Path = ROOT) -> dict[str, Any]:
         )
     control_plane: dict[str, Any] = {"files": control_records}
     control_plane["control_sha256"] = canonical_sha256(control_plane)
+    domain_registry_sha256 = registry.semantic_contract_sha256
     payload: dict[str, Any] = {
-        "schema_version": "methodology-manifest-v2",
-        "policy": "phase-scoped-authority-plus-hashed-control-plane-no-concatenated-transport",
+        "schema_version": MANIFEST_V3_SCHEMA,
+        "policy": MANIFEST_V3_POLICY,
+        "domain_registry_sha256": domain_registry_sha256,
         "phases": phases,
         "control_plane": control_plane,
+        "semantic_contract_sha256": _semantic_contract_sha256(
+            domain_registry_sha256,
+            phases,
+        ),
+        "release_sha256": _release_sha256(control_plane["control_sha256"]),
     }
     payload["manifest_sha256"] = canonical_sha256(payload)
+    validate_methodology_manifest(payload)
     return payload
+
+
+def _validate_file_records(
+    records: object,
+    *,
+    semantic: bool,
+    label: str,
+) -> list[str]:
+    if not isinstance(records, list) or not records:
+        raise ValueError(f"{label} file inventory is missing")
+    paths: list[str] = []
+    expected_fields = (
+        {"path", "normalization", "semantic_sha256"}
+        if semantic
+        else {"path", "sha256", "bytes"}
+    )
+    for record in records:
+        if not isinstance(record, dict) or set(record) != expected_fields:
+            raise ValueError(f"{label} file record shape is invalid")
+        relative = record.get("path")
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or "\\" in relative
+            or relative.startswith("/")
+            or ".." in Path(relative).parts
+        ):
+            raise ValueError(f"{label} file path is invalid")
+        if semantic:
+            expected_normalization = (
+                "canonical-json-v1"
+                if Path(relative).suffix.lower() == ".json"
+                else "exact-utf8-bytes-v1"
+            )
+            if (
+                record.get("normalization") != expected_normalization
+                or not SHA256_RE.fullmatch(
+                    str(record.get("semantic_sha256", ""))
+                )
+            ):
+                raise ValueError(f"{label} semantic file record is invalid")
+        elif (
+            not SHA256_RE.fullmatch(str(record.get("sha256", "")))
+            or not isinstance(record.get("bytes"), int)
+            or isinstance(record.get("bytes"), bool)
+            or record["bytes"] < 0
+        ):
+            raise ValueError(f"{label} exact file record is invalid")
+        paths.append(relative)
+    if len(paths) != len(set(paths)):
+        raise ValueError(f"{label} file inventory contains duplicate paths")
+    return paths
+
+
+def validate_methodology_manifest(
+    payload: Mapping[str, Any],
+) -> MethodologyIdentity:
+    """Validate a sealed v3 identity or an immutable legacy v2 envelope.
+
+    The v2 branch deliberately does not invent semantic/release identities.  It
+    verifies the historical combined seal and any inner hashes that are present,
+    allowing old terminal runs to remain readable without being upgraded.
+    """
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("methodology manifest must be an object")
+    manifest = dict(payload)
+    manifest_sha256 = manifest.get("manifest_sha256")
+    if (
+        not isinstance(manifest_sha256, str)
+        or not SHA256_RE.fullmatch(manifest_sha256)
+        or manifest_sha256 != canonical_sha256(manifest)
+    ):
+        raise ValueError("methodology manifest hash is invalid")
+
+    schema_version = manifest.get("schema_version")
+    if schema_version == MANIFEST_V2_SCHEMA:
+        phases = manifest.get("phases")
+        if isinstance(phases, dict):
+            for phase, value in phases.items():
+                if not isinstance(phase, str) or not isinstance(value, dict):
+                    raise ValueError("legacy methodology phase is invalid")
+                if "phase_sha256" in value and value.get(
+                    "phase_sha256"
+                ) != canonical_sha256({"files": value.get("files")}):
+                    raise ValueError("legacy methodology phase hash is invalid")
+        control_plane = manifest.get("control_plane")
+        if isinstance(control_plane, dict) and "control_sha256" in control_plane:
+            if control_plane.get("control_sha256") != canonical_sha256(
+                {"files": control_plane.get("files")}
+            ):
+                raise ValueError("legacy methodology control hash is invalid")
+        return MethodologyIdentity(
+            manifest_schema_version=MANIFEST_V2_SCHEMA,
+            semantic_contract_sha256=None,
+            release_sha256=None,
+            manifest_sha256=manifest_sha256,
+            legacy_combined_identity=True,
+        )
+
+    if schema_version != MANIFEST_V3_SCHEMA:
+        raise ValueError("methodology manifest schema is unsupported")
+    expected_top = {
+        "schema_version",
+        "policy",
+        "domain_registry_sha256",
+        "phases",
+        "control_plane",
+        "semantic_contract_sha256",
+        "release_sha256",
+        "manifest_sha256",
+    }
+    if set(manifest) != expected_top or manifest.get("policy") != MANIFEST_V3_POLICY:
+        raise ValueError("methodology manifest v3 shape or policy is invalid")
+    domain_registry_sha256 = manifest.get("domain_registry_sha256")
+    semantic_contract_sha256 = manifest.get("semantic_contract_sha256")
+    release_sha256 = manifest.get("release_sha256")
+    if any(
+        not isinstance(value, str) or not SHA256_RE.fullmatch(value)
+        for value in (
+            domain_registry_sha256,
+            semantic_contract_sha256,
+            release_sha256,
+        )
+    ):
+        raise ValueError("methodology manifest v3 identities are invalid")
+
+    phases = manifest.get("phases")
+    if not isinstance(phases, dict) or set(phases) != set(PHASE_FILES):
+        raise ValueError("methodology manifest v3 phase inventory is invalid")
+    for phase, value in phases.items():
+        if not isinstance(value, dict) or set(value) != {
+            "files",
+            "semantic_files",
+            "phase_sha256",
+            "semantic_phase_sha256",
+        }:
+            raise ValueError(f"methodology manifest v3 phase is invalid: {phase}")
+        exact_paths = _validate_file_records(
+            value.get("files"), semantic=False, label=f"phase {phase}"
+        )
+        semantic_paths = _validate_file_records(
+            value.get("semantic_files"), semantic=True, label=f"phase {phase}"
+        )
+        if semantic_paths != exact_paths:
+            raise ValueError(f"methodology phase semantic inventory differs: {phase}")
+        if value.get("phase_sha256") != canonical_sha256(
+            {"files": value["files"]}
+        ):
+            raise ValueError(f"methodology exact phase hash is invalid: {phase}")
+        if value.get("semantic_phase_sha256") != canonical_sha256(
+            {"files": value["semantic_files"]}
+        ):
+            raise ValueError(f"methodology semantic phase hash is invalid: {phase}")
+
+    control_plane = manifest.get("control_plane")
+    if not isinstance(control_plane, dict) or set(control_plane) != {
+        "files",
+        "control_sha256",
+    }:
+        raise ValueError("methodology control-plane shape is invalid")
+    control_paths = _validate_file_records(
+        control_plane.get("files"), semantic=False, label="control plane"
+    )
+    if control_paths != sorted(control_paths):
+        raise ValueError("methodology control-plane inventory is not sorted")
+    if control_plane.get("control_sha256") != canonical_sha256(
+        {"files": control_plane["files"]}
+    ):
+        raise ValueError("methodology control-plane hash is invalid")
+    if semantic_contract_sha256 != _semantic_contract_sha256(
+        str(domain_registry_sha256),
+        phases,
+    ):
+        raise ValueError("methodology semantic contract hash is invalid")
+    if release_sha256 != _release_sha256(str(control_plane["control_sha256"])):
+        raise ValueError("methodology release hash is invalid")
+
+    return MethodologyIdentity(
+        manifest_schema_version=MANIFEST_V3_SCHEMA,
+        semantic_contract_sha256=str(semantic_contract_sha256),
+        release_sha256=str(release_sha256),
+        manifest_sha256=manifest_sha256,
+        legacy_combined_identity=False,
+    )
+
+
+def validate_current_methodology_manifest(
+    payload: Mapping[str, Any],
+    *,
+    root: Path = ROOT,
+    registry: DomainRegistry = REGISTRY,
+) -> MethodologyIdentity:
+    """Require the exact authority generated by the currently imported release.
+
+    ``validate_methodology_manifest`` is deliberately a versioned envelope
+    reader so immutable v2 runs remain readable.  New run creation has a
+    stronger contract: it must bind the exact current registry, phase
+    inventories, file bytes and dynamically discovered control plane.  Keeping
+    this distinction explicit prevents a self-consistent subset manifest or a
+    random registry identity from opening a new authority epoch.
+    """
+
+    identity = validate_methodology_manifest(payload)
+    if identity.legacy_combined_identity:
+        raise ValueError(
+            "new vNext runs require a methodology-manifest-v3 authority profile"
+        )
+    expected = build_methodology_manifest(root=root, registry=registry)
+    if dict(payload) != expected:
+        raise ValueError(
+            "new vNext run methodology differs from the current release authority"
+        )
+    return identity
+
+
+def validate_run_authority_profile(
+    run: Mapping[str, Any],
+) -> str:
+    """Validate the all-or-none run authority profile without reading files."""
+
+    if not isinstance(run, Mapping):
+        raise ValueError("vNext run authority binding must be an object")
+    has_legacy = LEGACY_RUN_AUTHORITY_FIELD in run
+    present_v3 = {field for field in V3_RUN_AUTHORITY_FIELDS if field in run}
+    if has_legacy and present_v3:
+        raise ValueError("vNext run mixes legacy and v3 authority bindings")
+    if has_legacy:
+        value = run.get(LEGACY_RUN_AUTHORITY_FIELD)
+        if not isinstance(value, str) or not SHA256_RE.fullmatch(value):
+            raise ValueError("vNext legacy run authority binding is invalid")
+        return "legacy-v2"
+    if present_v3 != set(V3_RUN_AUTHORITY_FIELDS):
+        raise ValueError("vNext run v3 authority binding is incomplete")
+    if any(
+        not isinstance(run.get(field), str)
+        or not SHA256_RE.fullmatch(str(run.get(field)))
+        for field in V3_RUN_AUTHORITY_FIELDS
+    ):
+        raise ValueError("vNext run v3 authority binding is invalid")
+    return "semantic-release-v3"
+
+
+def validate_run_authority_binding(
+    run: Mapping[str, Any],
+    methodology_manifest: Mapping[str, Any],
+) -> MethodologyIdentity:
+    """Bind one sealed run to either a legacy v2 or current v3 manifest."""
+
+    identity = validate_methodology_manifest(methodology_manifest)
+    profile = validate_run_authority_profile(run)
+    if identity.legacy_combined_identity:
+        if (
+            profile != "legacy-v2"
+            or run.get(LEGACY_RUN_AUTHORITY_FIELD) != identity.manifest_sha256
+        ):
+            raise ValueError("legacy run methodology binding differs from manifest")
+        return identity
+    if profile != "semantic-release-v3":
+        raise ValueError("v3 methodology requires the semantic/release run profile")
+    expected = {
+        "semantic_contract_sha256": identity.semantic_contract_sha256,
+        "release_sha256": identity.release_sha256,
+        "methodology_manifest_sha256": identity.manifest_sha256,
+    }
+    if any(run.get(field) != value for field, value in expected.items()):
+        raise ValueError("v3 run authority binding differs from manifest")
+    return identity
+
+
+def verify_manifest_files(
+    payload: Mapping[str, Any],
+    *,
+    root: Path,
+    phase: str | None = None,
+    include_control: bool = True,
+) -> None:
+    """Verify exact sealed files against the current repository without mutation."""
+
+    validate_methodology_manifest(payload)
+    root = root.resolve()
+    inventories: list[tuple[str, object]] = []
+    phases = payload.get("phases")
+    if phase is not None:
+        phase_payload = phases.get(phase) if isinstance(phases, Mapping) else None
+        if not isinstance(phase_payload, Mapping):
+            raise ValueError(f"methodology phase is missing: {phase}")
+        inventories.append((f"phase {phase}", phase_payload.get("files")))
+    if include_control:
+        control = payload.get("control_plane")
+        if not isinstance(control, Mapping):
+            raise ValueError("methodology control-plane inventory is missing")
+        inventories.append(("control plane", control.get("files")))
+
+    changed: list[str] = []
+    for label, records in inventories:
+        if not isinstance(records, list):
+            raise ValueError(f"{label} exact file inventory is missing")
+        for record in records:
+            if not isinstance(record, Mapping):
+                raise ValueError(f"{label} exact file record is invalid")
+            relative = str(record.get("path", ""))
+            path = (root / relative).resolve()
+            try:
+                path.relative_to(root)
+            except ValueError:
+                changed.append(relative)
+                continue
+            if (
+                not path.is_file()
+                or path.stat().st_size != record.get("bytes")
+                or sha256_file(path) != record.get("sha256")
+            ):
+                changed.append(relative)
+    if changed:
+        raise ValueError(
+            "methodology files changed after run start: "
+            + ", ".join(sorted(set(changed)))
+        )
 
 
 def load_scoring_policy(*, root: Path = ROOT) -> dict[str, Any]:

@@ -21,6 +21,33 @@ from typing import Any
 from xml.etree import ElementTree
 
 from .methodology import canonical_sha256, load_scoring_policy, sha256_file
+from .domain_ir.projection import (
+    account_current_basis_projection,
+    account_trigger_logic_projection,
+)
+from .domain_ir.registry import (
+    ACCOUNT_CURRENT_BASIS_POLICY_FIELDS,
+    ACCOUNT_LOOP_CLAIM_TYPES,
+    CANNOT_DO_CODES,
+    CLAIM_ACCOUNT_SCOPES,
+    CLAIM_TYPES as REQUIRED_CLAIM_TYPES,
+    CONTINUITY_ACTIONS,
+    CONTINUITY_PRIOR_STATUSES,
+    EVIDENCE_SOURCE_ORDER as REQUIRED_SOURCES,
+    HIGH_IMPACT_CLAIMS,
+    MINIMUM_OBSERVATION_METRICS,
+    NON_ACTION_REPORT_SECTIONS,
+    NON_TRACEABLE_REPORT_SECTIONS,
+    POLICY_SOURCE_KEYS,
+    REPORT_SECTIONS as REQUIRED_REPORT_SECTIONS,
+    SCENARIO_TYPES as REQUIRED_SCENARIO_TYPES,
+    SECTION_REQUIRED_CLAIM_TYPES,
+    SOURCE_ROLES,
+    SOURCE_ROLE_CLAIM_OWNER,
+    TRADINGVIEW_TIMEFRAMES,
+    TRIGGER_CONTROL_CLAIM_TYPES,
+    TRIGGER_EFFECT_BY_CLAIM_TYPE,
+)
 from .plan_semantics import (
     assess_candidate,
     assess_order_lifecycle,
@@ -61,220 +88,10 @@ from .semantic_validation import (
 from outputs.report_lint import coupling_check
 
 
-REQUIRED_SOURCES = (
-    "BlockBeats",
-    "Coinglass",
-    "Exocharts",
-    "FedWatch",
-    "Farside",
-    "TradingView",
-)
-ACCOUNT_CURRENT_BASIS_POLICY_FIELDS = frozenset(
-    {
-        "schema_version",
-        "required_claim_types",
-        "required_fields",
-        "allowed_modes",
-        "minimum_clause_count",
-        "clause_required_fields",
-        "allowed_operators",
-        "observation_fields",
-        "claim_fields",
-        "evidence_polarity",
-        "owner_must_be_reachable_from_support_dag",
-        "owner_account_must_be_shared_or_same_account",
-        "value_must_equal_current_owner_field",
-        "separate_from_future_trigger_logic",
-        "compiler_may_infer_missing_current_basis",
-    }
-)
-TRADINGVIEW_TIMEFRAMES = ("1D", "4H", "1H", "15m")
-SOURCE_ROLES = {
-    "BlockBeats": "fundamental_context",
-    "FedWatch": "macro_context_not_direction",
-    "Farside": "spot_liquidity_confirmation",
-    "Coinglass": "orderflow_and_liquidation",
-    "Exocharts": "footprint_orderflow_confirmation",
-    "TradingView": "chart_structure_and_user_drawn_profile",
-}
-MINIMUM_OBSERVATION_METRICS = {
-    "BlockBeats": set(),
-    "Coinglass": set(),
-    "Exocharts": {"cross_check_result"},
-    "FedWatch": set(),
-    "Farside": set(),
-    "TradingView": set(),
-}
-POLICY_SOURCE_KEYS = {
-    "BlockBeats": "blockbeats",
-    "Coinglass": "coinglass",
-    "Exocharts": "exocharts",
-    "FedWatch": "fedwatch",
-    "Farside": "farside_btc_etf",
-    "TradingView": "tradingview",
-}
-HIGH_IMPACT_CLAIMS = {"main_account_thesis", "maker_thesis"}
-REQUIRED_CLAIM_TYPES = {
-    "cannot_do",
-    "chart_interpretation",
-    "etf_confirmation",
-    "fundamental_context",
-    "fundamental_event_realization",
-    "fundamental_price_realization",
-    "liquidation_confirmation",
-    "liquidity_hunt",
-    "main_account_thesis",
-    "maker_thesis",
-    "market_regime",
-    "orderflow_interpretation",
-    "strongest_counterevidence",
-    "invalidation_path",
-}
-CLAIM_ACCOUNT_SCOPES = {
-    # Source interpretation is certified once and may be consumed by either
-    # account.  It must never depend on an account-specific conclusion.
-    "fundamental_context": {"shared"},
-    "fundamental_event_realization": {"shared"},
-    "fundamental_price_realization": {"shared"},
-    "orderflow_interpretation": {"shared"},
-    "chart_interpretation": {"shared"},
-    "etf_confirmation": {"shared"},
-    "liquidation_confirmation": {"shared"},
-    "liquidity_hunt": {"shared"},
-    # Decision control nodes are deliberately duplicated per account.  A
-    # shared regime/counter/invalidation would silently couple the two loops.
-    "market_regime": {"main", "maker"},
-    "strongest_counterevidence": {"main", "maker"},
-    "invalidation_path": {"main", "maker"},
-    "main_account_thesis": {"main"},
-    "maker_thesis": {"maker"},
-    # Constitution: cannot-do is the Maker intraday closure, never a main-
-    # account control surface.
-    "cannot_do": {"maker"},
-}
-ACCOUNT_LOOP_CLAIM_TYPES = {
-    "market_regime",
-    "strongest_counterevidence",
-    "invalidation_path",
-}
 ALLOWED_CLAIM_TYPES = set(REQUIRED_CLAIM_TYPES)
-TRIGGER_CONTROL_CLAIM_TYPES = {"strongest_counterevidence", "invalidation_path"}
-TRIGGER_EFFECT_BY_CLAIM_TYPE = {
-    "strongest_counterevidence": "counter",
-    "invalidation_path": "invalidate",
-}
-TRIGGER_OBSERVATION_FIELDS = {
-    "TradingView": {
-        "timeframes.1d.structure": {"bullish", "bearish", "range"},
-        "timeframes.4h.structure": {"bullish", "bearish", "range"},
-        "timeframes.1h.structure": {"bullish", "bearish", "range"},
-        "timeframes.15m.structure": {"bullish", "bearish", "range"},
-    },
-    "Farside": {
-        "flow_direction": {"inflow", "outflow", "flat"},
-    },
-    "Coinglass": {
-        "final_direction": {"bullish", "bearish", "neutral", "mixed"},
-        "pivot.anchor_reset": {True, False},
-    },
-    "Exocharts": {
-        "cross_check_result": {"confirm", "weaken", "contradict"},
-    },
-}
-TRIGGER_CLAIM_FIELDS = {
-    "fundamental_price_realization": {
-        "realization_state": {
-            "realized",
-            "partially_realized",
-            "not_realized",
-            "conflicted",
-        },
-    },
-}
-SOURCE_ROLE_CLAIM_OWNER = {
-    "fundamental_context": "BlockBeats",
-    "fundamental_price_realization": "BlockBeats",
-    "etf_confirmation": "Farside",
-    "chart_interpretation": "TradingView",
-    "liquidation_confirmation": "Coinglass",
-    "liquidity_hunt": "TradingView",
-}
-REQUIRED_SCENARIO_TYPES = {"base", "counter", "invalidation"}
-CANNOT_DO_CODES = {"做多", "追多", "做空", "追空", "追多空"}
-CONTINUITY_ACTIONS = {
-    "new",
-    "keep",
-    "cancel_replace",
-    "cancel",
-    "observe",
-    "reconcile_filled",
-}
-CONTINUITY_PRIOR_STATUSES = {
-    "none",
-    "pending",
-    "open",
-    "filled",
-    "cancelled",
-    "stopped",
-    "expired",
-}
-REQUIRED_REPORT_SECTIONS = {
-    "opening_quote",
-    "cannot_do",
-    "fundamentals",
-    "orderflow_label",
-    "orderflow_text",
-    "interpretation",
-    "chart_label",
-    "daily_line",
-    "hourly_line",
-    "trend_confirmation",
-    "support_resistance",
-    "strategy",
-    "maker_strategy",
-    "maker_tp",
-    "maker_sl",
-    "defense_first",
-    "defense_second",
-    "defense_note",
-    "defense_cancel",
-    "independent_boundary",
-}
-TRACEABLE_REPORT_SECTIONS = REQUIRED_REPORT_SECTIONS - {
-    "opening_quote",
-    "orderflow_label",
-    "chart_label",
-}
-NON_ACTION_REPORT_SECTIONS = {
-    "opening_quote",
-    "fundamentals",
-    "orderflow_label",
-    "orderflow_text",
-    "chart_label",
-    "daily_line",
-    "hourly_line",
-    "support_resistance",
-}
-SECTION_REQUIRED_CLAIM_TYPES = {
-    "cannot_do": {"cannot_do"},
-    "fundamentals": {"main_account_thesis"},
-    "orderflow_text": {"maker_thesis"},
-    "interpretation": {"maker_thesis", "strongest_counterevidence"},
-    "daily_line": {"main_account_thesis"},
-    "hourly_line": {"liquidity_hunt"},
-    "trend_confirmation": {"main_account_thesis", "maker_thesis"},
-    "support_resistance": {"liquidity_hunt", "invalidation_path"},
-    "strategy": {"main_account_thesis"},
-    "maker_strategy": {"maker_thesis"},
-    "maker_tp": {"maker_thesis"},
-    "maker_sl": {"invalidation_path"},
-    "defense_first": {"invalidation_path"},
-    "defense_second": {"maker_thesis"},
-    "defense_note": {"maker_thesis"},
-    "defense_cancel": {"invalidation_path"},
-    "independent_boundary": {"main_account_thesis", "maker_thesis"},
-    "defense_core": {"maker_thesis", "invalidation_path"},
-}
+TRACEABLE_REPORT_SECTIONS = (
+    REQUIRED_REPORT_SECTIONS - NON_TRACEABLE_REPORT_SECTIONS
+)
 TOOL_WRAPPER_RE = re.compile(
     r"(?im)^\s*(?:Exit code:|Wall time:|Output:|Script running with cell ID|Warning: truncated output)"
 )
@@ -1971,102 +1788,11 @@ def _trigger_logic_policy(root: Path | None) -> dict[str, Any]:
     trigger = ((policy.get("gold_methodology") or {}).get("account_trigger_logic"))
     if not isinstance(trigger, dict):
         raise ValueError("account_trigger_logic policy must be an object")
-    required = {
-        "schema_version",
-        "claim_effects",
-        "allowed_modes",
-        "invalidation_mode",
-        "minimum_clause_count",
-        "allowed_operators",
-        "observation_fields",
-        "claim_fields",
-        "account_source_requirements",
-        "opposite_state_required",
-        "non_directional_subject_directions",
-        "non_directional_future_direction_fields",
-        "future_direction_value_map",
-        "relative_direction_observation_fields",
-        "future_trigger_current_truth_quantifier_by_mode",
-        "non_directional_future_requires_one_coherent_alternative_direction",
-        "non_directional_counter_future_must_match_current_counter_direction",
-        "any_clause_requires_independent_counter_polarity",
-        "all_directional_clauses_must_match_counter_polarity",
-        "one_of_direction_targets_must_have_single_polarity",
-        "exocharts_confirm_counter_policy",
-        "scenario_control_binding",
-        "compiler_may_infer_missing_conditions",
-    }
-    if set(trigger) != required:
+    expected = account_trigger_logic_projection()
+    if set(trigger) != set(expected):
         raise ValueError("account_trigger_logic policy has an invalid field set")
-    if trigger.get("schema_version") != "account-trigger-logic-v5":
-        raise ValueError("account_trigger_logic policy version is unsupported")
-    if trigger.get("claim_effects") != TRIGGER_EFFECT_BY_CLAIM_TYPE:
-        raise ValueError("account_trigger_logic claim effects are invalid")
-    if trigger.get("compiler_may_infer_missing_conditions") is not False:
-        raise ValueError("compiler may not infer missing counter/invalidation conditions")
-    if trigger.get("exocharts_confirm_counter_policy") != (
-        "confirm_is_valid_only_in_all_mode_with_one_canonical_coinglass_final_direction_reference"
-    ):
-        raise ValueError("Exocharts confirm counter polarity policy is invalid")
-    if trigger.get("opposite_state_required") is not True:
-        raise ValueError("account trigger logic must require the typed opposite state")
-    if trigger.get("non_directional_subject_directions") != ["neutral", "observe"]:
-        raise ValueError("account trigger logic non-directional subjects are invalid")
-    if trigger.get("non_directional_future_requires_one_coherent_alternative_direction") is not True:
-        raise ValueError("non-directional future triggers must require one coherent direction")
-    if trigger.get("non_directional_counter_future_must_match_current_counter_direction") is not True:
-        raise ValueError("non-directional counter triggers must preserve their current counter direction")
-    if trigger.get("any_clause_requires_independent_counter_polarity") is not True:
-        raise ValueError("any trigger clauses must be independently sufficient typed counters")
-    if trigger.get("all_directional_clauses_must_match_counter_polarity") is not True:
-        raise ValueError("all trigger directional clauses must preserve one counter polarity")
-    if trigger.get("one_of_direction_targets_must_have_single_polarity") is not True:
-        raise ValueError("one-of future direction targets must have one polarity")
-    if trigger.get("future_trigger_current_truth_quantifier_by_mode") != {
-        "all": "all",
-        "any": "any",
-    }:
-        raise ValueError("future trigger current truth quantifiers are invalid")
-    expected_relative = {
-        "Exocharts": {
-            "cross_check_result": {
-                "reference_source": "Coinglass",
-                "reference_field": "final_direction",
-                "reference_operator_policy": {
-                    "target_equals_current": "equals_at_trigger",
-                    "target_differs_from_current": "becomes",
-                },
-                "relative_operator": "equals_at_trigger",
-                "relation_map": {
-                    "confirm": "same_as_reference",
-                    "contradict": "opposite_of_reference",
-                    "weaken": "neutral",
-                },
-            }
-        }
-    }
-    if trigger.get("relative_direction_observation_fields") != expected_relative:
-        raise ValueError("relative future-direction policy is invalid")
-    expected_scenario_binding = {
-        "schema_version": "scenario-control-binding-v2",
-        "ownership_contract_schema_version": "scenario-ownership-v1",
-        "compiler_condition_source_by_type": {
-            "base": "bound_owner_claim.typed_state",
-            "counter": "bound_owner_claim.trigger_logic",
-            "invalidation": "bound_owner_claim.trigger_logic",
-        },
-        "compiler_transition_source": "scenario_ownership.transition_code_by_type",
-        "methodology_trigger_claim_ids_source": (
-            "bound_owner_claim.direct_support_claim_ids"
-        ),
-        "methodology_trigger_order": "owner_support_order_first_occurrence",
-        "methodology_trigger_observation_ids_excluded": True,
-        "methodology_trigger_owner_self_reference_allowed": False,
-        "producer_free_prose_allowed": False,
-        "execution_lifecycle_owner": "decision_and_continuity",
-    }
-    if trigger.get("scenario_control_binding") != expected_scenario_binding:
-        raise ValueError("scenario control binding policy is invalid")
+    if trigger != expected:
+        raise ValueError("account_trigger_logic differs from the domain registry")
     return trigger
 
 
@@ -2078,12 +1804,11 @@ def _current_basis_policy(root: Path | None) -> dict[str, Any]:
     )
     if not isinstance(current_basis, dict):
         raise ValueError("account_current_basis policy must be an object")
-    if set(current_basis) != ACCOUNT_CURRENT_BASIS_POLICY_FIELDS:
+    expected = account_current_basis_projection()
+    if set(current_basis) != set(expected):
         raise ValueError("account_current_basis policy has an invalid field set")
-    if current_basis.get("schema_version") != "account-current-basis-v2":
-        raise ValueError("account_current_basis policy version is unsupported")
-    if current_basis.get("compiler_may_infer_missing_current_basis") is not False:
-        raise ValueError("compiler may not infer missing current counter basis")
+    if current_basis != expected:
+        raise ValueError("account_current_basis differs from the domain registry")
     return current_basis
 
 

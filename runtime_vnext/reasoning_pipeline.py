@@ -12,18 +12,16 @@ import json
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from .domain_ir.registry import (
+    PIPELINE_ACCOUNT_CONTROL_CLAIM_TYPES,
+    PIPELINE_ACCOUNT_STRATEGY_OWNER,
+    PIPELINE_SCHEMA_VERSION,
+    PIPELINE_SHARED_CLAIM_OWNER,
+    PIPELINE_SOURCE_UNIT_BY_NAME,
+    PIPELINE_UNIT_FIELDS,
+    PIPELINE_UNIT_ROWS,
+)
 
-PIPELINE_SCHEMA_VERSION = "reasoning-pipeline-certification-v2"
-PIPELINE_UNIT_FIELDS = {
-    "unit_id",
-    "sequence",
-    "unit_type",
-    "account_scope",
-    "source_scope",
-    "depends_on_unit_ids",
-    "input_node_ids",
-    "output_node_ids",
-}
 
 
 @dataclass(frozen=True)
@@ -41,34 +39,10 @@ class PipelineIssue:
     path: str
 
 
-UNIT_SPECS: tuple[UnitSpec, ...] = (
-    UnitSpec("source.blockbeats", 1, "source_analysis", "shared"),
-    UnitSpec("source.fedwatch", 2, "source_analysis", "shared"),
-    UnitSpec("source.farside", 3, "source_analysis", "shared"),
-    UnitSpec("source.coinglass", 4, "source_analysis", "shared"),
-    UnitSpec("source.exocharts", 5, "source_analysis", "shared"),
-    UnitSpec("source.tradingview", 6, "source_analysis", "shared"),
-    UnitSpec("join.fundamental_context", 7, "cross_source_join", "shared"),
-    UnitSpec("join.orderflow_footprint", 8, "cross_source_join", "shared"),
-    UnitSpec("join.chart_trend", 9, "cross_source_join", "shared"),
-    UnitSpec("join.etf_relation", 10, "cross_source_join", "shared"),
-    UnitSpec("join.intraday_location", 11, "cross_source_join", "shared"),
-    UnitSpec("join.fundamental_realization", 12, "cross_source_join", "shared"),
-    UnitSpec("main.controls", 13, "account_control", "main"),
-    UnitSpec("main.strategy", 14, "account_strategy", "main"),
-    UnitSpec("maker.controls", 15, "account_control", "maker"),
-    UnitSpec("maker.thesis_score_basis", 16, "account_strategy", "maker"),
-    UnitSpec("maker.cannot_do_closure", 17, "closure", "maker"),
+UNIT_SPECS: tuple[UnitSpec, ...] = tuple(
+    UnitSpec(*row) for row in PIPELINE_UNIT_ROWS
 )
-
-SOURCE_UNIT_BY_NAME = {
-    "BlockBeats": "source.blockbeats",
-    "FedWatch": "source.fedwatch",
-    "Farside": "source.farside",
-    "Coinglass": "source.coinglass",
-    "Exocharts": "source.exocharts",
-    "TradingView": "source.tradingview",
-}
+SOURCE_UNIT_BY_NAME = dict(PIPELINE_SOURCE_UNIT_BY_NAME)
 SPEC_BY_ID = {item.unit_id: item for item in UNIT_SPECS}
 SEQUENCE_BY_ID = {item.unit_id: item.sequence for item in UNIT_SPECS}
 
@@ -124,27 +98,15 @@ def _expected_owner(node: dict[str, Any]) -> str | None:
     if group == "observations":
         return SOURCE_UNIT_BY_NAME.get(str(node.get("source") or ""))
     if group == "scenario_tree":
-        return {
-            "main": "main.strategy",
-            "maker": "maker.thesis_score_basis",
-        }.get(str(node.get("account") or ""))
+        return PIPELINE_ACCOUNT_STRATEGY_OWNER.get(str(node.get("account") or ""))
     if group != "claims":
         return None
     claim_type = str(node.get("claim_type") or "")
     account = str(node.get("account") or "")
-    if claim_type == "fundamental_context":
-        return "join.fundamental_context"
-    if claim_type == "orderflow_interpretation":
-        return "join.orderflow_footprint"
-    if claim_type == "chart_interpretation":
-        return "join.chart_trend"
-    if claim_type == "etf_confirmation":
-        return "join.etf_relation"
-    if claim_type in {"liquidation_confirmation", "liquidity_hunt"}:
-        return "join.intraday_location"
-    if claim_type in {"fundamental_event_realization", "fundamental_price_realization"}:
-        return "join.fundamental_realization"
-    if claim_type in {"market_regime", "strongest_counterevidence", "invalidation_path"}:
+    shared_owner = PIPELINE_SHARED_CLAIM_OWNER.get(claim_type)
+    if shared_owner is not None:
+        return shared_owner
+    if claim_type in PIPELINE_ACCOUNT_CONTROL_CLAIM_TYPES:
         return f"{account}.controls" if account in {"main", "maker"} else None
     if claim_type == "main_account_thesis" and account == "main":
         return "main.strategy"

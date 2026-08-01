@@ -15,6 +15,11 @@ from typing import Any
 from outputs.daily_payload_builder import parse_daily_text_contract
 from outputs.report_structure_gate import assert_combined_structure, expected_title
 
+from .domain_ir.registry import (
+    EXECUTION_AUTHORIZATION_FIELDS,
+    REGISTRY,
+    SHADOW_CONTINUITY_FIELDS,
+)
 from .gates import (
     REQUIRED_SOURCES,
     decision_model_sha256,
@@ -41,26 +46,10 @@ DIRECTION_CN = {
     "blocked": "门禁阻断",
 }
 
-REPORT_MODEL_SCHEMA_VERSION = "canonical-report-model-v11"
+REPORT_MODEL_SCHEMA_VERSION = REGISTRY.report_model_schema_version
 ORDERFLOW_SCORE_MAX = 60
 CHART_SCORE_MAX = 30
-SHADOW_CONTINUITY_SCHEMA_VERSION = "shadow-execution-continuity-vnext-v1"
-SHADOW_CONTINUITY_FIELDS = {
-    "schema_version",
-    "reasoning_sha256",
-    "run_sha256",
-    "live_state_read",
-    "order_mutation_attempted",
-    "execution_action",
-    "plan_valid_until",
-    "reason_code",
-}
-EXECUTION_AUTHORIZATION_FIELDS = {
-    "source_kind",
-    "source_sha256",
-    "live_execution_allowed",
-    "reason_code",
-}
+SHADOW_CONTINUITY_SCHEMA_VERSION = REGISTRY.shadow_continuity_schema_version
 
 AUDIT_DIRECTION_CN = {
     "long": "偏多",
@@ -578,7 +567,7 @@ SCENARIO_DETAIL_MARKERS = (
 
 PRESENTATION_CONTRACT_PATH = "governance/vnext_report_presentation_contract.json"
 PRESENTATION_CONTRACT_SCHEMA_VERSION = "vnext-report-presentation-contract-v11"
-TIMEFRAME_DISPLAY_SCHEMA_VERSION = "timeframe-display-v1"
+TIMEFRAME_DISPLAY_SCHEMA_VERSION = REGISTRY.timeframe_display_schema_version
 TIMEFRAME_DISPLAY_CODES = frozenset({"1d", "4h", "1h", "15m", "3d", "48h", "24h"})
 TRADINGVIEW_TIMEFRAME_CODES = ("1d", "4h", "1h", "15m")
 
@@ -2089,7 +2078,8 @@ def _scenario_audit(
 
     projection = _scenario_projection_policy(presentation_contract)
     if (
-        scenario_ownership.get("schema_version") != "scenario-ownership-v1"
+        scenario_ownership.get("schema_version")
+        != REGISTRY.scenario_ownership_schema_version
         or scenario_ownership.get("producer_free_prose_allowed") is not False
         or scenario_ownership.get("execution_lifecycle_owner")
         != "decision_and_continuity"
@@ -2234,8 +2224,10 @@ def _scenario_projection_policy(
     if (
         not isinstance(projection, dict)
         or set(projection) != expected_fields
-        or projection.get("schema_version") != "scenario-projection-v1"
-        or projection.get("ownership_schema_version") != "scenario-ownership-v1"
+        or projection.get("schema_version")
+        != REGISTRY.scenario_projection_schema_version
+        or projection.get("ownership_schema_version")
+        != REGISTRY.scenario_ownership_schema_version
         or projection.get("producer_free_prose_projectable") is not False
         or projection.get("condition_owner_by_type")
         != {
@@ -4989,7 +4981,8 @@ def load_presentation_contract(root: Path) -> dict[str, Any]:
         != APPENDIX_SEMANTIC_OWNERSHIP
         or payload.get("human_visible_enum_domains")
         != VISIBLE_ENUM_CN_BY_DOMAIN
-        or maker_semantics.get("schema_version") != "maker-semantic-state-v1"
+        or maker_semantics.get("schema_version")
+        != REGISTRY.maker_semantic_state_schema_version
         or maker_semantics.get("candidate_submission_owner")
         != "maker.risk_plan_nonempty"
         or set(maker_semantics.get("exclusive_states") or [])
@@ -5156,42 +5149,18 @@ def build_canonical_report_model(
     report_contract_sha256: str,
     root: Path,
 ) -> dict[str, Any]:
-    expected_reasoning_fields = {
-        "schema_version",
-        "trading_date",
-        "slot",
-        "evidence_snapshot_sha256",
-        "reasoning_authority_sha256",
-        "observations",
-        "claims",
-        "methodology",
-        "scenario_tree",
-        "pipeline_units",
-    }
+    expected_reasoning_fields = set(REGISTRY.reasoning_model_field_order)
     if (
-        reasoning.get("schema_version") != "reasoning-model-v5"
+        reasoning.get("schema_version") != REGISTRY.reasoning_model_schema_version
         or set(reasoning) - {"reasoning_sha256"} != expected_reasoning_fields
     ):
         raise ValueError(
             "vNext report compiler only accepts the exact reasoning-model-v5 "
             "typed field set"
         )
-    expected_decision_fields = {
-        "schema_version",
-        "run_id",
-        "run_sha256",
-        "run_mode",
-        "trading_date",
-        "slot",
-        "evidence_snapshot_sha256",
-        "reasoning_sha256",
-        "execution_authorization",
-        "main_account",
-        "maker",
-        "continuity_contract",
-    }
+    expected_decision_fields = set(REGISTRY.decision_model_field_order)
     if (
-        decision.get("schema_version") != "decision-model-v7"
+        decision.get("schema_version") != REGISTRY.decision_model_schema_version
         or set(decision) - {"decision_sha256"} != expected_decision_fields
     ):
         raise ValueError(
@@ -5645,6 +5614,14 @@ def build_canonical_report_model(
             "maker_invalidation_trigger": account_controls["maker"]["invalidation"]["condition"],
         },
     }
+    report_fields = tuple(
+        field
+        for field in REGISTRY.report_model_field_order
+        if field != "model_sha256"
+    )
+    if set(model) != set(report_fields):
+        raise RuntimeError("report builder fields differ from the domain registry")
+    model = {field: model[field] for field in report_fields}
     model["model_sha256"] = canonical_report_model_sha256(model)
     return model
 
