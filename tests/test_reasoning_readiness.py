@@ -373,6 +373,21 @@ class ReasoningReadinessTests(unittest.TestCase):
                             "residual_risk": "市场路径和视觉转录仍有不确定性。",
                         }
                         for index, check_type in enumerate(check_types)
+                    ]
+                    + [
+                        {
+                            "id": f"check.claim.{index}",
+                            "check_type": "claim_support",
+                            "status": "pass",
+                            "node_ids": [claim_id],
+                            "challenge": "逐项重查该高影响结论的当前支持、反证与失效闭环。",
+                            "resolution": "该结论的类型化支持和当前反证均已独立核对。",
+                            "residual_risk": "市场后续路径和视觉转录仍有不确定性。",
+                        }
+                        for index, claim_id in enumerate(
+                            high_impact[len(check_types) :],
+                            start=len(check_types),
+                        )
                     ],
                     "conclusion": "隔离第二遍检查通过，但不宣称能够消除市场不确定性。",
                 },

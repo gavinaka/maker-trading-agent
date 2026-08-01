@@ -187,6 +187,22 @@ def scan_source_snapshot(inbox: Path) -> dict[str, dict]:
                         invalid_reasons.append(
                             "farside_btc_etf.json latest.date must be present"
                         )
+                    funds = latest.get("funds")
+                    published_fund_values = (
+                        [
+                            value
+                            for value in funds.values()
+                            if isinstance(value, (int, float))
+                            and not isinstance(value, bool)
+                        ]
+                        if isinstance(funds, dict)
+                        else []
+                    )
+                    if not published_fund_values:
+                        valid = False
+                        invalid_reasons.append(
+                            "farside_btc_etf.json latest row must contain at least one published fund value"
+                        )
                 rows = payload.get("rows")
                 if not isinstance(rows, list) or not rows:
                     valid = False
@@ -200,6 +216,7 @@ def scan_source_snapshot(inbox: Path) -> dict[str, dict]:
                     "has_total_column",
                     "latest_daily_row",
                     "latest_total_is_number",
+                    "latest_row_complete",
                 ]
                 if not isinstance(validity, dict):
                     valid = False

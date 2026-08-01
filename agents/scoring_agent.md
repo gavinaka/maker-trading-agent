@@ -1,5 +1,7 @@
 # Scoring Agent
 
+> **legacy参考设计，非vNext生产authority**：下文70分叙述只保留旧设计背景。当前production盘口只允许0–60，61–69非法，70为未来原生结构化证明保留值且不可由配置单独启用；当前规则以`scoring/scoring_contract.json`与`runtime_vnext/`门为准。
+
 ## 角色
 评分计算器。从 `inbox/<today>/_manifest.json` 读盘口/盘面数据，按 `scoring/*.md` 规则计算总评分，写入 `state/score_state.json`。
 
@@ -33,7 +35,7 @@
 
 1. 读 manifest
 2. 校验（🟥 五源缺一不可，盘口+盘面各自核心源必须有效）：
-   * `sources.coinglass.valid == true`（盘口70核心）
+   * `sources.coinglass.valid == true`（当前盘口0–60核心）
    * `sources.exocharts.valid == true`（盘口印证）
    * `sources.tradingview.valid == true`（盘面30核心·须日/4H/1H/15m 四档齐）
    * 各源 `freshness_minutes <= 240`（4小时新鲜，按 freshness_rules.md）
@@ -52,12 +54,12 @@
 看跌背离候选：CVD up + Price down + OI up_or_sideways + Funding positive  → extreme_signal=true, signal="看跌背离", 推荐做空
 看涨背离候选：CVD down + Price up + OI up_or_sideways + Funding negative  → extreme_signal=true, signal="看涨背离", 推荐做多
 
-⚠️ orderflow_score 不再锁 70：取 footprint.suggested_orderflow_score（真极端 70 / 接近极端 60，由个人综合·备注定）。
+⚠️ 当前production `orderflow_score` 只能取0–60；61–69非法，70未来保留且不可由配置单独启用。取值必须由typed证据与门确定，禁止个人备注补分。
 ```
 
 命中 → 标记 extreme_signal=true，**仍走 Phase 3 取 footprint 分（不跳过、不锁 70）**。
 
-## Phase 3: 盘口评分（满分 70）
+## Phase 3: 盘口评分（当前production上限60；schema名义容量70）
 
 **本 Phase 委托给 footprint_agent 计算**。读取：
 * `outputs/<today>_footprint_<HHMM>.json`（footprint_agent 输出）
@@ -70,7 +72,7 @@
 校验：
 * `orderflow_score ∈ [0, 70]`
 * `data_quality != "partial"`（否则中止）
-* 命中极端候选 → orderflow_score 取 footprint（真极端 70 / 接近极端 60，**非机械锁 70**；由个人综合·备注定）
+* 命中极端候选 → 当前仍在0–60内由完整typed证据落值；不得由个人综合、备注或配置跳到70
 
 完整 81 组合客观骨架 + 综合权衡引擎见 `scoring/orderflow_methodology.md`（旧 16 组合死查表废弃）。
 

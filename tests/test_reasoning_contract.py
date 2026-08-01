@@ -11,13 +11,50 @@ from runtime.reasoning_contract import (
     build_reasoning_contract,
     validate_reasoning_contract_file,
 )
+from runtime.golden_methodology import derive_etf_price_relation
 
 
 def _hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+EVENT_HASHES = [
+    hashlib.sha256(f"certified-blockbeats-event-{index}".encode("utf-8")).hexdigest()
+    for index in range(1, 4)
+]
+
+
 class ReasoningContractTests(unittest.TestCase):
+    def test_etf_relation_uses_complete_machine_readable_truth_table(self):
+        policy = json.loads(
+            (Path(__file__).resolve().parents[1] / "scoring" / "scoring_contract.json").read_text(
+                encoding="utf-8"
+            )
+        )["gold_methodology"]
+        expected = {
+            ("up", "inflow"): "confirm",
+            ("up", "outflow"): "weaken",
+            ("up", "flat"): "neutral",
+            ("down", "inflow"): "weaken",
+            ("down", "outflow"): "confirm",
+            ("down", "flat"): "neutral",
+            ("flat", "inflow"): "neutral",
+            ("flat", "outflow"): "neutral",
+            ("flat", "flat"): "neutral",
+        }
+        self.assertEqual(
+            {
+                pair: derive_etf_price_relation(pair[0], pair[1], policy)
+                for pair in expected
+            },
+            expected,
+        )
+
+        malformed = copy.deepcopy(policy)
+        del malformed["etf_price_relation_truth_table"]["flat"]["outflow"]
+        with self.assertRaisesRegex(ValueError, "rows must define"):
+            derive_etf_price_relation("flat", "outflow", malformed)
+
     def seed(self, root: Path) -> tuple[Path, dict]:
         scoring = root / "scoring"
         scoring.mkdir(parents=True)
@@ -60,7 +97,7 @@ class ReasoningContractTests(unittest.TestCase):
             encoding="utf-8",
         )
         observations = [
-            self.obs("obs.blockbeats", "blockbeats", "structured_observation", "blockbeats.json", {"tier": 2, "event_window_hours": 12, "selected_event_count": 3}),
+            self.obs("obs.blockbeats", "blockbeats", "structured_observation", "blockbeats.json", {"tier": 2, "event_window_hours": 12, "selected_event_count": 3, "selected_event_sha256": list(EVENT_HASHES)}),
             self.obs("obs.coinglass", "coinglass", "visual_judgment", ["coinglass.png", "liqheatmap_3d.png"], {
                 "pivot": {"timeframe": "1h", "start_price": 100, "end_price": 103, "dominant_leg": "up", "trendline_status": "intact", "anchor_reset": False},
                 "price_direction": "up", "cvd_direction": "up", "oi_direction": "up",
@@ -94,13 +131,14 @@ class ReasoningContractTests(unittest.TestCase):
             self.obs("obs.exocharts", "exocharts", "visual_judgment", "exocharts.png", {
                 "ohlc": {"open": 100, "high": 104, "low": 99, "close": 103},
                 "poc": 102, "delta": 12, "cvd": 24, "volume": 1200,
+                "cross_check_result": "confirm",
             }),
             self.obs("obs.fedwatch", "fedwatch", "visual_judgment", "fedwatch.png", {
                 "data_as_of": "2026-07-12T14:00:00-05:00", "next_fomc_date": "2026-07-29",
-                "current_probabilities": {"hold": 65, "hike": 35},
-                "change_1d": {"hold": -2, "hike": 2},
-                "change_1w": {"hold": -6, "hike": 6},
-                "change_1m": {"hold": -12, "hike": 12},
+                "current_probabilities": {"hold": 65, "hike_25bp": 35},
+                "change_1d": {"hold": -2, "hike_25bp": 2},
+                "change_1w": {"hold": -6, "hike_25bp": 6},
+                "change_1m": {"hold": -12, "hike_25bp": 12},
             }),
             self.obs("obs.farside", "farside_btc_etf", "structured_observation", "farside_btc_etf.json", {"latest_complete_date": "2026-07-10", "latest_total_usd_m": 90.4, "flow_direction": "inflow"}),
             self.obs("obs.tradingview", "tradingview", "visual_judgment", "tradingview_btc_1h.png", {
@@ -110,23 +148,133 @@ class ReasoningContractTests(unittest.TestCase):
                     "1h": {"price": 103, "sma20": 102, "structure": "bullish"},
                     "15m": {"price": 103, "sma20": 102.5, "structure": "range"},
                 },
-                "volume_profile": {"poc": 102, "value_area_position": "inside", "hvn_levels": [101, 102], "lvn_levels": [104]},
+                "volume_profile": {
+                    "source_mode": "user_drawn_manual_only",
+                    "status": "readable",
+                    "platform_indicator_state": "hidden",
+                    "platform_vrvp_used": False,
+                    "automated_values_used": False,
+                    "zones": [{
+                        "lower_bound": 101,
+                        "upper_bound": 103,
+                        "timeframe": "1h",
+                        "role": "value_area",
+                    }],
+                    "reason": "",
+                },
             }),
         ]
         claims = [
-            self.claim("claim.fundamental", "fundamental_context", ["obs.blockbeats", "obs.fedwatch", "obs.farside"]),
-            self.claim("claim.orderflow", "orderflow_interpretation", ["obs.coinglass", "obs.exocharts"]),
-            self.claim("claim.chart", "chart_interpretation", ["obs.tradingview"]),
-            self.claim("claim.counter", "strongest_counterevidence", ["claim.chart"], ["claim.orderflow"]),
-            self.claim("claim.regime", "market_regime", ["claim.orderflow", "claim.chart"], ["claim.counter"]),
-            self.claim("claim.invalidation", "invalidation_path", ["claim.counter"], ["claim.regime"]),
-            self.claim("claim.main", "main_account_thesis", ["claim.regime", "claim.fundamental"], ["claim.counter"]),
-            self.claim("claim.maker", "maker_thesis", ["claim.orderflow", "claim.chart"], ["claim.counter"]),
-            self.claim("claim.cannot", "cannot_do", ["claim.maker", "claim.invalidation"]),
+            self.claim("claim.fundamental", "fundamental_context", "shared", ["obs.blockbeats", "obs.fedwatch", "obs.farside"]),
+            self.claim("claim.orderflow", "orderflow_interpretation", "shared", ["obs.coinglass", "obs.exocharts"]),
+            self.claim("claim.chart", "chart_interpretation", "shared", ["obs.tradingview"]),
+            *[
+                self.claim(
+                    f"claim.event.{index}",
+                    "fundamental_event_realization",
+                    "shared",
+                    ["claim.fundamental", "claim.chart"],
+                    ["claim.orderflow"],
+                    realization_state=state,
+                    selected_event_sha256=event_hash,
+                )
+                for index, (event_hash, state) in enumerate(
+                    zip(
+                        EVENT_HASHES,
+                        ("partially_realized", "not_realized", "conflicted"),
+                    ),
+                    start=1,
+                )
+            ],
+            self.claim(
+                "claim.realization",
+                "fundamental_price_realization",
+                "shared",
+                [
+                    "claim.fundamental",
+                    "claim.chart",
+                    "claim.event.1",
+                    "claim.event.2",
+                    "claim.event.3",
+                ],
+                realization_state="partially_realized",
+            ),
+            self.claim(
+                "claim.etf",
+                "etf_confirmation",
+                "shared",
+                ["obs.coinglass", "obs.farside"],
+                price_relation="confirm",
+            ),
+            self.claim(
+                "claim.counter.main",
+                "strongest_counterevidence",
+                "main",
+                ["claim.chart", "claim.realization"],
+                ["claim.orderflow"],
+                current_basis=self.current_basis(
+                    self.current_clause(
+                        "observation", "obs.tradingview", "timeframes.1d.structure", "bearish"
+                    ),
+                    self.current_clause(
+                        "claim", "claim.realization", "realization_state", "partially_realized"
+                    ),
+                ),
+            ),
+            self.claim("claim.regime.main", "market_regime", "main", ["claim.fundamental", "claim.chart", "claim.orderflow", "claim.etf"], ["claim.counter.main"]),
+            self.claim(
+                "claim.invalidation.main",
+                "invalidation_path",
+                "main",
+                ["claim.counter.main", "claim.regime.main", "claim.realization"],
+                ["claim.regime.main"],
+                current_basis=self.current_basis(
+                    self.current_clause(
+                        "observation", "obs.tradingview", "timeframes.4h.structure", "bullish"
+                    ),
+                    self.current_clause(
+                        "claim", "claim.realization", "realization_state", "partially_realized"
+                    ),
+                ),
+            ),
+            self.claim(
+                "claim.counter",
+                "strongest_counterevidence",
+                "maker",
+                ["claim.chart", "claim.orderflow"],
+                ["claim.orderflow"],
+                current_basis=self.current_basis(
+                    self.current_clause(
+                        "observation", "obs.tradingview", "timeframes.1h.structure", "bullish"
+                    ),
+                    self.current_clause(
+                        "observation", "obs.exocharts", "cross_check_result", "confirm"
+                    ),
+                ),
+            ),
+            self.claim("claim.regime", "market_regime", "maker", ["claim.orderflow", "claim.chart"], ["claim.counter"]),
+            self.claim(
+                "claim.invalidation",
+                "invalidation_path",
+                "maker",
+                ["claim.counter", "claim.regime"],
+                ["claim.regime"],
+                current_basis=self.current_basis(
+                    self.current_clause(
+                        "observation", "obs.tradingview", "timeframes.15m.structure", "range"
+                    ),
+                    self.current_clause(
+                        "observation", "obs.coinglass", "pivot.anchor_reset", False
+                    ),
+                ),
+            ),
+            self.claim("claim.main", "main_account_thesis", "main", ["claim.regime.main", "claim.fundamental", "claim.etf"], ["claim.counter.main"], direction="long"),
+            self.claim("claim.maker", "maker_thesis", "maker", ["claim.regime", "claim.orderflow", "claim.chart"], ["claim.counter"], direction="long"),
+            self.claim("claim.cannot", "cannot_do", "maker", ["claim.maker", "claim.invalidation"]),
         ]
         components = {
             "chart.support_resistance": {"points": 8, "claim_ids": ["claim.chart"], "rationale": "多周期支撑阻力已由当前TradingView结构逐级核对。", "directional_use": False},
-            "chart.liquidity_hunt": {"points": 7, "claim_ids": ["claim.chart"], "rationale": "VRVP主判价值区并由清算层级做辅助印证。", "directional_use": False},
+            "chart.liquidity_hunt": {"points": 7, "claim_ids": ["claim.chart"], "rationale": "用户手绘价值区只判断位置概率，清算层级仅作辅助印证。", "directional_use": False},
             "chart.sma20_interaction": {"points": 3, "claim_ids": ["claim.chart"], "rationale": "四周期现价与SMA20关系已分别读取。", "directional_use": False},
             "chart.volume_price": {"points": 2, "claim_ids": ["claim.chart"], "rationale": "量价结构仅评价机会质量并保留周期冲突。", "directional_use": False},
             "chart.fibonacci_trendline": {"points": 1, "claim_ids": ["claim.chart"], "rationale": "趋势线与回撤工具只作结构位置评估。", "directional_use": False},
@@ -164,21 +312,35 @@ class ReasoningContractTests(unittest.TestCase):
                 "metric_kind": "plan_time_conviction",
                 "calibrated_probability": False,
                 "anchor": 64,
+                "anchor_claim_ids": [
+                    "claim.orderflow",
+                    "claim.chart",
+                    "claim.invalidation",
+                ],
+                "anchor_rationale": "盘口轴与结构位置轴均已按类型化 claim 和可达来源认证；基准锚不读取计划状态、60%门槛或开单结果。",
                 "adjustments": [
                     {
-                        "id": "adjust.counter",
+                        "reason_code": "maker_counter_current",
+                        "label": "Maker当前最强反证残余",
                         "delta": -2,
                         "claim_ids": ["claim.counter"],
                         "rationale": "最强反证仍未失效，因此下调置信度。",
                     }
                 ],
+                "counter_resolution": {
+                    "counter_claim_id": "claim.counter",
+                    "disposition": "adjusted",
+                    "adjustment_reason_code": "maker_counter_current",
+                    "residual_clause_indexes": [0, 1],
+                    "resolution_claim_ids": [],
+                },
                 "final": 62,
             },
             "methodology": self.methodology(),
             "report_projection": self.report_projection(),
             "decision": {
                 "primary_claim_id": "claim.maker",
-                "competing_claim_ids": ["claim.main", "claim.counter"],
+                "competing_claim_ids": ["claim.regime", "claim.counter"],
                 "strongest_counter_claim_id": "claim.counter",
                 "invalidation_claim_id": "claim.invalidation",
                 "residual_uncertainty": "视觉图表仍有转录误差和后续路径不确定性。",
@@ -199,10 +361,36 @@ class ReasoningContractTests(unittest.TestCase):
             "fundamental_price_realization": {
                 "fundamental_claim_id": "claim.fundamental",
                 "price_claim_id": "claim.chart",
-                "synthesis_claim_id": "claim.main",
+                "realization_claim_id": "claim.realization",
                 "realization_state": "partially_realized",
                 "historical_market_fact_used": False,
             },
+            "fundamental_event_assessments": [
+                {
+                    "selected_event_sha256": EVENT_HASHES[0],
+                    "impact_channel": "liquidity",
+                    "expected_effect": "supportive_for_risk_assets",
+                    "realization_claim_id": "claim.event.1",
+                    "counter_claim_ids": ["claim.orderflow"],
+                    "boundary_code": "no_standalone_direction_requires_cross_source_realization",
+                },
+                {
+                    "selected_event_sha256": EVENT_HASHES[1],
+                    "impact_channel": "regulation",
+                    "expected_effect": "adverse_for_risk_assets",
+                    "realization_claim_id": "claim.event.2",
+                    "counter_claim_ids": ["claim.orderflow"],
+                    "boundary_code": "no_standalone_direction_requires_cross_source_realization",
+                },
+                {
+                    "selected_event_sha256": EVENT_HASHES[2],
+                    "impact_channel": "risk_appetite",
+                    "expected_effect": "two_sided_or_conditional",
+                    "realization_claim_id": "claim.event.3",
+                    "counter_claim_ids": ["claim.orderflow"],
+                    "boundary_code": "no_standalone_direction_requires_cross_source_realization",
+                },
+            ],
             "same_pivot_orderflow": {
                 "observation_id": "obs.coinglass", "claim_id": "claim.orderflow",
                 "leg_selected": True, "pullback_anchor_checked": True,
@@ -219,19 +407,26 @@ class ReasoningContractTests(unittest.TestCase):
             "volume_profile_liquidity": {
                 "claim_id": "claim.chart",
                 "liquidation_observation_id": "obs.coinglass",
-                "vrvp_primary": True,
+                "user_drawn_profile_primary": True,
                 "liquidation_auxiliary": True,
                 "liquidation_confirmation": "confirm",
             },
             "etf_flow_relation": {
-                "observation_id": "obs.farside", "claim_id": "claim.fundamental",
+                "observation_id": "obs.farside", "claim_id": "claim.etf",
                 "price_relation": "confirm",
             },
             "account_separation": {
                 "main_priority": ["fundamentals", "chart", "orderflow"],
                 "maker_priority": ["orderflow", "chart", "fundamentals"],
                 "main_claim_id": "claim.main", "maker_claim_id": "claim.maker",
-                "conflict_resolution_claim_id": "claim.regime", "forced_consensus": False,
+                "main_regime_claim_id": "claim.regime.main",
+                "maker_regime_claim_id": "claim.regime",
+                "main_counter_claim_id": "claim.counter.main",
+                "maker_counter_claim_id": "claim.counter",
+                "main_invalidation_claim_id": "claim.invalidation.main",
+                "maker_invalidation_claim_id": "claim.invalidation",
+                "conflict_policy": "preserve_independent_outputs",
+                "forced_consensus": False,
             },
             "scenario_tree": [
                 {"kind": "base", "claim_id": "claim.maker", "trigger_claim_ids": ["claim.orderflow"], "action": "按认证计划继续等待高质量交易边缘"},
@@ -239,8 +434,8 @@ class ReasoningContractTests(unittest.TestCase):
                 {"kind": "invalidation", "claim_id": "claim.invalidation", "trigger_claim_ids": ["claim.regime"], "action": "结构确认失效后撤销计划并重新评估"},
             ],
             "cannot_do_derivation": {
-                "claim_id": "claim.cannot", "basis_claim_ids": ["claim.maker", "claim.invalidation"],
-                "filled_after_full_analysis": True,
+                "claim_id": "claim.cannot",
+                "basis_claim_ids": ["claim.maker", "claim.counter", "claim.invalidation"],
             },
         }
 
@@ -248,7 +443,7 @@ class ReasoningContractTests(unittest.TestCase):
     def report_projection():
         visible = [
             ("projection.visible.synthesis", "independent_synthesis", "opening_quote", ["claim.regime", "claim.main", "claim.counter"], "当前阶段由103附近的价格与多源证据独立合成，保留最强反证后再落主账户动作。", [("obs.coinglass", "pivot.end_price")]),
-            ("projection.visible.realization", "fundamental_price_realization", "fundamentals", ["claim.fundamental", "claim.chart", "claim.main"], "BlockBeats按12小时事件窗分层后，再与当前盘面核对，结论为利好只部分兑现而不是新闻直接决定方向。", [("obs.blockbeats", "event_window_hours")]),
+            ("projection.visible.realization", "fundamental_price_realization", "fundamentals", ["claim.fundamental", "claim.event.1", "claim.event.2", "claim.event.3", "claim.realization", "claim.chart", "claim.main"], "BlockBeats按12小时事件窗分层后，再与当前盘面核对，结论为利好只部分兑现而不是新闻直接决定方向。", [("obs.blockbeats", "event_window_hours")]),
             ("projection.visible.pivot", "same_pivot_orderflow", "interpretation", ["claim.orderflow", "claim.counter"], "同一1小时锚点从100走到103，价格、CVD、OI与资金费率在同一主腿解释，回调没有被误当新腿。", [("obs.coinglass", "pivot.start_price"), ("obs.coinglass", "pivot.end_price")]),
             ("projection.visible.multi", "multi_timeframe_transition", "daily_line", ["claim.chart"], "日线现价103相对SMA20的98仍需结合四小时、一小时和十五分钟状态转换判断。", [("obs.tradingview", "timeframes.1d.price"), ("obs.tradingview", "timeframes.1d.sma20")]),
             ("projection.visible.accounts", "account_separation", "strategy", ["claim.main", "claim.maker"], "主账户按基本面、盘面、盘口排序，Maker按盘口、盘面、基本面排序，允许两者暂时不同向。", []),
@@ -261,8 +456,8 @@ class ReasoningContractTests(unittest.TestCase):
             ("projection.appendix.pivot", "same_pivot_orderflow", ["claim.orderflow"], "盘口三问完成：主腿100到103、回调未重置锚、四维保持同一pivot。", [("obs.coinglass", "pivot.start_price"), ("obs.coinglass", "pivot.end_price")]),
             ("projection.appendix.footprint", "footprint_cross_check", ["claim.orderflow"], "足迹以POC 102、Delta 12、CVD 24和成交量1200校验盘口强弱。", [("obs.exocharts", "poc"), ("obs.exocharts", "delta"), ("obs.exocharts", "cvd"), ("obs.exocharts", "volume")]),
             ("projection.appendix.multi", "multi_timeframe_transition", ["claim.chart"], "多周期从日线103到四小时、一小时、十五分钟逐级校准，日线SMA20为98。", [("obs.tradingview", "timeframes.1d.price"), ("obs.tradingview", "timeframes.1d.sma20")]),
-            ("projection.appendix.liquidity", "volume_profile_liquidity", ["claim.chart"], "VRVP以POC 102主判，Coinglass清算图105仅作为辅助印证而不单独翻向。", [("obs.tradingview", "volume_profile.poc"), ("obs.coinglass", "liquidation_map.levels.0.price")]),
-            ("projection.appendix.etf", "etf_flow_relation", ["claim.fundamental"], "ETF最新总流量90.4与价格关系只作现货侧确认，不污染盘口评分。", [("obs.farside", "latest_total_usd_m")]),
+            ("projection.appendix.liquidity", "volume_profile_liquidity", ["claim.chart"], "用户手绘1H价值区101至103只判断位置概率，Coinglass清算图105仅作为辅助印证而不单独翻向。", [("obs.tradingview", "volume_profile.zones.0.lower_bound"), ("obs.tradingview", "volume_profile.zones.0.upper_bound"), ("obs.coinglass", "liquidation_map.levels.0.price")]),
+            ("projection.appendix.etf", "etf_flow_relation", ["claim.etf"], "ETF最新总流量90.4与价格关系只作现货侧确认，不污染盘口评分。", [("obs.farside", "latest_total_usd_m")]),
             ("projection.appendix.accounts", "account_separation", ["claim.main", "claim.maker"], "主账户与Maker分别按各自优先级形成判断，冲突时不强制压成同一方向。", []),
             ("projection.appendix.scenarios", "scenario_tree", ["claim.maker", "claim.counter", "claim.invalidation"], "基准、最强反证和硬失效三条路径都绑定具体触发与动作。", []),
             ("projection.appendix.cannot", "cannot_do_derivation", ["claim.cannot", "claim.invalidation"], "不能做只在完整推理后回填，并由拥挤侧与失效路径共同承重。", []),
@@ -295,10 +490,23 @@ class ReasoningContractTests(unittest.TestCase):
         }
 
     @staticmethod
-    def claim(item_id, claim_type, support, counter=None):
-        return {
+    def claim(
+        item_id,
+        claim_type,
+        account,
+        support,
+        counter=None,
+        *,
+        realization_state=None,
+        selected_event_sha256=None,
+        price_relation=None,
+        direction=None,
+        current_basis=None,
+    ):
+        result = {
             "id": item_id,
             "claim_type": claim_type,
+            "account": account,
             "statement": f"{claim_type} 的完整判断陈述并保留条件边界。",
             "support_ids": support,
             "counter_ids": counter or [],
@@ -306,6 +514,31 @@ class ReasoningContractTests(unittest.TestCase):
             "confidence_band": "medium",
             "invalidation": "若上游证据反向变化或关键结构被突破则失效。",
         }
+        if realization_state is not None:
+            result["realization_state"] = realization_state
+        if selected_event_sha256 is not None:
+            result["selected_event_sha256"] = selected_event_sha256
+        if price_relation is not None:
+            result["price_relation"] = price_relation
+        if direction is not None:
+            result["direction"] = direction
+        if current_basis is not None:
+            result["current_basis"] = current_basis
+        return result
+
+    @staticmethod
+    def current_clause(owner_type, owner_id, field, value):
+        return {
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "field": field,
+            "operator": "equals",
+            "value": value,
+        }
+
+    @staticmethod
+    def current_basis(*clauses):
+        return {"mode": "all", "clauses": list(clauses)}
 
     @staticmethod
     def set_orderflow_score(payload, value, *, extreme=False):
@@ -320,6 +553,58 @@ class ReasoningContractTests(unittest.TestCase):
         direction,
     ):
         values = payload["observations"][1]["values"]
+        pivot = values["pivot"]
+        start_price = pivot["start_price"]
+        prior_end_price = pivot["end_price"]
+        pivot["end_price"] = (
+            start_price + 3 if price == "up" else start_price - 3 if price == "down" else start_price
+        )
+        pivot["dominant_leg"] = (
+            "up" if price == "up" else "down" if price == "down" else "range"
+        )
+        payload["methodology"]["independent_synthesis"]["dominant_leg"] = pivot[
+            "dominant_leg"
+        ]
+        farside = next(
+            item
+            for item in payload["observations"]
+            if item.get("source") == "farside_btc_etf"
+        )
+        flow_direction = farside["values"]["flow_direction"]
+        payload["methodology"]["etf_flow_relation"]["price_relation"] = (
+            "confirm"
+            if (price, flow_direction) in {("up", "inflow"), ("down", "outflow")}
+            else "weaken"
+            if (price, flow_direction) in {("up", "outflow"), ("down", "inflow")}
+            else "neutral"
+        )
+        etf_claim = next(
+            claim for claim in payload["claims"] if claim.get("id") == "claim.etf"
+        )
+        etf_claim["price_relation"] = payload["methodology"]["etf_flow_relation"][
+            "price_relation"
+        ]
+        typed_account_direction = (
+            "long" if direction == "bullish" else "short" if direction == "bearish" else "neutral"
+        )
+        next(
+            claim for claim in payload["claims"] if claim.get("id") == "claim.main"
+        )["direction"] = typed_account_direction
+        next(
+            claim for claim in payload["claims"] if claim.get("id") == "claim.maker"
+        )["direction"] = (
+            typed_account_direction if typed_account_direction in {"long", "short"} else "observe"
+        )
+        for projection in payload.get("report_projection", {}).get("items", []):
+            refs = projection.get("value_refs") or []
+            if any(
+                ref.get("observation_id") == "obs.coinglass"
+                and ref.get("path") == "pivot.end_price"
+                for ref in refs
+            ):
+                projection["text"] = projection["text"].replace(
+                    str(prior_end_price), str(pivot["end_price"])
+                )
         values.update({
             "cvd_direction": cvd,
             "price_direction": price,
@@ -363,8 +648,201 @@ class ReasoningContractTests(unittest.TestCase):
                 ),
                 contract,
             )
+            self.assertEqual(contract["schema_version"], "trading-reasoning-contract-v2")
+            self.assertEqual(
+                contract["scoring_contract"]["schema_version"],
+                "trading-scoring-contract-v4",
+            )
             self.assertEqual(contract["score"]["total"], 71)
             self.assertFalse(contract["conviction"]["calibrated_probability"])
+            self.assertEqual(
+                contract["conviction"]["anchor_rationale"],
+                "盘口轴与结构位置轴均已按类型化 claim 和可达来源认证；基准锚不读取计划状态、60%门槛或开单结果。",
+            )
+
+    def test_legacy_golden_methodology_output_order_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            contract = build_reasoning_contract(
+                payload,
+                capture_manifest_path=capture,
+                root=root,
+            )
+            methodology = contract["methodology"]
+            self.assertEqual(
+                list(methodology),
+                [
+                    "source_methodology",
+                    "source_calibration",
+                    "independent_synthesis",
+                    "fundamental_price_realization",
+                    "fundamental_event_assessments",
+                    "same_pivot_orderflow",
+                    "footprint_cross_check",
+                    "multi_timeframe_transition",
+                    "volume_profile_liquidity",
+                    "etf_flow_relation",
+                    "account_separation",
+                    "scenario_tree",
+                    "cannot_do_derivation",
+                ],
+            )
+            serialized = json.dumps(
+                methodology,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            self.assertEqual(
+                hashlib.sha256(serialized).hexdigest(),
+                "245f04bebe35c4159fd322b9ac9d9d30c2800f608362efcb86faaff5098338b9",
+            )
+
+    def test_legacy_golden_methodology_fail_fast_precedence_is_unchanged(self):
+        cases = (
+            (
+                ("realization", "footprint", "etf", "account"),
+                "methodology fundamental realization state differs from its typed owner",
+            ),
+            (
+                ("footprint", "etf", "account"),
+                "methodology footprint relationship differs from Exocharts cross_check_result",
+            ),
+            (
+                ("etf", "account"),
+                (
+                    "methodology.etf_flow_relation.price_relation must be derived "
+                    "from the certified same-pivot price direction and ETF flow direction"
+                ),
+            ),
+            (
+                ("account",),
+                "account conflict policy must preserve independently derived outputs",
+            ),
+        )
+        for faults, expected_message in cases:
+            with self.subTest(faults=faults), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                capture, payload = self.seed(root)
+                methodology = payload["methodology"]
+                if "realization" in faults:
+                    methodology["fundamental_price_realization"][
+                        "realization_state"
+                    ] = "realized"
+                if "footprint" in faults:
+                    methodology["footprint_cross_check"][
+                        "relationship"
+                    ] = "contradict"
+                if "etf" in faults:
+                    methodology["etf_flow_relation"]["price_relation"] = "weaken"
+                if "account" in faults:
+                    methodology["account_separation"][
+                        "conflict_policy"
+                    ] = "follow_main_account_claim"
+                with self.assertRaises(ValueError) as caught:
+                    build_reasoning_contract(
+                        payload,
+                        capture_manifest_path=capture,
+                        root=root,
+                    )
+                self.assertEqual(str(caught.exception), expected_message)
+
+    def test_current_basis_does_not_borrow_future_trigger_source_matrix(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            main_counter = next(
+                claim
+                for claim in payload["claims"]
+                if claim["id"] == "claim.counter.main"
+            )
+            main_counter["current_basis"]["clauses"] = [
+                main_counter["current_basis"]["clauses"][0]
+            ]
+            contract = build_reasoning_contract(
+                payload,
+                capture_manifest_path=capture,
+                root=root,
+            )
+            normalized = next(
+                claim
+                for claim in contract["claims"]
+                if claim["id"] == "claim.counter.main"
+            )
+            self.assertEqual(len(normalized["current_basis"]["clauses"]), 1)
+
+    def test_legacy_current_basis_policy_rejects_unknown_fields(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            policy_path = root / "scoring" / "scoring_contract.json"
+            policy = json.loads(policy_path.read_text(encoding="utf-8"))
+            policy["gold_methodology"]["account_current_basis"][
+                "claim_source_requirements"
+            ] = {}
+            policy_path.write_text(
+                json.dumps(policy, ensure_ascii=False), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                ValueError, "account_current_basis policy has an invalid field set"
+            ):
+                build_reasoning_contract(
+                    payload,
+                    capture_manifest_path=capture,
+                    root=root,
+                )
+
+    def test_legacy_reasoning_v2_rejects_stale_v3_scoring_policy(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            policy_path = root / "scoring" / "scoring_contract.json"
+            policy = json.loads(policy_path.read_text(encoding="utf-8"))
+            policy["schema_version"] = "trading-scoring-contract-v3"
+            policy_path.write_text(
+                json.dumps(policy, ensure_ascii=False), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(
+                ValueError, "legacy reasoning v2 requires trading-scoring-contract-v4"
+            ):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
+    def test_conviction_canonicalizes_anchor_text_and_keeps_counter_adjustment_first(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["conviction"]["anchor_rationale"] = (
+                "机构现货持续买入且鲸鱼托底，因此采用更高基准锚。"
+            )
+            payload["conviction"]["adjustments"].append(
+                {
+                    "reason_code": "etf_confirm",
+                    "label": "ETF现货确认",
+                    "delta": 1,
+                    "claim_ids": ["claim.etf"],
+                    "rationale": "ETF只确认当前价格关系，不承担单变量翻向。",
+                }
+            )
+            payload["conviction"]["final"] = 63
+            contract = build_reasoning_contract(
+                payload, capture_manifest_path=capture, root=root
+            )
+            self.assertNotIn(
+                "机构",
+                contract["conviction"]["anchor_rationale"],
+            )
+            self.assertEqual(
+                contract["conviction"]["adjustments"][0]["reason_code"],
+                "maker_counter_current",
+            )
+
+            payload["conviction"]["adjustments"].reverse()
+            with self.assertRaisesRegex(ValueError, "counter adjustment must be first"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
 
     def test_visual_judgment_requires_alternative_interpretation(self):
         with tempfile.TemporaryDirectory() as td:
@@ -395,7 +873,11 @@ class ReasoningContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             capture, payload = self.seed(root)
-            payload["claims"][1]["support_ids"].append("obs.blockbeats")
+            next(
+                claim
+                for claim in payload["claims"]
+                if claim.get("id") == "claim.orderflow"
+            )["support_ids"].append("obs.blockbeats")
             with self.assertRaisesRegex(
                 ValueError, r"source-role violation|Coinglass\+Exocharts-only"
             ):
@@ -415,7 +897,11 @@ class ReasoningContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             capture, payload = self.seed(root)
-            payload["claims"][0]["support_ids"] = ["claim.maker"]
+            next(
+                claim
+                for claim in payload["claims"]
+                if claim.get("id") == "claim.fundamental"
+            )["support_ids"] = ["claim.maker"]
             with self.assertRaisesRegex(ValueError, "forward support"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
@@ -476,11 +962,24 @@ class ReasoningContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "main account priority"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
+    def test_account_conflict_policy_cannot_delegate_to_an_arbitrary_claim(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            account = payload["methodology"]["account_separation"]
+            account["conflict_policy"] = "follow_main_account_claim"
+            with self.assertRaisesRegex(ValueError, "preserve independently derived outputs"):
+                build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
+
     def test_load_bearing_claim_requires_two_independent_sources(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             capture, payload = self.seed(root)
-            payload["claims"][7]["support_ids"] = ["claim.chart"]
+            next(
+                claim
+                for claim in payload["claims"]
+                if claim.get("id") == "claim.maker"
+            )["support_ids"] = ["claim.chart"]
             with self.assertRaisesRegex(ValueError, "independent sources"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
@@ -518,7 +1017,7 @@ class ReasoningContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must be C03"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
-    def test_true_extreme_candidates_are_the_only_combinations_allowed_at_seventy(self):
+    def test_true_extreme_candidates_remain_capped_at_sixty_until_native_proof_exists(self):
         cases = (
             ("C19", "up", "down", "up", "positive", "higher_high", "not_confirmed", "bearish", "new_short_expansion", "bearish"),
             ("C22", "up", "down", "flat", "positive", "higher_high", "not_confirmed", "bearish", "mixed", "bearish"),
@@ -537,17 +1036,17 @@ class ReasoningContractTests(unittest.TestCase):
                     oi_price_context=case[8], direction=case[9],
                 )
                 self.set_orderflow_score(payload, 70, extreme=True)
-                contract = build_reasoning_contract(
-                    payload, capture_manifest_path=capture, root=root
-                )
-                self.assertTrue(contract["score"]["orderflow"]["extreme_candidate"])
+                with self.assertRaisesRegex(ValueError, "unavailable.*cap at 60"):
+                    build_reasoning_contract(
+                        payload, capture_manifest_path=capture, root=root
+                    )
 
     def test_non_candidate_cannot_claim_seventy_and_candidate_may_remain_sixty(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             capture, payload = self.seed(root)
             self.set_orderflow_score(payload, 70, extreme=True)
-            with self.assertRaisesRegex(ValueError, "requires one of"):
+            with self.assertRaisesRegex(ValueError, "unavailable.*cap at 60"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
         with tempfile.TemporaryDirectory() as td:
@@ -695,15 +1194,19 @@ class ReasoningContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             capture, payload = self.seed(root)
-            payload["methodology"]["volume_profile_liquidity"]["vrvp_primary"] = False
-            with self.assertRaisesRegex(ValueError, "VRVP must remain the primary"):
+            payload["methodology"]["volume_profile_liquidity"]["user_drawn_profile_primary"] = False
+            with self.assertRaisesRegex(ValueError, "user-drawn manual profile must remain the primary"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
     def test_source_cannot_directly_support_claim_outside_its_method(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             capture, payload = self.seed(root)
-            payload["claims"][2]["support_ids"] = ["obs.tradingview", "obs.exocharts"]
+            next(
+                claim
+                for claim in payload["claims"]
+                if claim.get("id") == "claim.chart"
+            )["support_ids"] = ["obs.tradingview", "obs.exocharts"]
             with self.assertRaisesRegex(ValueError, "source-role violation"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
@@ -723,6 +1226,205 @@ class ReasoningContractTests(unittest.TestCase):
                 "historical_market_fact_used"
             ] = True
             with self.assertRaisesRegex(ValueError, "current-slot facts only"):
+                build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
+
+    def test_decision_bindings_and_competing_claims_are_maker_owned(self):
+        cases = (
+            ("primary_claim_id", "claim.main", "primary_claim_id"),
+            (
+                "strongest_counter_claim_id",
+                "claim.counter.main",
+                "strongest counter",
+            ),
+            (
+                "invalidation_claim_id",
+                "claim.invalidation.main",
+                "invalidation claim",
+            ),
+            ("competing_claim_ids", ["claim.main"], "competing claim"),
+        )
+        for field, value, message in cases:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                capture, payload = self.seed(root)
+                payload["decision"][field] = value
+                with self.assertRaisesRegex(ValueError, message):
+                    build_reasoning_contract(
+                        payload, capture_manifest_path=capture, root=root
+                    )
+
+    def test_conviction_anchor_rejects_forbidden_or_missing_axes(self):
+        cases = (
+            (["claim.orderflow", "claim.chart", "claim.maker"], "forbidden"),
+            (["claim.orderflow"], "structural_position"),
+            (["claim.chart", "claim.invalidation"], "orderflow"),
+        )
+        for anchor_claim_ids, message in cases:
+            with self.subTest(anchor_claim_ids=anchor_claim_ids), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                capture, payload = self.seed(root)
+                payload["conviction"]["anchor_claim_ids"] = anchor_claim_ids
+                with self.assertRaisesRegex(ValueError, message):
+                    build_reasoning_contract(
+                        payload, capture_manifest_path=capture, root=root
+                    )
+
+    def test_counter_resolution_rejects_partial_invalid_and_fake_resolution(self):
+        cases = (
+            ([], "inconsistent"),
+            ([0], "cover current_basis"),
+            ([-1, 1], "cover current_basis"),
+            ([0, 2], "cover current_basis"),
+            ([0, 0], "inconsistent"),
+            ([True, 1], "inconsistent"),
+        )
+        for residual_indexes, message in cases:
+            with self.subTest(residual_indexes=residual_indexes), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                capture, payload = self.seed(root)
+                payload["conviction"]["counter_resolution"][
+                    "residual_clause_indexes"
+                ] = residual_indexes
+                with self.assertRaisesRegex(ValueError, message):
+                    build_reasoning_contract(
+                        payload, capture_manifest_path=capture, root=root
+                    )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["conviction"]["adjustments"] = []
+            payload["conviction"]["counter_resolution"] = {
+                "counter_claim_id": "claim.counter",
+                "disposition": "resolved_no_adjustment",
+                "adjustment_reason_code": None,
+                "residual_clause_indexes": [],
+                "resolution_claim_ids": ["claim.maker"],
+            }
+            payload["conviction"]["final"] = payload["conviction"]["anchor"]
+            with self.assertRaisesRegex(ValueError, "disposition is invalid"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
+    def test_adjustments_reject_duplicate_or_unclosed_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            duplicate = copy.deepcopy(payload["conviction"]["adjustments"][0])
+            duplicate["delta"] = -1
+            payload["conviction"]["adjustments"].append(duplicate)
+            with self.assertRaisesRegex(ValueError, "duplicates an earlier adjustment"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["conviction"]["adjustments"][0]["claim_ids"] = [
+                "claim.counter",
+                "claim.counter",
+            ]
+            with self.assertRaisesRegex(ValueError, "claim_ids must be unique"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["conviction"]["adjustments"][0]["claim_ids"] = [
+                "claim.orderflow"
+            ]
+            with self.assertRaisesRegex(ValueError, "reuse an anchor claim"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["conviction"]["adjustments"] = "not-an-array"
+            with self.assertRaisesRegex(ValueError, "must be an array"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["conviction"]["adjustments"][0].update(
+                {
+                    "reason_code": "fedwatch_event_uncertainty",
+                    "claim_ids": ["claim.fundamental"],
+                }
+            )
+            with self.assertRaisesRegex(ValueError, "outside the closed policy"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
+    def test_blockbeats_event_assessments_are_hash_indexed_and_canonicalized(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["methodology"]["fundamental_event_assessments"].reverse()
+            event_claims = [
+                claim
+                for claim in payload["claims"]
+                if claim.get("claim_type") == "fundamental_event_realization"
+            ]
+            other_claims = [
+                claim
+                for claim in payload["claims"]
+                if claim.get("claim_type") != "fundamental_event_realization"
+            ]
+            aggregate_index = next(
+                index
+                for index, claim in enumerate(other_claims)
+                if claim.get("claim_type") == "fundamental_price_realization"
+            )
+            payload["claims"] = (
+                other_claims[:aggregate_index]
+                + list(reversed(event_claims))
+                + other_claims[aggregate_index:]
+            )
+            contract = build_reasoning_contract(
+                payload, capture_manifest_path=capture, root=root
+            )
+            self.assertEqual(
+                [
+                    item["selected_event_sha256"]
+                    for item in contract["methodology"][
+                        "fundamental_event_assessments"
+                    ]
+                ],
+                EVENT_HASHES,
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            event_claim = next(
+                claim
+                for claim in payload["claims"]
+                if claim.get("claim_type") == "fundamental_event_realization"
+            )
+            event_claim["selected_event_sha256"] = EVENT_HASHES[1]
+            with self.assertRaisesRegex(ValueError, "unique per selected-event hash"):
+                build_reasoning_contract(
+                    payload, capture_manifest_path=capture, root=root
+                )
+
+    def test_fundamental_price_realization_must_bind_its_typed_owner(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            capture, payload = self.seed(root)
+            payload["methodology"]["fundamental_price_realization"][
+                "realization_claim_id"
+            ] = "claim.main"
+            with self.assertRaisesRegex(ValueError, "fundamental_price_realization"):
                 build_reasoning_contract(payload, capture_manifest_path=capture, root=root)
 
     def test_fedwatch_probability_distribution_must_balance(self):

@@ -8,7 +8,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from runtime.host_capability import validate_manifest as validate_host_capability_manifest
+from runtime.host_capability import (
+    effort_at_least,
+    validate_manifest as validate_host_capability_manifest,
+)
 from runtime.reasoning_readiness import validate_reasoning_readiness_manifest
 from runtime.state_store import atomic_json_write
 
@@ -101,7 +104,7 @@ def write_reasoning_lock(
     host = validate_host_capability_manifest(
         host_path, trading_date, slot, root=root
     )
-    if host.get("reasoning_effort") not in {"high", "max"}:
+    if not effort_at_least(host.get("reasoning_effort"), "high"):
         raise ValueError("independent reasoning lock requires at least high effort")
     payload: dict[str, Any] = {
         "schema_version": "independent-reasoning-lock-v2",
@@ -138,7 +141,7 @@ def validate_reasoning_lock(
         or payload.get("slot") != slot
         or payload.get("independence_boundary") != INDEPENDENCE_BOUNDARY
         or payload.get("minimum_reasoning_effort") != "high"
-        or payload.get("actual_reasoning_effort") not in {"high", "max"}
+        or not effort_at_least(payload.get("actual_reasoning_effort"), "high")
         or payload.get("manifest_sha256") != _manifest_hash(payload)
     ):
         raise ValueError("independent reasoning lock is invalid")

@@ -1,23 +1,133 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Hash-bound Word visual QA manifest",
+  "title": "Run-local hash-bound Word visual QA manifest",
   "type": "object",
-  "required": ["schema_version", "status", "visual_qa_pass", "trading_date", "slot", "attempts", "backend", "docx_path", "docx_sha256"],
+  "required": [
+    "schema_version",
+    "status",
+    "visual_qa_pass",
+    "created_at",
+    "trading_date",
+    "slot",
+    "run_id",
+    "run_sha256",
+    "attempts",
+    "backend",
+    "report_sha256",
+    "docx",
+    "docx_sha256"
+  ],
   "properties": {
-    "schema_version": {"const": "1.0"},
+    "schema_version": {"const": "word-qa-vnext-v2"},
     "status": {"enum": ["prepared", "passed", "failed"]},
     "visual_qa_pass": {"type": "boolean"},
+    "created_at": {"type": "string"},
     "trading_date": {"type": "string"},
     "slot": {"enum": ["morning", "midday", "evening"]},
+    "run_id": {"type": "string", "minLength": 1},
+    "run_sha256": {"$ref": "#/$defs/sha256"},
     "attempts": {"type": "integer", "minimum": 1, "maximum": 2},
-    "backend": {"const": "word_com"},
-    "docx_path": {"type": "string"},
-    "docx_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "pdf_path": {"type": "string"},
-    "pdf_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "pages": {"type": "array"},
+    "cache_hit": {"type": "boolean"},
+    "backend": {"enum": ["word_com", "word_com_interactive_task"]},
+    "page_renderer": {"type": "string"},
+    "report_sha256": {"$ref": "#/$defs/sha256"},
+    "docx": {"$ref": "#/$defs/artifact"},
+    "docx_sha256": {"$ref": "#/$defs/sha256"},
+    "pdf": {"$ref": "#/$defs/artifact"},
+    "pdf_sha256": {"$ref": "#/$defs/sha256"},
+    "page_count": {"type": "integer", "minimum": 1},
+    "inspected_pages": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1},
+      "uniqueItems": true
+    },
+    "page_images": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "allOf": [
+          {"$ref": "#/$defs/artifact"},
+          {
+            "type": "object",
+            "required": ["page"],
+            "properties": {"page": {"type": "integer", "minimum": 1}}
+          }
+        ]
+      }
+    },
+    "reviewer": {"type": "string", "minLength": 1},
     "reviewed_at": {"type": "string"},
-    "failure_reason": {"type": "string"}
+    "review_checklist_version": {"const": "word-qa-semantic-review-v1"},
+    "review_checklist": {"$ref": "#/$defs/review_checklist"},
+    "failure_reason": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "passed"}}},
+      "then": {
+        "required": [
+          "pdf",
+          "pdf_sha256",
+          "page_count",
+          "inspected_pages",
+          "page_images",
+          "reviewer",
+          "reviewed_at",
+          "review_checklist_version",
+          "review_checklist"
+        ],
+        "properties": {
+          "visual_qa_pass": {"const": true},
+          "review_checklist": {
+            "allOf": [
+              {"$ref": "#/$defs/review_checklist"},
+              {"properties": {
+                "all_pages_inspected": {"const": true},
+                "no_clipping_overlap_or_missing_glyphs": {"const": true},
+                "no_orphan_semantic_headings": {"const": true},
+                "critical_price_blocks_not_split": {"const": true},
+                "six_source_sections_readable": {"const": true},
+                "arabic_price_digits_preserved": {"const": true}
+              }}
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "page": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "review_checklist": {
+      "type": "object",
+      "required": [
+        "all_pages_inspected",
+        "no_clipping_overlap_or_missing_glyphs",
+        "no_orphan_semantic_headings",
+        "critical_price_blocks_not_split",
+        "six_source_sections_readable",
+        "arabic_price_digits_preserved"
+      ],
+      "properties": {
+        "all_pages_inspected": {"type": "boolean"},
+        "no_clipping_overlap_or_missing_glyphs": {"type": "boolean"},
+        "no_orphan_semantic_headings": {"type": "boolean"},
+        "critical_price_blocks_not_split": {"type": "boolean"},
+        "six_source_sections_readable": {"type": "boolean"},
+        "arabic_price_digits_preserved": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": true
 }

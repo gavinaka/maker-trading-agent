@@ -1,6 +1,6 @@
 # Agents 索引
 
-> ⚠️ **参考设计层**：本目录的 10 个 Agent + `session_orchestrator` 自动机为**设计稿**，当前**未作为自动机运行**；每日实际运行 = `/daily-report` skill + `sessions/日报SOP.md` + 项目 `memory/` + Notion REST + `outputs/*.py`。真相源 = Notion 对应库。详见仓库 README「双层架构说明」。
+> ⚠️ **legacy参考设计层**：本目录的10个Agent+`session_orchestrator`自动机不是vNext生产authority。vNext只使用当前run密封的phase methodology、`.agents/skills/daily-report/SKILL.md`与`runtime_vnext/`确定性合同；本目录若出现旧70+30或旧状态/Notion叙述，均不得覆盖当前盘口0–60、六源与typed projection边界。
 >
 > Trading-System 内 **10 个 Agent** 的总览 + 调用关系图。
 > 所有 Agent 由 `session_orchestrator` 统一调度（agent 之间不互相直接调用）。
@@ -16,7 +16,7 @@
 | 2 | **data_collection_agent** | 六源采集，A→B→C 通道降级 | session_state + collectors SOP | inbox/_manifest.json + 截图/JSON |
 | 3 | **news_agent** | BlockBeats 12 小时候选池 + top3 校验 + sentiment | inbox/blockbeats.png + blockbeats.json | outputs/news_summary.json |
 | 4 | **footprint_agent** | 盘口 C01–C81 客观组合 + 4维综合方法论 | inbox/exocharts_*.json + coinglass_*.json | outputs/footprint_<HHMM>.json |
-| 5 | **scoring_agent** | 盘口 70 + 盘面 30 = 总评分 | footprint 输出 + chart 数据 | state/score_state.json |
+| 5 | **scoring_agent** | 当前盘口0–60 + 盘面0–30 = 总评分（70未来保留） | footprint 输出 + chart 数据 | state/score_state.json |
 | 6 | **risk_agent** | 7 Gate 守门（含 5 项门禁 + 7 项检核） | request + state/* | outputs/risk_decisions/*.json |
 | 7 | **output_agent** | 日报/计划渲染（图谱十/十一节模板） | state + manifest + footprint + news | outputs/*.md + 桌面 .txt |
 | 8 | **review_agent** | 23:00 五问复盘 + 周/月报 + check_records | outputs/* + 用户输入 | reviews/*.md + check_records.json |
@@ -73,7 +73,7 @@
                               ↓
   C01–C81 客观组合 + 综合方法论 → footprint_<HHMM>.json
                               ↓
-  盘口 70 + 盘面 30 → score_state.json (current_score)
+  当前盘口 0–60 + 盘面 0–30 → score_state.json (current_score)
                               ↓
   7 Gate precheck → risk_decisions/precheck_<HHMM>.json
                               ↓

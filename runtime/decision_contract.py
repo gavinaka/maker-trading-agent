@@ -338,8 +338,10 @@ def _normalize_plan_v3(plan: Any, score: dict[str, Any], conviction: dict[str, A
             "maker_execution": None,
         }
     entry_mode = str(plan.get("entry_mode", ""))
-    if entry_mode not in {"single", "ladder", "conditional_zone"}:
-        raise ValueError("directional plan requires single, ladder or conditional_zone")
+    if entry_mode not in {"ladder", "conditional_zone"}:
+        raise ValueError(
+            "directional Maker plan requires ladder or non-executable conditional_zone; single entry is forbidden"
+        )
     leverage = _decimal(plan.get("leverage"), "plan.leverage")
     if leverage != Decimal("5"):
         raise ValueError("Maker v3 requires fixed 5x leverage")
@@ -414,31 +416,17 @@ def _normalize_plan_v3(plan: Any, score: dict[str, Any], conviction: dict[str, A
             ),
         }
     )
-    if entry_mode == "single":
-        entry = _decimal(plan.get("entry"), "plan.entry")
-        common_input["entry"] = _plain(entry)
-        scenarios = [_scenario("single", direction, entry, stop, tp1, leverage)]
-    else:
-        levels = _normalize_levels(plan.get("entry_levels"))
-        common_input["entry_levels"] = levels
-        scenarios = _ladder_scenarios(levels, direction, stop, tp1, leverage)
+    levels = _normalize_levels(plan.get("entry_levels"))
+    common_input["entry_levels"] = levels
+    scenarios = _ladder_scenarios(levels, direction, stop, tp1, leverage)
     _validate_scenarios(scenarios)
     worst_rr = min(_decimal(item["rr_to_tp1"], "scenario rr") for item in scenarios)
     worst_risk = max(
         _decimal(item["nominal_risk_pct"], "scenario risk") for item in scenarios
     )
-    if entry_mode == "single":
-        scenario = scenarios[0]
-        risk = _decimal(scenario["risk_per_unit"], "risk")
-        entry = _decimal(scenario["weighted_entry"], "entry")
-        sign = Decimal("1") if direction == "long" else Decimal("-1")
-        first_trigger: int | float | None = _plain(entry + sign * Decimal("1.5") * risk)
-        second_trigger: int | float | None = _plain(entry + sign * Decimal("2") * risk)
-        activation_basis = "certified_single_entry"
-    else:
-        first_trigger = None
-        second_trigger = None
-        activation_basis = "actual_weighted_fill_required"
+    first_trigger = None
+    second_trigger = None
+    activation_basis = "actual_weighted_fill_required"
     return {
         "input": common_input,
         "direction": direction,
@@ -506,7 +494,10 @@ def _v3_contract(
             "calibration_status": "insufficient_outcome_samples",
             "report_label": conviction["report_label"],
             "anchor": conviction["anchor"],
+            "anchor_claim_ids": conviction["anchor_claim_ids"],
+            "anchor_rationale": conviction["anchor_rationale"],
             "adjustments": conviction["adjustments"],
+            "counter_resolution": conviction["counter_resolution"],
             "adjustment_total": conviction["adjustment_total"],
             "final": conviction["final"],
         },

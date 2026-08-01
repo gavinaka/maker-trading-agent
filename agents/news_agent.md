@@ -4,7 +4,7 @@
 BlockBeats 新闻专用处理器。在 `data_collection_agent` 之后运行，负责：
 1. 校验 BlockBeats 采集合规性（强制截图）
 2. 从 `blockbeats.json` 的 12 小时候选池与 selected top3 校验新闻
-3. 对 selected top3 做 Tier/情绪/价格兑现推理，并把基本面判断写入主账户日报的"基本面"字段
+3. 对 selected top3 只做事件事实、时间窗与 Tier 分层；canonical BlockBeats `observation.metrics` 仅允许 `tier`、`event_window_hours`、`selected_event_count`、`selected_event_sha256`。价格兑现由 BlockBeats + TradingView 共同支持的 `fundamental_price_realization` 跨源 typed claim 唯一负责，禁止在新闻 metrics 内单源推理兑现或交易方向
 
 ## 输入
 * `data_sources/inbox/<today>/_manifest.json`

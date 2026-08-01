@@ -1,5 +1,7 @@
 # 会话节奏规则（图谱一节 + 十七节）
 
+> **legacy节奏参考，非vNext生产authority**：pre-cutover shadow可在用户批准后以任意slot标签运行，必须记录真实采集时间；当前vNext评分与运行顺序只认密封phase合同，旧“盘口70+盘面30”不得覆盖当前production盘口0–60边界。
+
 > 定义每日时段触发的任务、时间窗口、并发约束。
 > 由 `agents/session_orchestrator.md` 调度执行。
 > ⚠️ 本文件属于 README 所述“参考设计层”；实际运行真值以提交态 `sessions/日报SOP.md` 为准；`.claude/skills/daily-report/SKILL.md` 仅为本机 Claude Code 兼容镜像。本文件已按 2026-06-20 三报告节点同步，禁止再引用旧“两报告/周末自动停 Maker”条款覆盖实际运行层。
@@ -47,25 +49,27 @@
 00:00 Daily Reset
   ↓
 08:00-10:00 链 A（早间 · 严格按用户工作流序）
-  ├─ Step 0 prereqs：notion-positions 校准持仓 + data_collection_agent 采集五源 + news_agent
+  ├─ Step 0 prereqs：只读同日状态门禁 + data_collection_agent 采集六源；分析锁前禁止读取 Notion 实际持仓
   ├─ Step 1 门禁：emotional_agent 只读当天 Notion「开仓前状态门禁」
   │           └─ ⛔ 关闭/不可交易 → 硬停：不写任何计划，output 只出"门禁关闭·观望"
   ├─ Step 2 主账户 plan：基本面(news)>盘面结构>盘口 → 中线计划（**不依赖评分**）
-  ├─ Step 3 评分：footprint_agent → scoring_agent (morning 11:00，盘口70+盘面30)
+  ├─ Step 3 评分：footprint_agent → scoring_agent (morning 11:00，当前盘口0–60+盘面0–30)
   ├─ Step 4 Maker plan：risk_agent.precheck + 开单双门槛(评分≥65 且 胜率≥60%) → Maker 上午计划（盘口>盘面>基本面）
   ├─ Step 5 「不能做」回填（当天 Maker 收口）+ 有开仓补「交易 Check」
   └─ Step 6 output_agent → 渲染 主账户日报(Step2) + Maker 上午计划(Step4)
 
+  分析与报告决策哈希锁定后，才允许读取本地只读连续性快照中的实际持仓／成交事实；这些事实只做操作校准，不得回改评分、胜率、方向、入场、止损、止盈或是否挂单。
+
 15:30-16:00 链 A2（午间 · 与早报同骨架但判断从零重跑）
   ├─ Step 0 沿用当日早间门禁（不重读）
-  ├─ Step 1 五源保守 delta 采集 + 完整五源有效性／时效门
+  ├─ Step 1 六源保守 delta 采集 + 完整六源有效性／时效门
   ├─ Step 2 主账户 plan 独立重判
-  ├─ Step 3 盘口70+盘面30重新评分
+  ├─ Step 3 当前盘口0–60+盘面0–30重新评分
   ├─ Step 4 Maker plan + 「不能做」重新回填
   └─ Step 5 output_agent → 🌇 午报 + 三门
 
 19:00-20:30 链 B（晚间 Maker 新增计划）
-  ├─ Step 1 五源保守 delta 采集（仅复用哈希与时效均有效的原始证据）
+  ├─ Step 1 六源保守 delta 采集（仍须刷新全部六源；仅复用哈希与时效均有效的原始证据）
   ├─ Step 2 主账户／盘口／盘面独立重判
   ├─ Step 3 scoring_agent (evening 20:00 评分点)
   ├─ Step 4 risk_agent.precheck + Maker plan
@@ -103,7 +107,7 @@
 * `current.json` 只含来源指纹和确定性运行事实；禁止共享特征、评分、胜率、风险或判断。
 * 依赖图只记录来源影响范围，不缩小分析范围；早／午／晚每节点固定重算完整分析图。
 * `analysis_<slot>.json` 与 `decision_<slot>.json` 仅作分析锁定后的审计和计划衔接，禁止喂入下一时段 pre-analysis。
-* 从源验真、读图和指标转录开始，全部使用最高可用模型能力与 MAX 思考预算；资源不足硬停。
+* 从源验真、读图和指标转录开始，自动化固定使用 `gpt-5.6-sol` 与 `high` 推理强度并保持完整工作流深度；`max` 可兼容但不是要求，资源低于 high 时硬停。
 * 缺源、无 base、方法论哈希变化、状态损坏、时段乱序或 delta 低置信时，硬停并要求完成一次完整采集后再进入分析；不得把“需要回退”记录成“已经回退”。
 * 完整回退是稳定性门，不是失败；必须写入 `usage.jsonl`。
 

@@ -85,7 +85,7 @@
 ---
 
 # Rule 06 — Risk Limitation
-单笔最大亏损 ≤ 3%
+账户独立风险上限：Maker 每个非空成交组合 ≤3%；主账户四档的全部 15 个非空成交组合 ≤8%。统一使用 `abs(weighted_entry-stop)/weighted_entry*leverage*100`，禁止跨账户套用阈值。
 连续止损 ≥ 3 → 当日禁止交易
 
 ---

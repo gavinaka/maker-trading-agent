@@ -1,61 +1,56 @@
-# CME FedWatch 数据规则
+# FOMC 利率预期数据规则
 
-## 数据源
-https://www.cmegroup.com/cn-s/markets/interest-rates/cme-fedwatch-tool.html
+## 单一逻辑插槽
 
----
+工作流内部兼容名为 `FedWatch`，用途仅为美联储利率预期分布、边际重定价与 FOMC
+事件窗口。它不能直接决定交易方向、下单动作、orderflow/chart 分或 Maker 置信度调整。
 
-## 核心用途
-- 判断美联储利率预期
-- 辅助宏观流动性判断
-- 辅助主账户与Maker操作决策
+物理 provider 必须按以下优先级机械选择：
 
----
+1. `cme_fedwatch_ui`：CME 官方 FedWatch 页面，唯一 primary；
+2. `kalshi_public_market_data_api`：仅在 CME 网站出现已密封、闭合集技术故障时启用的
+   A5-R1e Plan C。
 
-## 输出要求
-- 使用文字记录，不允许截图替代
-- 必须记录以下信息：
-  - 利率概率分布
-  - 预期变化方向（加息/降息/维持）
-  - 对市场流动性潜在影响
+机器可读真相源为 `rate_expectation_provider_contract.json`；本文件不扩展 provider、
+fallback code 或概率算法。
 
----
+## CME primary
 
-## 时间规则
-- 数据必须为当日实时数据
-- 禁止使用历史概率数据
-- 禁止使用过期预测
+- 每个 slot 重新导航、等待真实 `Target Rate Probabilities` 渲染并截取 `fedwatch.png`。
+- 页面 `Data as of ... CT` 可转录，但不得与主机时钟比较后判未来或过期。
+- CME 有效时禁止请求、读取或混入 Kalshi。
 
----
+## Plan C
 
-## 异常处理
-- 浏览器截图为错误页、空白页或 iframe 未渲染：
-  1. 重试截图 1 次；
-  2. 仍失败时，改用全网权威数据回退，不因截图渲染故障单独硬停。
-- 权威来源优先级：
-  1. CME Group 官方 FedWatch 页面、API 或官方发布；
-  2. Federal Reserve 官方资料；
-  3. 明确引用 CME FedWatch 且标注数据时点的主流金融数据源。
-- 关键数字至少双源交叉核验；必须记录 URL、采集时间、下次 FOMC 日期、各目标区间概率以及 1日/1周/1月变化。
-- 回退结果写入 `fedwatch.json`，标记：
-  - `capture_mode: "authoritative_web_fallback"`
-  - `screenshot_valid: false`
-  - `screenshot_error`
-- 若权威数据也无法取得或无法核对：
-  - 输出标注“FedWatch数据待补充”
-  - 禁止任何主观推测，并停止生成可执行计划。
+- 只接受 `KXFEDDECISION` public API；不使用付费 CME API、Federal Reserve 概率替代、
+  媒体、搜索摘要、转载或模型估算。
+- 只允许闭合的 CME technical failure 触发一次；语义不确定、schema drift、概率冲突、
+  会议日期不明或“另一组数据更合意”均不得触发。
+- 当前与历史均使用 yes bid/ask midpoint + bounded simplex，并显式保留
+  `other_unlisted`；`>25bp` 不得改写为 50bp。
+- Plan C 是独立事件合约市场推断，非 CME Fed Funds futures / FedWatch 方法等价。
+- Plan C evidence 可供完整 shadow 流程使用，但 sample 永远先记 `observation`，不增加
+  clean streak 或生产切换资格。
 
----
+## 必需业务字段
 
-## Agent限制
-- 不得编造利率概率
-- 不得推测未来利率影响
-- 仅允许客观记录并传递给评分系统
-- 评分和执行决策必须基于真实数据
+进入 reasoning 的唯一业务 metrics 为：
 
----
+- `data_as_of`
+- `next_fomc_date`
+- `current_probabilities`
+- `change_1d`
+- `change_1w`
+- `change_1m`
 
-## 核心原则
-- 数据真实性优先于完整性
-- 实时性高于可读性
-- 宁可缺失，也不得伪造
+概率键必须符合当前 scoring contract。Plan C 的四个分布/变化 map 必须包含相同键，
+其中包括 `cut_gt_25bp`、`cut_25bp`、`hold`、`hike_25bp`、`hike_gt_25bp` 与
+`other_unlisted`；current 合计 100%，每个 delta 窗口净和为 0。
+
+## 完整性原则
+
+- 原始响应、normalized artifact、CME attempt 与 provider provenance 必须属于同一
+  capture run 并全部 hash/bytes 绑定。
+- 任何字段缺失、跨 run、条款变化、未知 bucket、历史 anchor 缺失或 normalized 无法
+  从 raw 独立重放，都按源无效并 hard stop。
+- 宁可缺失，不得补值、猜值、条件归一化冒充无条件概率或隐藏来源差异。

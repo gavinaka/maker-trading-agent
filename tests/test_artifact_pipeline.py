@@ -30,6 +30,16 @@ from runtime.session_runner import validate_report_structure
 
 
 class RenderPipelineTests(unittest.TestCase):
+    def _seed_presentation_contract(self, root: Path) -> None:
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "governance"
+            / "vnext_report_presentation_contract.json"
+        )
+        target = root / "governance" / source.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
+
     def _strict_valid_report(self, title: str | None = None) -> list[str]:
         title = title or "# 2026.7.5 早间日报"
         return [
@@ -85,6 +95,7 @@ class RenderPipelineTests(unittest.TestCase):
     def test_canonical_render_is_idempotent_and_single_output(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
+            self._seed_presentation_contract(root)
             source = root / "outputs" / "2026-06-30_midday_combined.md"
             source.parent.mkdir(parents=True)
             source.write_text(
@@ -206,6 +217,7 @@ BlockBeats / Coinglass / Exocharts / FedWatch / TradingView
         )
         with tempfile.TemporaryDirectory() as td:
             test_root = Path(td)
+            self._seed_presentation_contract(test_root)
             source = test_root / "outputs" / "2026-06-30_evening_combined.md"
             source.parent.mkdir(parents=True)
             source.write_text("\n".join(evening) + "\n", encoding="utf-8")
@@ -223,6 +235,7 @@ BlockBeats / Coinglass / Exocharts / FedWatch / TradingView
     def test_third_render_attempt_is_hard_stopped(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
+            self._seed_presentation_contract(root)
             source = root / "outputs" / "2026-06-30_morning_combined.md"
             source.parent.mkdir(parents=True)
             source.write_text(
@@ -241,6 +254,7 @@ BlockBeats / Coinglass / Exocharts / FedWatch / TradingView
     def test_existing_chinese_named_docx_blocks_duplicate_generation(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
+            self._seed_presentation_contract(root)
             source = root / "outputs" / "2026-06-30_evening_combined.md"
             source.parent.mkdir(parents=True)
             source.write_text(
@@ -846,6 +860,26 @@ class PublishEvidenceTests(unittest.TestCase):
         self.assertEqual(
             publish_report.DAILY_VISUAL_PAYLOAD_TYPES_BY_SLOT["evening"][-2:],
             ("paragraph", "paragraph"),
+        )
+
+    def test_maker_semantic_state_prefixes_remain_compatible_across_payload_versions(
+        self,
+    ):
+        expected = {
+            "BTC（策略）：",
+            "BTC（候选策略）：",
+            "BTC（无方向观察）：",
+            "BTC（方向观察）：",
+            "BTC（被拒候选审计）：",
+        }
+        self.assertTrue(
+            expected.issubset(set(publish_report.DAILY_MANUAL_GOLD_PREFIXES[13]))
+        )
+        self.assertTrue(
+            expected.issubset(set(publish_report.DAILY_VISUAL_BODY_PREFIXES[21]))
+        )
+        self.assertTrue(
+            expected.issubset(set(publish_report.CRITICAL_REPORT_TEXT_PREFIXES))
         )
 
     def _text_block(self, block_type: str, text: str) -> dict:
@@ -1694,6 +1728,47 @@ class PublishEvidenceTests(unittest.TestCase):
                 daily_payload_builder.block_plain_text(payload["children"][13]),
                 "BTC（策略）：执行概率 45%（已执行 0%）　胜率 61%",
             )
+
+    def test_daily_payload_builder_accepts_all_maker_semantic_state_markers(self):
+        cases = (
+            ("BTC（候选策略）", "BTC（候选策略）：候选计划已认证"),
+            ("BTC（无方向观察）", "BTC（无方向观察）：本轮无方向结论"),
+            ("BTC（方向观察）", "BTC（方向观察）：仅保留方向判断"),
+            (
+                "BTC（被拒候选审计）",
+                "BTC（被拒候选审计）：候选输入仅供不可执行审计",
+            ),
+        )
+        for heading, summary in cases:
+            with self.subTest(heading=heading), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                date = "2026-07-05"
+                slot = "morning"
+                outputs = root / "outputs"
+                outputs.mkdir(parents=True)
+                report = outputs / f"{date}_{slot}_combined.md"
+                report_text = self._strict_daily_combined_text(date, slot).replace(
+                    "BTC（策略）：执行概率 45%（已执行 0%）　胜率 61%",
+                    f"### {heading}\n{summary}",
+                    1,
+                )
+                report.write_text(report_text, encoding="utf-8")
+                self._seed_publish_binding(root, date=date, slot=slot)
+                self._seed_blockbeat_cards(root, date, slot)
+
+                payload = daily_payload_builder.build_daily_payload(report, root=root)
+
+                self.assertEqual(
+                    daily_payload_builder.block_plain_text(payload["children"][13]),
+                    summary,
+                )
+                result = publish_report.validate_daily_payload_shape(
+                    payload,
+                    date,
+                    slot,
+                    report_text=report_text,
+                )
+                self.assertEqual(result["visual_contract"]["status"], "passed")
 
     def test_visual_v3_shape_separates_labels_and_enforces_density_budget(self):
         with tempfile.TemporaryDirectory() as td:

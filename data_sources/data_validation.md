@@ -21,11 +21,15 @@
   - ExoCharts
   - Coinglass
   - BlockBeats
-  - CME FedWatch
+  - FOMC 利率预期逻辑插槽（CME primary；仅 closed technical failure 可用 Kalshi Plan C）
   - Farside BTC ETF Flow（`farside_btc_etf.png` + `farside_btc_etf.json`，latest Total 必须为数值）
   - TradingView（日/4H/1H/15m 四档齐·2026-06-14 补）
-- 若数据缺失（含 TV 任一档或 Farside JSON 无效）→ 输出“待补充”，禁止继续生成计划
-- FedWatch 截图渲染失败不等于宏观数据缺失：若已按 `fedwatch.md` 的权威网络回退规则取得当日数据、关键数字双源核验并落 `fedwatch.json`，则该源完整性通过；若权威数据同样缺失，仍硬停。
+- 若数据缺失（含 TV 任一档或 Farside JSON 无效）→ 立即停止，禁止继续生成计划或以“待补充”占位。
+- CME 有效时必须有真实 `fedwatch.png`、sealed attempt 与 provider provenance，且不得
+  调用或混入 Kalshi。只有同 run 的 eligible CME 技术失败可使用一次 Kalshi Plan C；
+  此时必须同时存在并校验 `cme_fedwatch_result.json`、`kalshi_feddecision_raw.json`、
+  `fedwatch.json` 与 `rate_expectation_provenance.json`。这不是泛化网络回退，也不是
+  “关键数字双源择优”。
 
 ### 2. 数据格式验证
 - 数值型字段（价格、CVD、资金费率、持仓量）：
@@ -36,7 +40,7 @@
   - 与计划时间对应
 
 ### 3. 数据一致性
-- 同一时间段不同来源数据需交叉比对
+- 同一时间段不同来源数据需按各自方法边界交叉比对；CME 与 Kalshi 不得混算或择优
 - CVD、价格行为、持仓量等互相验证逻辑一致
 - 异常差异需标注“待复核”
 
@@ -44,7 +48,9 @@
 - 网站无法访问或数据异常：
   - 标记“待补充”
   - 禁止使用默认或历史值代替
-- FedWatch 仅对“截图渲染层故障”允许权威网络回退；不得把搜索摘要、旧闻、无日期转载或模型估算视为有效数据。
+- FedWatch 插槽仅允许合同闭集 CME 技术故障触发 Kalshi public API
+  `KXFEDDECISION`；不得把搜索摘要、旧闻、无日期转载、其它 API/series 或模型估算
+  视为有效数据。Kalshi 必须标为非 CME 方法等价和 observation-only。
 - 数据读取错误：
   - 输出错误类型
   - 停止对应模块

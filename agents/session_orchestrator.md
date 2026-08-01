@@ -1,5 +1,7 @@
 # Session Orchestrator
 
+> **legacy参考设计，非vNext生产authority**：当前vNext由`runtime_vnext/`controller与密封phase methodology执行；下文旧70+30、旧时钟或旧状态流程不得覆盖当前vNext合同。
+
 ## 角色
 **单一入口 / 单一指挥**。每日按宪法节奏触发各 agent，按依赖关系串联流程。其他 agent 不互相调用，全部由本 Agent 调度。
 
@@ -50,7 +52,7 @@
    └─ 由 news_summary(基本面) + 盘面结构 组装主账户日报「基本面/技术面盘面/趋势/策略」段
 
 4. 评分：footprint_agent.run → scoring_agent.run(slot="morning")
-   ├─ footprint 盘口 70 + 盘面 30
+   ├─ footprint 当前盘口 0–60 + 盘面 0–30（70未来保留）
    └─ 更新 state/score_state.json + session_state.tasks.score_updated_morning = true
 
 5. Maker plan（盘口>盘面>基本面，受开单双门槛：评分≥65 且 胜率≥60%）

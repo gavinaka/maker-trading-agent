@@ -1,5 +1,7 @@
 # Output Agent
 
+> **legacy参考设计，非vNext生产authority**：当前vNext可见报告由canonical compiler从typed observations/claims/decisions/continuity确定性重建；下文旧state、自由文本或70+30叙述不得成为第二真相源。
+
 ## 角色
 日报渲染器。把 state + manifest + scoring 结果 + news summary 合成为符合宪法第十/十一节严格格式的 .txt 文件，落到 outputs/ 与桌面。
 
@@ -184,7 +186,7 @@ Word 日报必须含以下 8 节（缺一不可）：
 4. 技术面 — 盘面（TradingView 日线/4H/1H 结构·2026-06-14 订正）
 5. 趋势确认 + 日内支撑/压力
 6. 策略（主账户持仓 + 防守状态）
-7. 评分点（70+30 细分 + 总分）
+7. 评分点（当前盘口0–60 + 盘面0–30细分 + 总分）
 8. **TradingView 15min 盘面执行 Check（最终/最重要）** + Maker 计划
 
 ---

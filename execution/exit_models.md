@@ -3,6 +3,7 @@
 > 系统核心理念：**出场比入场更重要**。
 > TP1 后的剩余仓位运行是关键（图谱二十节）。
 > 与 `risk/floating_defense.md` 配合使用。
+> 当前 vNext Maker 的执行真相以 `scoring/scoring_contract.json`、`risk/floating_defense.md` 与 `governance/vnext_daily_workflow.md` 为准：固定两层浮盈防守，TP1 减仓 50%，TP2 清剩余 50%。本文历史性的“2-3 层”或“30%-50%”口径不得覆盖 active authority。
 
 ---
 
@@ -20,29 +21,28 @@
 ## TP（止盈）模型
 
 ### TP1（标准止盈第一档）
-- **减仓 30%-50%**
+- **Maker 精确减仓 50%；主账户按独立计划减仓 20%**
 - 触发：价格到达计划 TP1 价
 - 操作：
-  1. 减仓 30%-50%
+  1. Maker 减仓 50%（主账户中线按 20%）
   2. 剩余仓位止损同时移至开仓均价（保本层）
   3. 进入剩余仓位"防守计划"运行
 
-### TP2 / TP3（防守计划分层）
-- 按浮盈防守计划逐层减仓或全部止盈
+### TP2 与防守计划分层
+- Maker TP2 清理剩余 50%；两层浮盈防守本身不减仓
 - 主账户中线最高可达 **5 层**
-- Maker 日内通常 **2-3 层**
+- Maker 日内固定 **2 层**
 
 ---
 
 ## 浮盈防守层级（图谱第七节）
 
-### Maker 2-3 层
+### Maker 2 层
 
 | 层 | 触发 | 操作 |
 |---|---|---|
-| 第一层（动态止损层） | 价格触及关键位置（如首个 TP 区间附近） | 止损移至近期小时级别极点（低/高点） |
+| 第一层（动态止损层） | 价格触及认证的 1.5R 精确触发价 | 止损移至成交后后续形成并确认的 4H 结构极点 |
 | 第二层（保本层） | 价格进一步向有利方向运动 | 止损移至开仓均价或更优（保本损） |
-| 第三层（减仓层，可选） | 价格到达特定 TP 位 | 减仓 30%-50%，剩余按动态防守继续 |
 
 ### 主账户 5 层（图谱第十四节）
 
@@ -59,13 +59,13 @@
 ## SL（止损）模型
 
 ### 硬规则
-- **单笔最大亏损 ≤ 3%**（2026.3.5 起，图谱八节）
-- 计算：`(entry - sl) / entry × leverage × 100 ≤ 3%`
+- **账户独立风险上限**：Maker 每个非空成交组合 ≤3%；主账户四档的全部 15 个非空成交组合 ≤8%
+- 统一计算：`abs(weighted_entry - sl) / weighted_entry × leverage × 100`；禁止把 Maker 3% 套到主账户，也禁止用 Main 8% 放宽 Maker
 
 ### 止损位选取
-- 左侧入场：挂单区上下极点
-- 右侧入场：确认区上下极点
-- 主账户中线：结构性止损（迭代更新）
+- Maker 左侧/右侧：同账户 `invalidation_path` 只从本轮 TradingView 的 4H/1H/15m timeframe-bearing zone 选择可机械定位且严格位于入场区与全部挂单价外侧的真正失效锚。合法锚仅为 readable `user_drawn_manual_only` 手绘 profile 中性外沿（空单上沿、多单下沿），或非当前入场区的 structure zone 外沿；空单 structure zone role 只允许 `resistance|breakdown_retest`，多单只允许 `support|breakout_retest`。裸支撑/阻力/摆动数组只供展示，禁止补周期后作为锚；不强制最近数值层，不得强用弱中间结构。该 `invalidation_path` 必须在 reasoning 阶段密封 exact `structural-noise-buffer-v2`；`certified` 绑定可达的本轮 TradingView observation、`4h|1h|15m`、同周期截图、可机械定位锚、图上 `noise_outer_boundary`、正 `price_distance` 与 `risk_budget_input_used=false`，stop 严格越界；证据不足只可 `insufficient + observe`。decision 中存在的 stop-basis identity/anchor/distance 必须精确等于 reasoning owner，Gate 另读 status/visual/boundary，compiler 不得推断。入场区或确认区边界本身不是充分止损依据
+- 结构止损确定后才运行全部成交组合风险/R:R；不合格时调整阶梯或观望，禁止压缩止损过门
+- 主账户中线：只按自身 `invalidation_path` 使用本轮 TradingView 1D/4H timeframe-bearing zone 选择结构性止损锚，合法 zone kind、方向角色与禁止裸 level 数组的规则和上文一致；reasoning 阶段的 exact `structural-noise-buffer-v2` 只允许绑定可达 TradingView observation、`1d|4h`、同周期截图、机械锚与可见 `noise_outer_boundary`。`certified` 的 stop 必须严格越界；证据不足只可 `insufficient + observe`。decision 中存在的 stop-basis 字段必须精确等于 reasoning owner，Gate 另读 status/visual/boundary，compiler 不推断。不得借用 Maker 的 1H/15m 锚或 Maker 风险门，随后枚举四档全部 15 个非空成交组合并保持名义风险≤8%；禁止固定点数、ATR 或 8% 倒推/压缩结构止损
 
 ### 止损迭代（仅按防守计划）
 - 允许：按防守层级递进升级
@@ -107,7 +107,7 @@
   │       │       │   ├─ 是 → 按层操作（动态止损 / 保本损）
   │       │       │   └─ 否 → 继续持有
   │       │       └─ 价格触及 TP1？
-  │       │           ├─ 是 → 减仓 30%-50%（Maker）/ 减仓 20%（主账户）
+  │       │           ├─ 是 → Maker 精确减仓 50% / 主账户减仓 20%
   │       │           └─ 否 → 等待
   │       └─ 价格触及更高层防守触发位？
   │           ├─ 是 → 按对应层操作

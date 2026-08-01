@@ -80,6 +80,7 @@ def seed_inbox(inbox: Path) -> None:
                             "date_iso": "2026-07-02",
                             "total_usd_m": 223.5,
                             "direction": "inflow",
+                            "funds": {"IBIT": 223.5, "FBTC": 0.0},
                         },
                         "previous": {
                             "date": "01 Jul 2026",
@@ -107,6 +108,7 @@ def seed_inbox(inbox: Path) -> None:
                             "has_total_column": True,
                             "latest_daily_row": True,
                             "latest_total_is_number": True,
+                            "latest_row_complete": True,
                         },
                     }
                 ),
@@ -404,6 +406,32 @@ class DeltaEngineTests(unittest.TestCase):
             self.assertFalse(source["valid"])
             self.assertIn(
                 "farside_btc_etf.json latest.total_usd_m must be numeric",
+                source["invalid_reasons"],
+            )
+
+    def test_farside_placeholder_zero_row_without_published_funds_is_invalid(self):
+        with tempfile.TemporaryDirectory() as td:
+            inbox = Path(td)
+            seed_inbox(inbox)
+            payload = json.loads((inbox / "farside_btc_etf.json").read_text())
+            payload["latest"].update(
+                {
+                    "date": "14 Jul 2026",
+                    "date_iso": "2026-07-14",
+                    "total_usd_m": 0.0,
+                    "direction": "flat",
+                    "funds": {"IBIT": None, "FBTC": None},
+                }
+            )
+            payload["validity"]["latest_row_complete"] = False
+            (inbox / "farside_btc_etf.json").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            source = scan_source_snapshot(inbox)["farside_btc_etf"]
+            self.assertFalse(source["valid"])
+            self.assertIn(
+                "farside_btc_etf.json latest row must contain at least one published fund value",
                 source["invalid_reasons"],
             )
 

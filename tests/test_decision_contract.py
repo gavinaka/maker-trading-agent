@@ -263,12 +263,15 @@ class DecisionContractTests(unittest.TestCase):
                 "slot": "midday",
                 "plan": {
                     "direction": "long",
-                    "entry_mode": "single",
+                    "entry_mode": "ladder",
                     "exchange": "OKX",
                     "instrument": "BTCUSDT",
                     "leverage": 5,
                     "position_notional_usdt": 750,
-                    "entry": 100,
+                    "entry_levels": [
+                        {"id": "level.a", "price": 100, "allocation_pct": 50},
+                        {"id": "level.b", "price": 100.00000001, "allocation_pct": 50},
+                    ],
                     "stop": 99.39999992,
                     "tp1": 102,
                     "tp2": 103,
@@ -278,6 +281,32 @@ class DecisionContractTests(unittest.TestCase):
                 },
             }
             with self.assertRaisesRegex(ValueError, "nominal risk exceeds 3%"):
+                build_contract(payload, reasoning_contract_path=reasoning, root=root)
+
+    def test_v3_rejects_single_entry_maker_plan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reasoning = self._v3_seed(root)
+            payload = {
+                "trading_date": "2026-07-12",
+                "slot": "midday",
+                "plan": {
+                    "direction": "long",
+                    "entry_mode": "single",
+                    "exchange": "OKX",
+                    "instrument": "BTCUSDT",
+                    "leverage": 5,
+                    "position_notional_usdt": 750,
+                    "entry": 100,
+                    "stop": 99.5,
+                    "tp1": 102,
+                    "tp2": 103,
+                    "tp1_close_pct": 50,
+                    "tp2_close_pct": 50,
+                    "cancel_before_fill": "结构先失效则撤销未成交挂单",
+                },
+            }
+            with self.assertRaisesRegex(ValueError, "single entry is forbidden"):
                 build_contract(payload, reasoning_contract_path=reasoning, root=root)
 
     def test_v3_enforces_exchange_leverage_and_instrument_position_policy(self):

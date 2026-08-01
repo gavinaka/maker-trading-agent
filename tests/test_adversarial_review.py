@@ -49,6 +49,25 @@ class AdversarialReviewTests(unittest.TestCase):
                     "residual_risk": "后续市场路径和视觉转录仍可能变化。",
                 }
             )
+        covered_claim_ids = {
+            str(node_id)
+            for check in checks
+            for node_id in check.get("node_ids", [])
+        }
+        for index, claim_id in enumerate(high_impact, start=len(checks)):
+            if claim_id in covered_claim_ids:
+                continue
+            checks.append(
+                {
+                    "id": f"check.claim.{index}",
+                    "check_type": "claim_support",
+                    "status": "pass",
+                    "node_ids": [claim_id],
+                    "challenge": "逐项重查该高影响结论的当前支持、反证与失效闭环。",
+                    "resolution": "该结论的具体支持和当前反证均已独立核对。",
+                    "residual_risk": "后续市场路径和视觉转录仍可能变化。",
+                }
+            )
         review = {
             "reasoning_contract_sha256": reasoning["contract_sha256"],
             "reviewer_mode": "isolated_second_pass",

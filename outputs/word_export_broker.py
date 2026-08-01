@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
 
 from outputs.word_qa import _export_word_com, sha256_file
 from runtime.state_store import atomic_json_write
+from runtime_vnext.artifacts import ArtifactStore
 
 
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -32,6 +33,7 @@ REQUEST_NAME = "broker_request.json"
 RESPONSE_NAME = "broker_response.json"
 MAX_REQUEST_AGE = timedelta(minutes=30)
 HEARTBEAT_NAME = "word_export_broker_heartbeat.json"
+VNEXT_ATTEMPT_RE = re.compile(r"attempt-\d{3}-[0-9a-f]{8}")
 
 
 def _load_object(path: Path) -> dict:
@@ -41,6 +43,78 @@ def _load_object(path: Path) -> dict:
     return payload
 
 
+def _request_context(attempt_dir: Path, *, root: Path) -> dict:
+    legacy_state = (root / "runtime_state").resolve()
+    try:
+        relative = attempt_dir.relative_to(legacy_state)
+    except ValueError:
+        relative = None
+    if relative is not None:
+        if len(relative.parts) != 4:
+            raise ValueError("broker request directory depth is invalid")
+        trading_date, word_qa_dir, slot, attempt = relative.parts
+        if not DATE_RE.fullmatch(trading_date):
+            raise ValueError("broker request date is invalid")
+        if (
+            word_qa_dir != "word_qa"
+            or slot not in SLOTS
+            or not attempt.startswith("attempt-")
+        ):
+            raise ValueError("broker request is outside a canonical Word-QA attempt")
+        return {
+            "layout": "legacy",
+            "trading_date": trading_date,
+            "slot": slot,
+            "expected_docx": (
+                root / "outputs" / f"{trading_date}_{slot}_render.docx"
+            ).resolve(),
+        }
+
+    vnext_state = (root / "runtime_state_vnext").resolve()
+    try:
+        relative = attempt_dir.relative_to(vnext_state)
+    except ValueError as exc:
+        raise ValueError(
+            "broker request is outside runtime_state and runtime_state_vnext"
+        ) from exc
+    if len(relative.parts) != 6:
+        raise ValueError("vNext broker request directory depth is invalid")
+    trading_date, slot, run_id, delivery_assets, word_qa_dir, attempt = relative.parts
+    if not DATE_RE.fullmatch(trading_date):
+        raise ValueError("vNext broker request date is invalid")
+    if (
+        slot not in SLOTS
+        or delivery_assets != "delivery_assets"
+        or word_qa_dir != "word_qa"
+        or not VNEXT_ATTEMPT_RE.fullmatch(attempt)
+    ):
+        raise ValueError("broker request is outside a canonical vNext Word-QA attempt")
+
+    run_root = vnext_state / trading_date / slot / run_id
+    try:
+        run = ArtifactStore(root).load_run(run_root)
+    except (RuntimeError, ValueError) as exc:
+        raise ValueError("vNext broker run metadata is invalid") from exc
+    if (
+        run.get("schema_version") != "daily-run-vnext-v2"
+        or run.get("trading_date") != trading_date
+        or run.get("slot") != slot
+        or run.get("run_id") != run_id
+    ):
+        raise ValueError("vNext broker run identity does not match its directory")
+    return {
+        "layout": "vnext",
+        "trading_date": trading_date,
+        "slot": slot,
+        "run_id": run_id,
+        "expected_docx": (
+            run_root
+            / "delivery_assets"
+            / f"{trading_date}_{slot}_render.docx"
+        ).resolve(),
+    }
+
+
 def validate_request(request_path: Path, *, root: Path = ROOT) -> dict:
     root = Path(root).resolve()
     request_path = Path(request_path).resolve()
@@ -48,17 +122,9 @@ def validate_request(request_path: Path, *, root: Path = ROOT) -> dict:
     if request_path != attempt_dir / REQUEST_NAME:
         raise ValueError("broker request filename is not canonical")
 
-    try:
-        relative = attempt_dir.relative_to((root / "runtime_state").resolve())
-    except ValueError as exc:
-        raise ValueError("broker request is outside runtime_state") from exc
-    if len(relative.parts) != 4:
-        raise ValueError("broker request directory depth is invalid")
-    trading_date, word_qa_dir, slot, attempt = relative.parts
-    if not DATE_RE.fullmatch(trading_date):
-        raise ValueError("broker request date is invalid")
-    if word_qa_dir != "word_qa" or slot not in SLOTS or not attempt.startswith("attempt-"):
-        raise ValueError("broker request is outside a canonical Word-QA attempt")
+    context = _request_context(attempt_dir, root=root)
+    trading_date = context["trading_date"]
+    slot = context["slot"]
 
     payload = _load_object(request_path)
     if payload.get("schema_version") != "1.0":
@@ -77,7 +143,7 @@ def validate_request(request_path: Path, *, root: Path = ROOT) -> dict:
         raise ValueError("broker request is outside the allowed time window")
 
     docx = Path(str(payload.get("docx_path", ""))).resolve()
-    expected_docx = (root / "outputs" / f"{trading_date}_{slot}_render.docx").resolve()
+    expected_docx = context["expected_docx"]
     if docx != expected_docx or not docx.is_file():
         raise ValueError("broker DOCX path is not canonical")
     docx_hash = str(payload.get("docx_sha256", ""))
@@ -96,7 +162,27 @@ def validate_request(request_path: Path, *, root: Path = ROOT) -> dict:
         "docx_sha256": docx_hash,
         "pdf": pdf,
         "response": attempt_dir / RESPONSE_NAME,
+        "layout": context["layout"],
+        "run_id": context.get("run_id"),
     }
+
+
+def _pending_requests(root: Path) -> list[Path]:
+    root = Path(root).resolve()
+    patterns = (
+        (root / "runtime_state").glob(f"*/word_qa/*/attempt-*/{REQUEST_NAME}"),
+        (root / "runtime_state_vnext").glob(
+            f"*/*/*/delivery_assets/word_qa/attempt-*/{REQUEST_NAME}"
+        ),
+    )
+    return sorted(
+        {
+            path.resolve()
+            for matches in patterns
+            for path in matches
+            if not (path.parent / RESPONSE_NAME).is_file()
+        }
+    )
 
 
 def process_request(request_path: Path, *, root: Path = ROOT) -> dict:
@@ -135,15 +221,10 @@ def process_request(request_path: Path, *, root: Path = ROOT) -> dict:
 
 def run_pending(*, root: Path = ROOT, quiet_seconds: float = 2.0) -> list[dict]:
     root = Path(root).resolve()
-    state = root / "runtime_state"
     results: list[dict] = []
     quiet_since: float | None = None
     while True:
-        pending = [
-            path
-            for path in state.glob(f"*/word_qa/*/attempt-*/{REQUEST_NAME}")
-            if not (path.parent / RESPONSE_NAME).is_file()
-        ]
+        pending = _pending_requests(root)
         if pending:
             quiet_since = None
             for request in sorted(pending):
@@ -194,13 +275,7 @@ def run_watch(*, root: Path = ROOT, poll_seconds: float = 0.25) -> None:
     heartbeat.start()
     try:
         while True:
-            pending = [
-                path
-                for path in (root / "runtime_state").glob(
-                    f"*/word_qa/*/attempt-*/{REQUEST_NAME}"
-                )
-                if not (path.parent / RESPONSE_NAME).is_file()
-            ]
+            pending = _pending_requests(root)
             for request in sorted(pending):
                 process_request(request, root=root)
             time.sleep(poll_seconds)

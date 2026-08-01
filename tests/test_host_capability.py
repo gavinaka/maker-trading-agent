@@ -42,6 +42,39 @@ class HostCapabilityTests(unittest.TestCase):
             self.assertEqual(payload["reasoning_effort"], "max")
             self.assertEqual(payload["minimum_effort"], "high")
 
+    def test_sibling_technical_expert_can_orchestrate_target_workspace(self):
+        with tempfile.TemporaryDirectory() as td:
+            desktop = Path(td)
+            target = desktop / "Trading-System-vNext"
+            orchestrator = desktop / "Technical expert"
+            target.mkdir()
+            orchestrator.mkdir()
+            payload = build_manifest(
+                "2026-07-12",
+                "midday",
+                session_jsonl=self.session(orchestrator, "high"),
+                root=orchestrator,
+                target_root=target,
+            )
+            self.assertEqual(payload["execution_scope"], "technical_expert_cross_workflow")
+            self.assertEqual(payload["target_workspace"], "Trading-System-vNext")
+
+    def test_unrelated_workspace_cannot_orchestrate_target_workspace(self):
+        with tempfile.TemporaryDirectory() as td:
+            desktop = Path(td)
+            target = desktop / "Trading-System-vNext"
+            unrelated = desktop / "Other"
+            target.mkdir()
+            unrelated.mkdir()
+            with self.assertRaisesRegex(ValueError, "not authorized"):
+                build_manifest(
+                    "2026-07-12",
+                    "midday",
+                    session_jsonl=self.session(unrelated, "high"),
+                    root=unrelated,
+                    target_root=target,
+                )
+
     def test_prompt_claim_cannot_replace_below_high_host(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
