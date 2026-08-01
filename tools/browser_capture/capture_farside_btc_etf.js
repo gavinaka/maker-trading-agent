@@ -8,6 +8,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { selectCompleteFarsideRows } from './farside_row_policy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -177,10 +178,10 @@ try {
         raw_cells: cells,
       };
     });
-  dailyRows.sort((a, b) => String(a.date_iso).localeCompare(String(b.date_iso)));
-  const latest = dailyRows.at(-1) || null;
-  const previous = dailyRows.at(-2) || null;
-  const recent = dailyRows.slice(-5);
+  const selection = selectCompleteFarsideRows(dailyRows);
+  const latest = selection.latest;
+  const previous = selection.previous;
+  const recent = selection.completeRows.slice(-5);
   const latestWithTrend = latest
     ? {
         ...latest,
@@ -202,8 +203,10 @@ try {
     table_found: parsed.table_found === true,
     has_total_column: totalIndex >= 0,
     daily_row_count: dailyRows.length,
+    complete_daily_row_count: selection.completeRows.length,
     latest_daily_row: Boolean(latest?.date_iso),
     latest_total_is_number: Number.isFinite(latest?.total_usd_m),
+    latest_row_complete: Boolean(latest),
   };
   const valid = (
     validity.title_match
@@ -212,6 +215,7 @@ try {
     && dailyRows.length >= 2
     && validity.latest_daily_row
     && validity.latest_total_is_number
+    && validity.latest_row_complete
   );
 
   await page.screenshot({ path: pngPath, fullPage: true });
@@ -229,11 +233,16 @@ try {
         columns,
         latest: latestWithTrend,
         previous,
+        latest_displayed_row: selection.latestDisplayed,
+        incomplete_latest_row: Boolean(
+          selection.latestDisplayed
+          && selection.latestDisplayed.date_iso !== latest?.date_iso
+        ),
         recent_rows: recent,
         recent_5d_net_usd_m: round1(
           recent.reduce((sum, row) => sum + (row.total_usd_m ?? 0), 0),
         ),
-        rows: dailyRows,
+        rows: selection.orderedRows,
         validity,
         interpretation_contract: {
           bullish_confirmation: 'price up with ETF inflow, stronger when inflow expands',

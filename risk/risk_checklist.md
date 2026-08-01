@@ -2,7 +2,7 @@
 
 > 开仓前必须**全部 7 项 ✓** 才允许执行。
 > 任一缺项 → 计划质量评级"**低**" → V002 违规风险 → 不计入洁净样本。
-> 第 7 项（单笔 3%）从 **2026.3.5 起**正式加入。
+> 第 7 项按账户独立执行：Maker 上限 3%，主账户上限 8%；禁止互相套用。
 
 ---
 
@@ -15,7 +15,7 @@
 - [ ] 4. 是否设置好止损止盈
 - [ ] 5. 是否在规定交易时间内
 - [ ] 6. 是否严格按入场信号执行
-- [ ] 7. 单笔止损 ≤ 3%
+- [ ] 7. 全部非空成交组合风险合格（Maker ≤ 3%；Main ≤ 8%）
 ```
 
 ---
@@ -46,18 +46,18 @@
 * `request.leverage != 5` → ✗；日报计划不允许通过 metadata、情绪或历史状态绕过
 * Maker 单日交易数 > 3 → ✗
 
-**数据源**：当前 `scoring/scoring_contract.json` 的账户约束 + 本 slot hash-bound `decision_contract_<slot>.json`；历史 `state/*.json` 禁止作为当前风险真值。
+**数据源**：当前 `scoring/scoring_contract.json` 的账户约束 + 本 slot hash-bound `decision_contract_<slot>.json`；任何 legacy 状态快照禁止作为当前风险真值。
 
 ---
 
 ### 3. 是否满足开单双门槛（总评分 + 胜率）
 
 **判定**（两门槛并列·任一不过即不开）：
-* 门槛① 本 slot `decision_contract` 机械复算的总评分 `>= 65`（盘口 70 只允许 C19/C22/C56/C59 经整体证据确认为真极端）AND
+* 门槛① 本 slot `decision_contract` 机械复算的总评分 `>= 65`（当前 production 盘口只允许0–60；61–69非法，70为未来原生结构化证明保留值且不可由配置启用）AND
 * 门槛② `plan.win_rate >= 60`（胜率自估 ≥60%·2026-06-16 升级为硬门槛）AND
 * 本 slot `reasoning_contract` 的六源观察均绑定当前不可变 capture，且不存在缺失或无效核心源
 
-**禁止**：评分未达 65 或 胜率未达 60% 强行开仓（V004 / V011 违规）；用执行概率 <50% 否决开仓（执行概率为软参考·非门槛·只调挂价）。
+**禁止**：评分未达 65 或计划时置信度未达 60% 强行开仓（V004 / V011 违规）；用入场价格触达概率 <50% 否决开仓（触达概率为软参考、非门槛，且不是实际成交概率）。
 
 ---
 
@@ -65,10 +65,12 @@
 
 **判定**：
 * `request.sl > 0` AND `request.tp > 0`
-* **R:R ≥ 1:2.5**：`abs(tp - entry) / abs(entry - sl) >= 2.5`
+* **Maker R:R ≥ 1:2.5**：`abs(tp - entry) / abs(entry - sl) >= 2.5`；该阈值不得自动套到主账户
 * Maker TP1/TP2 必填：TP1 默认减仓 50%，TP2 清剩余仓位
-* Maker 浮盈防守计划 ≥ 2 层：第一层只写触发价 + 成交后后续确认的 4H 极点规则，禁止预填极点止损价；第二层只设保本损
-* 取消价格必填
+* Maker 初始止损锚由同账户 `invalidation_path` 从本轮 TradingView 4H/1H/15m 认证 zone 中选择，须可机械定位并严格位于入场区与全部挂单价外侧。合法锚只允许 readable `user_drawn_manual_only` 手绘 profile 中性上/下外沿，或非当前入场区的 structure zone 外沿；空单 structure zone role 只允许 `resistance|breakdown_retest`，多单只允许 `support|breakout_retest`。裸支撑/阻力/摆动数组只供展示，禁止补周期后充当锚；不强制数值最近层，不得强用弱中间结构。同一 Maker `invalidation_path` 必须在 reasoning 阶段密封 exact `structural-noise-buffer-v2`。`certified` 绑定可达的本轮 TradingView observation、`4h|1h|15m`、同周期截图、机械锚、图上 `noise_outer_boundary`、正 `price_distance` 与 `risk_budget_input_used=false`，stop 严格越界；证据不足只可 `insufficient + observe`。decision 中存在的 stop-basis identity/anchor/distance 必须精确等于 reasoning owner，Gate 另读 status/visual/boundary；3% 与 TP1 R:R 后验且不得用固定点数、ATR、风险倒推或压缩，compiler 不得推断
+* 主账户初始止损独立绑定自身 `invalidation_path`，只允许本轮 TradingView 1D/4H 的同类 zone 锚；该 claim 同样必须在 reasoning 阶段密封 `structural-noise-buffer-v2`，绑定可达 TradingView observation、`1d|4h`、同周期截图、机械锚与可见 `noise_outer_boundary`。`certified` stop 严格越界；证据不足只可 `insufficient + observe`。decision 中存在的 stop-basis 字段必须精确等于 reasoning owner，Gate 独立读取 status/visual/boundary，compiler 不推断。不得引用 Maker 1H/15m 锚，不得套用 Maker 3% 或 TP1 R:R 门；8% 只能在止损确定后验证，四档全部 15 个非空成交组合均须≤8%，不得用固定点数、ATR、风险倒推或压缩 buffer
+* Maker 浮盈防守计划 ≥ 2 层：两层都必须写阿拉伯数字精确触发价；第一层同时写成交后后续确认的 4H 极点规则但禁止预填未知极点止损价，第二层只设实际加权成交价保本损
+* 取消价格必填，且 `maker-order-lifecycle-v1` 必须为 `fillable`；`cancel_blocks_all_entries|entry_before_cancel|invalid_geometry` 均不得执行，实际 `fill_probability=null`
 
 ---
 
@@ -85,9 +87,10 @@
 ### 6. 是否严格按入场信号执行
 
 **判定**：
-* `single` 只允许单一精确价；`ladder` 只允许 2–5 档且比例合计 100%；`conditional_zone` 明确不是订单
+* 正式 Maker 订单只允许 `ladder`：同一价格区间内 2–5 档明确价位，分配比例合计 100%；`single` 禁止用于 Maker，`conditional_zone` 明确不是订单
 * 入场方式与计划一致，只有实际触发或限价成交后才算执行
 * 价格尚未到达 Maker 边缘属于“挂单等待”，不得改成市价追单，也不得伪报已执行
+* 未成交取消价必须位于从当前认证价前往入场区间的反方向，能够在任何入场档成交前先触发；取消价不得等于成交后止损
 
 **禁止**：
 * 未击中入场点强行追单（V014 违规）
@@ -96,26 +99,30 @@
 
 ---
 
-### 7. 单笔止损 ≤ 3%（2026.3.5 起硬规则）
+### 7. 全部非空成交组合风险上限（账户独立硬规则）
 
 **判定公式**：
 ```
-单笔风险 % = (|entry - sl| / entry) × leverage × 100
+组合风险 % = (|weighted_entry - sl| / weighted_entry) × leverage × 100
 
-判定：单笔风险 % ≤ 3
+Maker 判定：每个非空成交组合风险 % ≤ 3
+Main 判定：四档的 15 个非空成交组合风险 % ≤ 8
 ```
 
-**举例**（5x 杠杆）：
-* entry = 70000, sl = 70420 → (420/70000) × 5 × 100 = 3.0% ✓ 边界
-* entry = 70000, sl = 70500 → (500/70000) × 5 × 100 = 3.57% ✗
+**无市场含义的归一化算术例**（5x 杠杆，仅验证公式）：
+* Maker：weighted_entry = 100.0, sl = 100.6 → 3.0% ✓ 边界；sl = 100.8 → 4.0% ✗
+* Main：weighted_entry = 100.0, sl = 101.6 → 8.0% ✓ 边界；sl = 101.7 → 8.5% ✗
 
 **禁止**：
-* 任何情况下扩大止损区间（V001 移动止损违规）
+* 为规避风险上限而脱离结构失效锚扩大止损
+* 为通过风险上限或盈亏比而把 Maker 止损压缩到入场区边缘
+* 用 3%/8% 或 R:R 反解 `price_distance`，或让 decision/compiler 自行补出 observation、timeframe、buffer
+* 成交后向不利方向扩大止损（V001）
 * "再观察一下"延后止损
 * 情绪化补仓（V004）
 
 **理由**（2026.3.5 笔记）：
-> 小资金阶段用 2-3% 止损
+> Maker 小资金阶段用 2-3% 止损；主账户中线风险独立控制在 8% 以内
 > 不是为了激进
 > 而是为了在可控风险下加快复利
 
@@ -131,7 +138,7 @@ risk_checklist_pass = all([
     item_4_sl_tp_set,
     item_5_in_time_window,
     item_6_strict_signal,
-    item_7_single_loss_under_3pct
+    item_7_all_fill_scenarios_within_account_limit
 ])
 
 if not risk_checklist_pass:
@@ -143,25 +150,11 @@ if not risk_checklist_pass:
 
 ## 与生产决策门的对应
 
-`runtime/decision_contract.py`、`runtime/report_contract.py` 与 `certify-reasoning` 共同重放本清单；任一项失败即拒绝进入 canonical report。历史 risk Agent 仅作参考设计，不得进入生产 authority。
-
----
-
-## 历史教训
-
-| 日期 | 违规 | 触发的检核项失败 |
-|---|---|---|
-| 2025.7.11 | V001 移动止损 | 第 4 / 第 7 项 |
-| 2025.8.5 | V002 未执行计划 | 第 1 / 第 6 项 |
-| 2026.1.9 | V008 无计划补仓 | 第 1 项 |
-| 2026.3.11 | V011 情绪加单 | 第 1 / 第 6 项 |
-| 2026.4.1 | V012 未取消策略 | 第 6 项（取消价已触发未执行） |
-
-→ 违规分类以 `governance/major_violations.md` 与 `governance/penalty_system.md` 为准；历史 Agent 文件不参与生产判断。
+当前引擎的 hash-bound 决策合同、报告合同与推理认证必须共同重放本清单；任一项失败即拒绝进入 canonical report。历史 risk Agent 仅作参考设计，不得进入生产 authority。
 
 ---
 
 ## 核心原则
 
 > 缺项 = 计划质量评级"低"，属于违规风险（图谱第四节）
-> 当前阶段（2026.3 至今）核心目标：洁净样本打造 → 每笔必须 7/7 通过
+> 每份计划必须按本轮锁定证据完成 7/7 检核；历史违规、样本进度或旧评级不得进入当前交易判断。

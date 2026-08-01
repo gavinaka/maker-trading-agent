@@ -1,79 +1,69 @@
-# 2026-06-22 至 2026-06-26 AI Agent 底稿与手工 Notion 双参考推理契约
+# 金标底稿与手工报告双参考推理契约
 
-> 状态：已学习的压缩契约，不是每次报告的历史样本输入。
-> AI Agent 底稿参考范围固定为 **2026-06-22 至 2026-06-26**；只用于学习和校准逻辑链、交易方法论、证据进入判断的方式、推理深度和分析维度。手工 Notion 稿不限日期，只用于校准用户原始策略意图、字段含义和观望边界。两条参考链必须分开，不得把任一旧稿的行情事实、方向、分数、胜率、价位、风险判断或措辞带入当前报告。
-> 历史材料只在维护审计中只读；日常生产运行禁止重新读取、重新识别或逐篇比对旧样本。
-> 一次性学习样本：6 月 22 日早/午/晚、6 月 23 日早、6 月 24 日晚、6 月 25 日早、6 月 26 日早/午共 8 份 Word 底稿及其可用 Notion 成稿。`outputs/2026-07-04_midday_render.docx` 及 6 月 27 日后的已知问题稿只作负样本，不得反向成为方法权威。
+> 状态：维护期已学习的压缩方法摘要，不是运行期历史样本输入。
+> AI 合格底稿参考范围固定为 2026-06-22 至 2026-06-26，只贡献推理链、交易方法、证据用法和表达节奏；用户手工 Notion 报告只贡献策略意图、字段语义和观望边界。二者均不得贡献旧行情、方向、评分、置信度、价位、仓位、风险结论或措辞。
+> 运行期只读取本契约、本轮密封证据和 phase manifest。producer shape/leaf ownership 只以 `scoring/reasoning_submission_contract.json` 为机器真相；业务枚举、字段及真值表只以 `scoring/scoring_contract.json` 和 `governance/vnext_daily_workflow.md` 为机器真相。
 
-## 核心定义
+## 1. 对齐目标与顺序
 
-金标对齐 = 对齐思考方式、推理逻辑和分析维度，不是对齐字数、价位数量、段落长度或 Markdown 后补痕迹。
+金标对齐是对齐观察 → claim → 反证 → 失效 → 情景 → 决策闭环，不是复制旧稿长度、数字数量或排版痕迹。固定顺序：
 
-`VRVP`、流动性猎杀、清算地图和 ETF 净流入/流出是**增量维度**：它们只能增强原逻辑，禁止替代或压缩同一 pivot 四维、Exocharts 足迹、多周期结构、评分、置信度、风险、反证、失效和订单生命周期。
+1. 完成本 slot 六源验真、转录和不可变证据密封。
+2. vNext 请求 exact `gpt-5.6-sol/xhigh`；实际 `max|ultra` 只证明 `>=xhigh`，不改请求且非正确性依赖。结构化完成 observation、claim、current basis、future trigger、scenario 与 account decision。
+3. 先密封独立推理和对抗反证，再允许 source/hash-bound 连续性事实进入；连续性只处理撤旧、保留、挂新与防守衔接，不回写市场判断。
+4. compiler 从同一批 typed 制品确定性生成前台、Word、PDF 和逐页 PNG；报告或交付失败只在本阶段局部纠正，不重采、不重推。
 
-推理方式、深度和维度必须硬对齐；格式不要求克隆旧 Word/冻结金标到 100%。格式达到接近 100%、字段含义不误导、交易参数准确、并通过 Notion/Word/发布机械门即可。
+## 2. 六源作用与增量边界
 
-执行顺序固定为：
+- BlockBeats：只提供密封 top3 事件事实与层级；逐事件兑现由跨源 claim 判断，综合价格兑现必须结合 TradingView。
+- FedWatch：描述宏观概率环境和边际变化，不直接决定 Maker 方向，也不作为计划时置信度 adjustment。
+- Farside：只提供最新完整日 ETF 流量事实；价格×流向关系按 3×3 合同形成 confirm/weaken/neutral，不能单变量翻向。
+- Coinglass：同一 1H pivot 读取价格、CVD、OI、资金费率和清算通道，是 Maker 盘口主判。
+- Exocharts：固定 Bybit BTCUSD 日线足迹配置，校验主动成交、Delta、CVD、POC 与吸收；只确认、削弱或反驳盘口主判。
+- TradingView：负责 1D/4H/1H/15m、SMA20、结构区与位置质量。平台 VRVP 禁用；只承认本轮可读的用户手绘成交量分布区域。
 
-1. 完成当次 slot 的六源采集与有效性确认。
-2. 先由 `runtime/host_capability.py` 从当前 session JSONL 绑定真实 model/effort；自动化使用 `gpt-5.6-sol + high`，实际 effort 低于 `high` 即硬停，`max` 仅作兼容。Prompt 或人工布尔确认不得冒充宿主证据。
-3. 在动笔前按本契约组织推理。
-4. 在正式 MD 前写入内部 `runtime_state/<date>/reasoning_work_<slot>.md`，并通过 `session_runner.py certify-reasoning` 形成 `reasoning_readiness_<slot>.json`。
-5. `certify-reasoning` 后先建立 `reasoning_lock_<slot>.json`，锁定独立分析，再开放前序计划/实仓只读上下文并生成 `continuity_contract_<slot>.json`。
-6. 再写正式 `combined.md`；正文和③后附必须逐项承载 reasoning contract 预先冻结的语义投影，之后才允许最终 report preflight / analysis lock / Word / Notion。
-7. MD 生成后不得为了“像金标”补字数、补价位、补 rubric、补段落；后补任何推理均禁止。
+VRVP/流动性猎杀、清算地图和 ETF 是增量维度：只表达位置、概率或确认强弱，不替代同 pivot 四维、足迹、多周期结构和账户优先级。手绘区域不足时明确 insufficient，不由清算图或辅助价位补值。
 
-## 必须对齐的推理维度
+## 3. 账户、反证与情景
 
-1. 六源验真与转录：BlockBeats、FedWatch、Coinglass、Exocharts、Farside、TradingView 都必须先读成当次证据，不从前序报告继承判断。
-2. 基本面：BlockBeats 先分 Tier，再判断是否改变背景、是否已被价格兑现；FedWatch 写概率与边际变化，不把宏观词当方向锚。
-3. 盘口：Coinglass 先定阶段 pivot，再读价格、CVD、资金费率、OI 的方向/斜率/背离；清算热力图只作辅助，不单独翻向。
-4. 足迹：Exocharts 对 OHLC、POC、Delta、CVD、吸收/失衡做自洽校验；足迹只调强弱，不替代主盘口框架。
-5. 盘面：TradingView 分日线、4H、1H、15m；SMA20 每份重测；VRVP/VAH/VAL/POC 和趋势线用于概率主判。
-6. 主账户：基本面 > 盘面 > 盘口，先形成中线方向，再落计划；不得用 Maker 盘口评分反推主账户方向。
-7. Maker：盘口 > 盘面 > 基本面；70/30 评分必须由证据自然落值，再比较 65 门槛。
-8. 胜率：按 rubric 真实估算，先取锚，再用合法次因微调，最后与 60% 门槛比较；禁止贴门槛倒推。
-9. 风险：入场、止损、止盈、盈亏比、杠杆、浮盈防守都必须可由当次证据和规则验算。
-10. 情景与反证：每个核心方向都要写出最强反证、失效条件和为何仍未翻向。
-11. “不能做”：全文推理完成后最后回填，作为当日 Maker 收口结论，不参与前置倒推。
-12. 锁后信息：前序计划和 Notion 实仓只允许在 analysis lock 后用于撤旧挂新、漂移对照和执行校准，不改变本报告独立判断。
+- 主账户：基本面 > 盘面 > 盘口；Maker：盘口 > 盘面 > 基本面。两者只共享六源 observation 与账户中立解释，各自拥有 regime、thesis、最强反证、失效和 base/counter/invalidation 三情景。
+- `current_basis` 只证明当前反证/失效为何存在；`trigger_logic` 只描述未来何时增强或触发，二者分别是当前/未来控制语义唯一可见、唯一承重真相。自由 `conclusion`/`invalidation` 只供上游门内审计，不得进入 reasoning proof、scenario condition、报告或交付面；compiler 不得从方向、历史措辞或自由文本补条件。
+- `account-trigger-logic-v5`：`any` 每条独立同向且当前均 false；`all` 同极性、同 field target 交集非空且至少一条 false；`one_of_at_trigger` 单极性。唯一 Coinglass/Exocharts `all` 对：reference target=current → `equals_at_trigger`，否则 `becomes`；relation=`equals_at_trigger`。runtime 只投影 operator；绑定／真值／方向无效即失败。
+- 六项 scenario 使用 `scenario-ownership-v1` 的 exact `id/account/scenario_type/owner_claim_id`。模型只拥有 typed thesis/counter/invalidation 与其 `current_basis/trigger_logic`；同一个已密封 reasoning attempt 内的 runtime 从唯一同账户 typed owner 生成 top-level 六格、methodology 同格 `claim_id`、scenario type 对应 closed transition code，并把 owner 的 direct claim supports 按原顺序去重投影为 `trigger_claim_ids`。模型提交的 scenario/methodology 包装值、账户 claim 绑定、冲突政策、订单流 source-domain 到 claim-domain 的方向映射和 `pipeline_units` 均不构成第二 authority。compiler 从 base owner 的 typed direction 或 counter/invalidation owner 的 `trigger_logic` 投影 condition，并从 transition code 投影 expected path/action；真实订单生命周期仍只由 Decision 与 continuity 拥有。
+- Enforce contract's disjoint/exhaustive 54-leaf ownership: deterministic server paths; 8 model business leaves; one `selected_event_sha256` producer key. Unclassified leaves hard-stop preflight; runtime never repairs business judgment or alters/infers/reorders the key.
+- `cannot_do` 只属于 Maker，必须在 Maker 完整闭环后最后生成且 output-only；不得进入任何前置 claim、情景、评分、置信度或方向。
+- 冲突必须保留。例如基本面偏暖而盘口承压，可以形成主账户等待、Maker 压力区短线，禁止为叙事一致强行同向。
 
-## 6 月样本沉淀的推理骨架
+## 4. 评分与计划时置信度
 
-每份报告必须按以下顺序完成内部推理；正文可以精炼，但③后附必须留下这些承重链条：
+- 当前 production 盘口为任意整数 0–60，61–69 非法，70 仅为未来原生证明能力保留；盘面 0–30 只评价机会质量。先自然落分，再比较总分 65。
+- 计划时置信度顺序固定：两轴 anchor → `adjustments[0]` 当前 Maker 最强反证负调整 → 独立 ETF adjustment → final → 比较 60。当前 `fundamental-event-assessment-v1` 没有 event-aligned price attribution basis，固定 `load_bearing_allowed=false + observation_only_reason_code=event_price_attribution_unavailable`，禁止用于 `winrate_adjustment|account_current_basis|account_trigger_logic`；`fundamental_price_realization` 必须为 `no_adjustment / event_price_attribution_unavailable`。只有未来认证价格归因 basis 后才可按 `price_attribution_basis_required_to_reenable=true` 重新承重。
+- anchor 只绑定 shared|maker 的两条原始证据轴：Coinglass+Exocharts 可达的 orderflow 轴，以及 TradingView 可达的结构位置轴。主账户、thesis、regime、counter、cannot-do、基本面和 ETF claim 均不能充当 anchor。
+- `anchor_rationale` 必须精确使用 authority canonical 文本；市场依据只由 typed anchor claim/source 拥有，compiler 不保留或编造自由文本市场解释。
+- `adjustments[0]` 必须是 `maker_counter_current`，完整覆盖当前 Maker 最强反证的全部 current-basis clauses；不存在 resolved 后免调。ETF/基本面调整只能排在其后，FedWatch、footprint/orderflow、chart/structure 和清算地图不得重复计证。
+- final 完成后才比较门槛；入场价格触达概率只衡量当前价到挂单价格的可达性，独立 `order_lifecycle` 只证明是否存在合法成交/撤单路径，盈亏比只属于风险数学；三者均不能替代计划时置信度，系统不估计订单实际成交概率。
 
-1. 开篇先给“独立判断压缩版”：当前市场阶段、主导腿、主要证据、反证变量和最终动作必须一次性收束，不能只罗列源数据。
-2. 评分明细先写盘口 70：用 Coinglass 同一 pivot 读 CVD/价格/OI/资金费率净斜率，再用 Exocharts 校验真买/真卖、POC、Delta、CVD；必须写“腿选对、四维同锚、没有把横盘/反抽误读成新腿”的三问自检。
-3. 盘口评分必须有“综合权衡”：先承认主方向证据，再列出为什么不走极端的约束，最后落绝对分数。不能直接从结论倒推分数。
-4. 盘面 30 必须拆成支撑压力接近度、流动性掠夺、SMA20、量价、斐波/趋势线，说明每项如何贡献分数。
-5. 胜率必须写 rubric 链：锚点胜率 -> 合法次因加减 -> 落值 -> 再和 60% 比较。执行概率必须单独处理，只衡量挂单可达性，不能混入胜率。
-6. 六源支撑必须是源到判断的链：BlockBeats 分 Tier 并聚合；FedWatch 写当前概率与 1日/1周/1月边际；Farside 写 BTC ETF Flow 的 Total 流入/流出与价格关系；Coinglass 写四维状态；Exocharts 写 POC/Delta/CVD/成交量序列；TradingView 写跨源现价、日线/4H/1H/15m、SMA20、VRVP/POC/HVN/LVN。
-7. 流动性读法必须是 VRVP/成交量结构主判，清算热力图只辅助印证；猎杀位必须带周期和用途，不得用热力图单独翻向。
-8. “不能做”必须在完整推理后由拥挤侧、squeeze/rollover、位置、费率/OI 和趋势阶段推出；只约束日内 Maker，不反推主账户中线。
-9. Maker 计划必须体现订单生命周期：旧单是否成交、是否触及取消价/止损、是否撤旧挂新、为何边缘随行情上移/下移，且同一时刻只保留一张系统 Maker 单。
-10. 风险验算必须把入场、止损、TP1、TP2、R、杠杆名义风险、盈亏比和仓位金额算清楚；防守层第一层只能绑定“成交后后续形成并确认的 4H 极点”规则，报告阶段不得预填该极点止损价，第二层只保本损。
-11. 冲突项必须显式处理：例如基本面偏暖但盘口承压时，主账户可以等待，Maker 只做压力区短线；不能为了统一叙事强行把所有源压成同一方向。
-12. 每个数值必须嵌入其对应推理节点，证明方向、分数、胜率、风险或取消条件。禁止在后附末尾堆“锚点组”来凑数；数字列表不能替代推理链。
+## 5. 入场、止损与风险
 
-## 机器执行门
+- Maker 入场必须是 TradingView 认证价格区间内 2–5 档 ladder，比例合计 100%；single、代表价、清算图和 Exocharts POC 不得冒充 entry zone。
+- 主账户初始止损只用自身 1D/4H 结构，全部非空成交组合不高于 8%；Maker 使用自身 4H/1H/15m 结构，全部组合同时满足不高于 3% 与 TP1 R:R 不低于 1:2.5。两账户不得串线。
+- 结构噪声 buffer 不是风险门槛倒推公式。同账户 `invalidation_path` 必须在 reasoning 阶段密封 exact `structural-noise-buffer-v2`，绑定 support DAG 可达的本轮 TradingView observation、账户允许 timeframe、同周期截图、可机械定位的结构锚与图上 `noise_outer_boundary`，并固定 `risk_budget_input_used=false`。
+- `status=certified` 时 decision stop basis 中实际存在的 identity/anchor/distance 字段必须精确等于 reasoning owner，Gate 另读 reasoning 的 status、visual evidence 与 boundary，并验证最终 stop 严格越过外边界；`status=insufficient` 时只允许闭合原因并保持 `observe`。3%/8% 与 R:R 只能后验，禁止压缩结构止损。compiler 只校验和投影，不得推断。
+- 机械合同只能证明“证据绑定、方向化边界、先密封、后验算、下游不漂移”，不能读取模型在 reasoning 时的隐藏意图，也不能替人判断截图中的外边界是否识别正确。fresh 样本仍须人工复核；不得用任意最小点数、ATR 倍数、风险派生公式或新硬门伪装成证明。
+- Maker 两层浮盈防守必须展示阿拉伯数字精确触发价：prefill 覆盖计划全档锚和全部成交组合，成交后按 actual weighted fill 重算；未来 4H 极点止损价不得预填。TP1 减仓 50%，TP2 清剩余 50%。
+- Maker 报告语义必须由 `risk_plan` 是否非空作为候选是否已提交的唯一 owner，并互斥归类为 `maker-semantic-state-v1` 四态：`qualified_candidate`、`rejected_submitted_candidate`、`directional_thesis_only`、`non_directional_observation`。被拒态允许 `plan_constructible=true|false`，因为只要 `plan_state=observe + risk_plan` 非空就已有提交候选；其原始候选生命周期只可在附录 D 以不可执行审计保真。后两态必须明确披露“未提交候选计划”，不得称为候选/被拒候选、投影计划数字，或在情景中携带未被明确否定的候选执行生命周期。报告 evaluator 必须从 audit 重建 Maker summary、Maker execution 前台与主账户授权，不能反向相信可见摘要。
 
-- BlockBeats 的 Tier 结论必须与当前 TradingView 价格/结构形成显式 `fundamental_price_realization` 节点，状态只能是已兑现、部分兑现、未兑现或冲突；新闻方向本身不能直接成为交易方向。
-- FedWatch 必须绑定数据时点、下一次 FOMC 日期、当前概率分布及 1日/1周/1月边际，概率分布需自洽；Farside 必须绑定最新完整交易日，流入/流出标签需与带符号总值一致。
+## 6. 人类可读投影与验收
 
-- `scoring/scoring_contract.json`（`trading-scoring-contract-v3`）是机器可读单一规则源；`runtime/reasoning_contract.py` 生成 `trading-reasoning-contract-v2`。它必须复算 C01–C81、效果背离、OI/价格语义与资金费率不翻向，并将盘面30锁定为 TradingView-only、方向中立的机会质量分。TradingView VRVP 主判流动性猎杀概率；Coinglass 清算热力图只作独立辅助印证，不得计入盘口/盘面分或翻向。
-- 同锚三问、足迹交叉验证、四周期转换、成交量结构/猎杀、ETF 关系、账户分流、三情景树和“不能做”末位推导缺一即硬停。
-- 承重 claim 按类型执行机器合同规定的最少独立来源数：综合状态、主账户、Maker 和“不能做”至少两源；盘口必须 Coinglass+Exocharts；盘面分项只能 TradingView；反证与失效至少一项可复核来源。只写“已复核”“结构完整”等通用句不能满足证据覆盖。
-- `report_projection.items` 在正式 MD 前冻结；可见正文必须覆盖全部承重 claim 类型，③后附必须覆盖全部金标语义单元，且承重数值必须由 observation value path 绑定后原样进入文本。
-- `runtime/adversarial_review.py` 除五类检查外，还必须逐个承重 claim 绑定被挑战的 support/counter 节点和用于裁决的 resolution 节点；通用 pass 文案不能替代节点证据。
-- Notion 仍由 `combined.md` 唯一派生，但 draft/preflight 必须先验证金标可见语义没有在 Word/Notion 投影中丢失；“正文精炼”不得解释为删除推理链。
-- 前序订单连续性只能在独立 reasoning lock 后读取，并由 continuity contract 证明旧单状态、撤旧/保留/挂新动作和最终活跃订单数；不得靠布尔自证。
+正文可以精炼，但③后附必须让人直读六源的作用、事实、判断价值和边界，并保留同锚盘口、足迹、多周期、增量维度、双账户反证/失效、评分/置信度、风险和情景链。数字必须嵌入对应推理节点，禁止末尾堆锚点组。
 
-## 红线
+主账户与 Maker 的 base/counter/invalidation 六个完整情景，以及两账户各自的“当前最强反证／未来反证触发／当前失效基线／未来失效触发”八个闭环标记，只能在附录 D 各详细出现一次；正文与附录 C 只保留指向附录 D 的短引用，不得复制完整情景树或完整 future trigger。
 
-- 禁止把金标对齐做成 MD 后的长度、价位、格式、rubric 留痕补丁。
-- 禁止每次报告重新读取 2026-06-27 前旧 AI Agent Word/Notion 报告或任意日期手工 Notion 稿来“再学习”。
-- 禁止混淆双参考链：AI Agent 稿只证明方法曾如何展开，手工稿只证明用户策略意图；二者都不能证明旧市场事实正确。
-- 禁止复制旧报告方向、分数、胜率、价格区间、风险判断或措辞。
-- 禁止为了追逐旧 Word 版式 100% 牺牲推理深度；格式只要求接近 100% 和机械门通过。
-- 禁止用 lint 表面指标证明推理深度；表面指标只能报警，不能代替动笔前的推理契约。
-- 禁止“数值锚点组”式后补堆砌。金标样本的数字是嵌在 Coinglass/Exocharts/TradingView/风险/胜率链条中承重，不是独立堆列表。
+Word/PDF/逐页 PNG 必须同源确定性派生。Word passed 必须使用 exact `word-qa-vnext-v2`、authority 定义的 exact checklist 版本与键集合，并且所有检查项均为 boolean true；价格数字保持阿拉伯数字。vNext 切换前禁止发布 Notion。
+
+## 7. 红线
+
+- 禁止运行期重读历史 Word/Notion 样本，禁止复制旧方向、分数、置信度、价格或措辞。
+- 禁止为了像金标而补字数、rubric、价位或模板段落；格式不得反向驱动交易判断。
+- 禁止用 lint、布尔 PASS、长文本或测试样本冒充推理深度、真实视觉验收或市场事实。
+- 任何与 machine truth 不一致的自由文本都无效并硬停；不得用配置、compiler 推断或历史经验补规则。

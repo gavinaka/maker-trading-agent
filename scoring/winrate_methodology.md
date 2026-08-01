@@ -1,56 +1,73 @@
-# 胜率自估方法论（开单硬门槛② 的可复算 rubric）
+# 计划时置信度方法论（Maker 开单硬门槛②）
 
-> 权威：系统自估"胜率"的唯一口径。胜率＝**开仓前的前瞻确信度分级**（plan-time conviction），**非回测命中率**。
-> 🟥 **统计诚实边界（2026-07-12）**：机器字段固定为 `plan_time_conviction`，报告固定标注“计划时置信度，非回测命中率”。在具有充足、独立、带真实结局且定义一致的样本并完成校准检验前，`calibrated_probability=false`、`calibration_status=insufficient_outcome_samples`；禁止把自估百分比解释为真实命中概率、稳定收益率或模型已校准证明。
-> 来源：2026 年 1–5 月用户真实样本 55 个倒推归纳；历史原稿已移入 pre-lock 禁读归档区，不得作为当前市场事实输入。
-> 接口：本方法论产出的计划时置信度喂入 [开单双门槛](score_thresholds.md) 的 **门槛②（≥60%）**，并由 `runtime/decision_contract.py` 机械复算。
+> 本文件是系统自估“胜率”的唯一业务口径。对外固定写作**计划时置信度，非回测命中率**。
+> 在具有充足、独立、定义一致且带真实结局的样本并完成校准检验前，`calibrated_probability=false`、`calibration_status=insufficient_outcome_samples`；禁止把自估百分比解释为真实命中率、稳定收益率或模型已校准证明。
 
----
+## 1. 三轴严格分离
 
-## 0. 定位（三轴分离·勿混淆）
-- **胜率＝设置质量/确信度**（本文件·开单硬门槛②）。
-- **执行概率＝价格可达性**（软参考·非门槛·见 `score_thresholds.md`）。
-- **盈亏比＝独立要求**（恒 ≥1:2.5）。
-- 三者**互相独立**：同一胜率档执行概率可 50%–80%；高胜率不代表高可达。**禁把执行概率/盈亏比当胜率、禁把胜率当命中率。**
-- 历史报告数量只用于检查方法稳定性；没有逐笔真实结局、同口径标签和足够样本量时，不得据此宣称预测有效性已经成立。
+- **计划时置信度**：当前证据对 Maker thesis 的支持强度与反证可控程度，取 0–100 的整数。
+- **入场价格触达概率**：当前价在计划窗口内触达挂单价格的可能性，只是软参考，不进入计划时置信度；它不是订单实际成交概率。
+- **盈亏比**：入场、止损与 TP 的独立风险数学，必须满足自身合同，不进入计划时置信度。
+- 三轴不得互相替代：高置信度不代表高可达，高盈亏比也不证明方向更可能成立。
 
-## 1. 锚点事实（不可违反）
-- 🟥🟥 **门槛②＝胜率自估 ≥60% 即可；胜率是真实估计值——实际多少就多少**（2026-06-17 用户连续两次拍板订正）。`门槛是60%以上即可`、`落地档也不是70固定的以上 实际多少就多少`。
-- 🪦 **旧口径「胜率词汇只有 70/75/80·实际开单从不<70·自估<70即观望」已被用户推翻（2026-06-17）**：胜率**不锁固定三档**，估出真实值（如 62 / 65 / 68 / 72 / 78%…均合法）；**不存在"自估<70即观望"的判停**，只要真实自估 ≥60% 门槛②即满足、<60% 才不满足。
-- 下方第 3 节的 70/75/80/85 锚点**仅作"估算质量参照"**（信号越强、结构位越优→真实胜率越高），**不是允许值清单、不是 floor**——据参照综合估出落在区间内的真实百分比。
-- 55 样本分布（历史用户填写习惯·仅参考）：70＝53% / 75＝24% / 80＝24%。
-- 含义：胜率＝前瞻确信度的**真实百分比估值**；门槛②只卡 60% 这条线，质量分级用于把估值往高/低调。
+## 2. 取值与门槛
 
-## 2. 两大主因 + 次因
-- **主因①：盘口信号确认强度** —— 明确背离/极端组合 > 小幅/4H 背离 > 纯中性。
-- **主因②：结构位质量** —— 多重强共振关键防守位 > 普通高质量边缘 > 一般达标边缘。
-- **次因（只微调档位、不单独定档）**：盈亏比（1:3/1:3.5 偏高档）、顺/逆势（逆势单确信偏低）、事件窗口（数据公布前不确定→压低或观望）。
+- 计划时置信度使用 0–100 连续整数，实际证据支持多少就落多少；禁止固定三档、只给整十/整五或为了过门槛凑值。
+- 硬门槛仅为 **60%**：最终值 ≥60% 满足门槛②，<60% 不满足。
+- 必须严格按 `anchor → 当前 Maker 最强反证负 adjustment → 其它独立 adjustments → final → 60% 门槛` 完成；禁止先看开单结果或门槛倒推数字。
+- 盘口总分、盘面分和计划时置信度相关但不等价；禁止用总评分线性换算置信度。
 
-## 3. 三档 rubric（自估按此映射）
+## 3. Anchor：两条主轴联合确定
 
-> ⚠️ 下表分值为**估算参照锚（区间中枢）**，不是允许值清单：据信号强度+结构位+R:R+事件窗口综合，估出落在这些锚附近的**真实百分比**（可 62/65/68/72/78%…）。门槛线＝60%：真实自估 ≥60% 即满足门槛②、<60% 才观望。
+Anchor 只能由当前推理 DAG 中 `account=shared|maker` 的允许 claim IDs 确定，并同时回答两条主轴：
 
-| 自估参照 | 触发条件（挂现有评分体系因子） | 真实样本锚点 |
-|---|---|---|
-| **<60% → 观望（门槛②不满足）** | 盘口纯中性无背离 + 无高质量边缘；或高波动事件前（CPI/非农/利率决议）不确定大幅压低；或 R:R<2.5；或超跌结构未企稳 | 64 个观望日（"胜率及盈亏比不符合系统要求"） |
-| **~60–70%**（达标·普通质量） | 共振结构达标 + **盘口解读＝中性/中性偏多/中性偏空（无明确背离）** + R:R≥1:2.5 + 合理边缘；事件窗口/CVD未坐实等次因下调时落此区间 | 3.18 高空(中性·多头短线)、2.18 低多(中性·空头趋势)、1.16 回调多(中性·多头中线)、5.6 高空(中性·多头单边逆势→仅给底档) |
-| **~75**（中等加成） | 达标(~60-70%)基础上**多一项确认**：出现**小幅 / 4H 级别背离**，或**结构位质量更高 / R:R≥1:3** | 5.11 高空(看跌背离4H)、2.13 做多(持续看涨背离)、4.1 低多(小幅看涨背离)、1.7 高空防守(小幅看跌背离·R:R1:3.5)、2.25 高空(强压·R:R1:3) |
-| **~80**（高确信） | 满足任一强确认：**明确背离/真极端候选（C19/C22/C56/C59 中经整体证据确认到70）/盘口预警**；或**多重强共振关键防守位**；或**顺势反弹空挂强压+高R:R** | 5.28 利空看跌背离极端组合、5.12 看跌背离4H、1.13 CVD看涨背离预警、4.20 周线W底共振·接飞刀低多、3.30 关键多头防守极限区回调多、2.4 CME缺口+区间下轨反弹需求(左侧)、3.22/3.13 顺势反弹空R:R1:3 |
-| **~85**（罕见·极高确信反转） | 明确背离 + 强压顺势反弹空 + 右侧确认，确信度极高时 | 5.18 晚反弹空 |
+1. **盘口轴**：必须绑定 `orderflow_interpretation`，且其 support DAG 同时可达 Coinglass 与 Exocharts；它回答同一 pivot 四维是否闭环、足迹是确认／削弱／冲突，而不是把足迹另作加减分。
+2. **结构位置轴**：必须绑定 `chart_interpretation` 或 `invalidation_path`，且其 support DAG 可达 TradingView；它回答 1D/4H/1H 结构、Maker 入场位置与结构失效边界是否明确。可选 `liquidity_hunt` 只能补充位置/概率，不能代替该轴。
 
-## 4. 与现有评分体系的接口（无需新数据源）
-- **信号强度** ← `scoring/orderflow_methodology.md` 的盘口解读：C19/C22/C56/C59 中经整体证据确认的真极端70＝最强；同候选接近极端60、看跌/看涨背离（含小幅/4H）＝中强；"中性/中性偏多/中性偏空/散户没犯错"＝弱（→胜率落 ~60-70% 达标区·真实值据次因调）。
-- **结构位质量** ← `scoring/chart_methodology.md` 的盘面：多周期共振关键位/关键防守极限区/周线日线共振支撑阻力＝高；普通通道边缘＝中；中部无边缘＝（位置不优→挂价问题，非胜率，但若全程无高质量边缘则压低确信）。
-- **盈亏比/事件窗口** ← Maker 计划字段与 FedWatch（数据公布前不确定→压低或观望）。
+主账户 claim 一律禁止进入 anchor。`maker_thesis`、`market_regime`、`strongest_counterevidence`、`cannot_do`、`fundamental_context`、`fundamental_price_realization` 与 `etf_confirmation` 也不得充当 anchor；这些结论层或独立次因不能冒充两条原始证据轴。
 
-## 5. 硬约束（防漂移·防臆造）
-1. 🟥 **门槛线＝60%**；自估落 <60% 即**不开单**（写观望）。胜率取**真实估值**、不锁固定档、不存在"<70 即观望"（2026-06-17 用户两次拍板订正·旧"档位带70-85/自估<70不开单"已废）。
-2. **禁为了过门槛而臆造高胜率**：据信号/结构如实估真实%；信号弱/事件大幅不确定就如实给接近 60% 或 <60%（观望），强确认才上 70%+。准确性优先（[[stability-contract]]）。
-3. **禁单变量定档**：胜率由"信号强度 + 结构质量"综合，单有一项不足不必然降档、单有一项强也需另一项不拖后腿（[[judgment-synthesis-not-extreme]]）。
-4. **75/80 边界含主观成分**：rubric 抓主因，临界由综合权衡定，不过度公式化。
-5. 胜率是**前瞻确信度**，出稿写进 Maker 计划"胜率X%"字段；**不与执行概率/已执行%/盈亏比混淆**。
+连续估值边界：
 
-## 6. grep 闭环（落地核验点）
-- 本文件 = 胜率自估唯一权威。
-- 引用方须一致（口径＝门槛②计划时置信度≥60%·真实估值·不锁固定档）：`constitution/maker_principles.md`、`execution/maker_execution.md`、`scoring/score_thresholds.md`、`runtime/decision_contract.py` 与 committed daily-report 入口。历史 `agents/`、`.claude/` 或 README 示例不得覆盖。🟥 任一活跃引用残留"三档/实际开单从不<70/估<70即观望"即为阻断性漂移。
-- 历史样本原稿仅供维护审计；生产报告只使用当前 slot 证据。
+- 任一主轴缺证据或自身闭环不足：anchor 必须 <60。
+- 两轴均有效但确认一般、冲突仍显著：anchor 可落 60–69 的任意整数。
+- 一轴强、另一轴至少明确且两轴自身冲突有限：anchor 可落 70–79 的任意整数。
+- 两轴均强、跨源一致、位置和失效高度清晰：anchor 可落 80–89 的任意整数。
+- ≥90 只允许两条 anchor 轴的多源证据极强一致、结构位置高度清晰；在未校准阶段必须保持罕见，并明确轴内残余不确定性。当前 Maker 最强反证仍须在下一步强制负调整，不能被高 anchor 吞并。
+
+区间只是证据强度边界，不是固定档位。anchor 必须绑定支持两轴的允许 claim IDs；具体市场依据只由这些 typed claims 与其可达来源拥有。`anchor_rationale` 不是模型自由填写的市场解释，必须被当前 authority 的 `anchor_policy.canonical_rationale` 精确规范化；compiler 只能把 canonical 文本与机械验证出的两轴 claim/source 投影成人类说明，禁止保留、拼接或推断任何自由文本市场事实。anchor 只评价两轴，不得提前读取计划状态、门槛结果或反证处理结果。
+
+## 4. Adjustments：只处理独立次因
+
+Anchor 后逐项加入有符号整数 adjustments，顺序不可改变，最终值必须满足：
+
+`final = anchor + Σ adjustments`
+
+`adjustments[0]` 必须是当前 Maker 最强反证的负 adjustment；任何 ETF 或基本面兑现 adjustment 都只能排在其后：
+
+- `counter_resolution` 必须使用 `maker-counter-resolution-v2` 的 exact 字段，`disposition` 只能为 `adjusted`，`adjustment_reason_code` 只能为 `maker_counter_current`，`resolution_claim_ids` 必须为 `[]`。
+- 该 adjustment 必须绑定本轮 Maker `strongest_counterevidence`，为负整数；`residual_clause_indexes` 必须按原顺序覆盖该 claim 的全部 `current_basis.clauses`，不得挑选、遗漏或伪称已经解决。
+- 不存在 `resolved_no_adjustment`。若某一反证已不再成立，模型必须重新选择当前真正最强的反证；任何当前最强反证都必须扣分。
+
+在强制反证 adjustment 之后，当前合法的独立次因只包括：
+
+- `etf_confirm|etf_weaken`：只绑定 Farside 与同锚价格共同形成的 `etf_confirmation` typed claim。上涨+流入/下跌+流出=`confirm`，上涨+流出/下跌+流入=`weaken`，其余 5 格=`neutral`；neutral 不生成 0 adjustment。
+- `fundamental_confirm|fundamental_weaken` 仅保留为未来兼容枚举。当前 `fundamental-event-assessment-v1` 没有逐事件时间对齐的价格窗口与方向归因，固定为 observation-only；`fundamental_price_realization` 必须使用 `no_adjustment / event_price_attribution_unavailable`，不得进入 adjustment、账户 current basis 或 future trigger。只有未来另行认证 event-aligned price attribution basis 后，才可重新申请承重资格。
+
+每个 adjustment 必须使用 closed `reason_code`，绑定本轮允许 claim IDs 与 certified typed values，且 delta 为非零整数并符合合同规定的正负号。`reason_code` 必须唯一；单项 claim IDs 不得重复，不同 adjustment 的 claim IDs 与 typed owner signatures 必须互斥；anchor 与 adjustment 禁止直接复用同一 claim。
+
+`label` 与 `rationale` 只供 gate 审计，不是前台业务事实；compiler 只可投影 `reason_code + delta + claim_ids + typed_values`。入场价格触达概率、订单生命周期、盈亏比、主账户结论、历史胜率、旧报告、FedWatch、清算地图、资金费率单变量均不得成为 adjustment。Coinglass/Exocharts 的盘口与足迹、TradingView 的结构/位置已经属于 anchor 两轴，禁止再以 orderflow、footprint 或 chart adjustment 重复计入。
+
+## 5. 复算与反证
+
+1. Anchor 的 claim 只能来自 `shared|maker` 允许类型，禁止 observation ID、主账户 claim 或结论层 claim 混入。
+2. 当前 Maker 最强反证必须通过 `adjustments[0].reason_code=maker_counter_current` 的负 adjustment 全量承接其全部 `current_basis` clause；不得省略、挑选、后移或声明无须调整。
+3. 当前其它 adjustment 只允许 ETF 确认/削弱，且不得与 anchor 或彼此重复计证；基本面 v1 只作 observation-only，未来建立并认证 event-aligned price attribution basis 后才可重新申请基本面 adjustment。
+4. `final` 必须机械等于 `anchor + Σ adjustments`，与报告中的计划时置信度一致并保持 0–100 整数。
+5. 只有 final 落值后才与 60% 比较，再与总评分门槛共同计算 `threshold_eligible`；计划状态仍须独立通过 `plan_constructible`，不得反向改写 anchor 或 adjustment。
+6. 报告必须同时展示两轴 anchor 依据、强制反证 adjustment、全部其它 adjustments、final、门槛比较与“非回测命中率”标签。
+
+## 6. 运行边界
+
+- 日常生产只使用当前 slot 的六源证据与 hash-bound 推理制品，不读取历史样本原稿。
+- 风险数学与本置信度链严格分离：同账户 `invalidation_path` 必须在 reasoning 阶段用 exact `structural-noise-buffer-v2` 绑定其 support DAG 可达的本轮 TradingView observation、账户允许 timeframe、同周期截图、可机械定位的结构锚与图上 `noise_outer_boundary`。`status=certified` 时最终 stop 必须严格越过该边界并固定 `risk_budget_input_used=false`；证据不足只可密封 `status=insufficient` 并保持 `observe`。decision stop basis 中实际存在的 identity/anchor/distance 字段必须精确等于 reasoning owner，Gate 另读 status、visual evidence 与 boundary 验证；3%/8% 风险门不得反推或压缩，compiler 不得补算、猜测或重写。该 buffer 不是 anchor、adjustment 或门槛倒推的万能公式，也不存在固定最小点数或 ATR 公式。
+- 历史报告数量只能在外置评估中检验方法稳定性；没有真实结局与同口径标签时，不得声称预测有效性成立。

@@ -14,7 +14,15 @@ from runtime.state_store import atomic_json_write
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EFFORT_ORDER = {"minimal": 0, "low": 1, "medium": 2, "high": 3, "max": 4}
+EFFORT_ORDER = {
+    "minimal": 0,
+    "low": 1,
+    "medium": 2,
+    "high": 3,
+    "xhigh": 4,
+    "max": 5,
+    "ultra": 6,
+}
 DEFAULT_MINIMUM_EFFORT = "high"
 
 
@@ -90,6 +98,16 @@ def _manifest_hash(payload: dict[str, Any]) -> str:
     ).hexdigest()
 
 
+def effort_at_least(actual: object, minimum: object) -> bool:
+    return (
+        isinstance(actual, str)
+        and isinstance(minimum, str)
+        and actual in EFFORT_ORDER
+        and minimum in EFFORT_ORDER
+        and EFFORT_ORDER[actual] >= EFFORT_ORDER[minimum]
+    )
+
+
 def build_manifest(
     trading_date: str,
     slot: str,
@@ -97,13 +115,22 @@ def build_manifest(
     session_jsonl: Path,
     minimum_effort: str = DEFAULT_MINIMUM_EFFORT,
     root: Path = ROOT,
+    target_root: Path | None = None,
 ) -> dict[str, Any]:
     settings = extract_latest_settings(session_jsonl, expected_root=root)
+    target = (target_root or root).resolve()
+    session_root = root.resolve()
+    if session_root == target:
+        execution_scope = "native_workspace"
+    elif session_root == (target.parent / "Technical expert").resolve():
+        execution_scope = "technical_expert_cross_workflow"
+    else:
+        raise ValueError("session root is not authorized to orchestrate the target workspace")
     actual_effort = str(settings["reasoning_effort"]).lower()
     minimum_effort = str(minimum_effort).lower()
     if actual_effort not in EFFORT_ORDER or minimum_effort not in EFFORT_ORDER:
         raise ValueError("host reasoning effort is unknown")
-    if EFFORT_ORDER[actual_effort] < EFFORT_ORDER[minimum_effort]:
+    if not effort_at_least(actual_effort, minimum_effort):
         raise ValueError(
             "actual host reasoning effort is below the required minimum: "
             f"actual={actual_effort} minimum={minimum_effort}"
@@ -117,6 +144,8 @@ def build_manifest(
         "observed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "minimum_effort": minimum_effort,
         "effort_policy": "at_least_minimum",
+        "execution_scope": execution_scope,
+        "target_workspace": target.name,
         **settings,
     }
     payload["manifest_sha256"] = _manifest_hash(payload)
@@ -133,22 +162,26 @@ def validate_manifest(
     slot: str,
     *,
     root: Path = ROOT,
+    minimum_effort: str = DEFAULT_MINIMUM_EFFORT,
 ) -> dict[str, Any]:
     resolved = path.resolve()
     resolved.relative_to((root / "runtime_state" / trading_date).resolve())
     payload = json.loads(resolved.read_text(encoding="utf-8"))
+    minimum_effort = str(minimum_effort).lower()
     if (
         payload.get("schema_version") != "codex-host-capability-v2"
         or payload.get("status") != "verified"
         or payload.get("trading_date") != trading_date
         or payload.get("slot") != slot
-        or payload.get("minimum_effort") != DEFAULT_MINIMUM_EFFORT
+        or payload.get("minimum_effort") != minimum_effort
         or payload.get("effort_policy") != "at_least_minimum"
-        or payload.get("reasoning_effort") not in {"high", "max"}
+        or not effort_at_least(payload.get("reasoning_effort"), minimum_effort)
         or not payload.get("model")
         or payload.get("manifest_sha256") != _manifest_hash(payload)
     ):
-        raise ValueError("host capability manifest is invalid or below high effort")
+        raise ValueError(
+            f"host capability manifest is invalid or below {minimum_effort} effort"
+        )
     return payload
 
 
@@ -159,17 +192,23 @@ def main() -> int:
     parser.add_argument("--thread-id", default=os.environ.get("CODEX_THREAD_ID"))
     parser.add_argument("--session-jsonl", type=Path)
     parser.add_argument(
+        "--technical-expert-orchestrator",
+        action="store_true",
+        help="allow the sibling Technical expert workspace to orchestrate this authorized cross-workflow run",
+    )
+    parser.add_argument(
         "--minimum-effort",
         default=DEFAULT_MINIMUM_EFFORT,
-        choices=("high", "max"),
+        choices=("high", "xhigh", "max", "ultra"),
     )
     args = parser.parse_args()
     if not args.thread_id and args.session_jsonl is None:
         raise SystemExit("CODEX_THREAD_ID or --session-jsonl is required")
     source = args.session_jsonl or locate_session(args.thread_id)
+    session_root = ROOT.parent / "Technical expert" if args.technical_expert_orchestrator else ROOT
     payload = build_manifest(
         args.date, args.slot, session_jsonl=source,
-        minimum_effort=args.minimum_effort, root=ROOT
+        minimum_effort=args.minimum_effort, root=session_root, target_root=ROOT
     )
     target = manifest_path(args.date, args.slot)
     atomic_json_write(target, payload)

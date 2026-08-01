@@ -1,0 +1,51 @@
+{
+  "schema_version": "vnext-sample-outcome-contract-v5",
+  "emitted_schema": "vnext-sample-outcome-v5",
+  "accepted_legacy_schemas": [
+    "vnext-sample-outcome-v4",
+    "vnext-sample-outcome-v3",
+    "vnext-sample-outcome-v2",
+    "vnext-sample-outcome-v1"
+  ],
+  "purpose": "Expose immutable mechanical run evidence to an external post-run evaluator without creating a fifth production gate.",
+  "emission": {
+    "statuses": [
+      "complete",
+      "shadow_complete",
+      "retired"
+    ],
+    "path": "<run_root>/sample_outcome.json",
+    "immutable": true,
+    "idempotent": true,
+    "blocking": false,
+    "reconcile_after_terminal_crash": true
+  },
+  "allowed_information": [
+    "run identity and terminal status",
+    "run and checkpoint hashes",
+    "authority epoch SHA-256 copied from the immutable run methodology binding",
+    "evidence provenance mode limited to fresh full recollection immutable replay or unknown",
+    "sealed rate-expectation provider id method class and sample source class",
+    "per-stage attempt failure and orphan counts",
+    "manual review count and elapsed seconds",
+    "report presentation and delivery contract booleans",
+    "failure class plus defect-code fingerprints"
+  ],
+  "forbidden_information": [
+    "market facts or prices",
+    "positions balances PnL or account state",
+    "trade direction entry stop loss or take profit",
+    "scores win rates or business conclusions",
+    "free-text failure messages",
+    "historical report narrative"
+  ],
+  "consumer_boundary": {
+    "production_context_may_read": false,
+    "external_evaluator_only": true,
+    "consumer_failure_may_block_delivery": false,
+    "may_modify_code_or_methodology_automatically": false,
+    "legacy_without_authority_epoch_may_count_as_clean": false,
+    "cross_epoch_clean_accumulation": false,
+    "kalshi_plan_c_may_count_as_clean": false
+  }
+}

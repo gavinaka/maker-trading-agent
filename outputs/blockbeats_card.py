@@ -11,6 +11,7 @@ BlockBeats 快讯卡 · 唯一权威渲染器（对齐用户手工报告格式 2
 禁各自重画样式 —— 改格式只改这一处。
 """
 import os
+import re
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = os.path.join(os.path.dirname(__file__), "blockbeats")
@@ -67,8 +68,10 @@ def _draw_line(draw, x, y, line, font):
     draw.text((x, y), seg, font=font, fill=seg_color)
 
 
-def make_card(fname, time, title, body, **_ignore):
+def make_card(fname, time, title, body, *, output_dir=None, quiet=False, **_ignore):
     """生成一张夜间风格快讯卡。**_ignore 吞掉历史 tag/tag_color 参数以兼容旧调用。"""
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+\.png", str(fname)):
+        raise ValueError(f"invalid BlockBeats card filename: {fname}")
     inner = W - 2 * PAD
     tmp = Image.new("RGB", (W, 4000), BG)
     d = ImageDraw.Draw(tmp)
@@ -102,7 +105,10 @@ def make_card(fname, time, title, body, **_ignore):
         if i != len(body_blocks) - 1:
             y += GAP_PARA
 
-    p = os.path.join(OUT, fname)
+    destination = os.fspath(output_dir) if output_dir is not None else OUT
+    os.makedirs(destination, exist_ok=True)
+    p = os.path.join(destination, fname)
     img.save(p)
-    print("SAVED", p, img.size)
+    if not quiet:
+        print("SAVED", p, img.size)
     return p

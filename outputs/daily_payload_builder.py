@@ -226,11 +226,28 @@ def _maker_lines(lines: list[str], slot: str) -> tuple[list[str], list[str]]:
 
     before_defense = _nonempty(maker_section[:defense_index])
     # The combined Markdown may render the Maker strategy label as a visual
-    # subheading. Notion's frozen daily shape expects the label text itself,
-    # so remove only that Markdown presentation marker while preserving the
-    # source content and payload-source signature checks.
+    # subheading. New vNext reports keep that H3 as a stable presentation-only
+    # marker and put the full BTC summary in the following body line. Legacy
+    # reports may still carry the summary inside the H3 itself. Normalize both
+    # forms to the same frozen four-line payload without weakening the section
+    # shape or accepting arbitrary extra body lines.
     if before_defense and before_defense[0].startswith("### "):
-        before_defense[0] = before_defense[0][4:].strip()
+        heading_text = before_defense[0][4:].strip()
+        exact_marker_prefix = {
+            "BTC（策略）": "BTC（策略）：",
+            "BTC（候选策略）": "BTC（候选策略）：",
+            "BTC（无方向观察）": "BTC（无方向观察）：",
+            "BTC（方向观察）": "BTC（方向观察）：",
+            "BTC（被拒候选审计）": "BTC（被拒候选审计）：",
+        }.get(heading_text)
+        if (
+            exact_marker_prefix is not None
+            and len(before_defense) > 1
+            and before_defense[1].startswith(exact_marker_prefix)
+        ):
+            before_defense.pop(0)
+        else:
+            before_defense[0] = heading_text
     after_defense = _nonempty(maker_section[defense_index + 1 :])
     if len(before_defense) != 4:
         raise ValueError("Maker section before 防守计划 must contain BTC/strategy/TP/SL")

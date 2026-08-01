@@ -1,0 +1,1043 @@
+{
+  "schema_version": "reasoning-submission-contract-v6",
+  "certified_schema_version": "reasoning-model-v5",
+  "additional_fields_allowed": false,
+  "top_level": {
+    "field_order": [
+      "schema_version",
+      "trading_date",
+      "slot",
+      "evidence_snapshot_sha256",
+      "reasoning_authority_sha256",
+      "observations",
+      "claims",
+      "methodology",
+      "scenario_tree",
+      "pipeline_units"
+    ],
+    "controller_rebound_fields": [
+      "schema_version",
+      "trading_date",
+      "slot",
+      "evidence_snapshot_sha256",
+      "reasoning_authority_sha256"
+    ],
+    "producer_collection_fields": [
+      "observations",
+      "claims"
+    ],
+    "certification_only_fields": [
+      "reasoning_sha256"
+    ]
+  },
+  "claim_topology": {
+    "schema_version": "claim-topology-v1",
+    "support_selection_owner": "model",
+    "server_support_edge_injection_allowed": false,
+    "direct_observation_support_policy": "exact_for_listed_claim_types_claim_only_otherwise",
+    "exact_direct_observation_sources_by_claim_type": {
+      "fundamental_context": ["BlockBeats", "FedWatch", "Farside"],
+      "orderflow_interpretation": ["Coinglass", "Exocharts"],
+      "chart_interpretation": ["TradingView"],
+      "etf_confirmation": ["Coinglass", "Farside"],
+      "liquidation_confirmation": ["Coinglass"]
+    },
+    "required_reachable_claim_types_by_claim_type": {
+      "fundamental_price_realization": ["fundamental_context", "chart_interpretation"],
+      "market_regime": ["fundamental_price_realization", "orderflow_interpretation", "chart_interpretation"],
+      "liquidation_confirmation": ["chart_interpretation"],
+      "liquidity_hunt": ["chart_interpretation", "liquidation_confirmation"],
+      "main_account_thesis": ["market_regime", "fundamental_price_realization", "etf_confirmation"],
+      "maker_thesis": ["market_regime", "orderflow_interpretation", "chart_interpretation", "liquidity_hunt"],
+      "strongest_counterevidence": ["market_regime"],
+      "invalidation_path": ["market_regime"],
+      "cannot_do": ["maker_thesis", "strongest_counterevidence", "invalidation_path", "market_regime"]
+    },
+    "required_direct_claim_types_by_claim_type": {
+      "fundamental_event_realization": ["fundamental_context", "chart_interpretation"],
+      "fundamental_price_realization": ["fundamental_context", "chart_interpretation"],
+      "liquidation_confirmation": ["chart_interpretation"]
+    }
+  },
+  "typed_narrative_ownership": {
+    "schema_version": "typed-narrative-ownership-v1",
+    "typed_control_paths": [
+      "claims[claim_type=fundamental_price_realization].realization_state",
+      "claims[claim_type=etf_confirmation].price_relation",
+      "claims[claim_type=liquidation_confirmation].confirmation_result",
+      "observations[source=TradingView].metrics.chart_scoring_basis"
+    ],
+    "audit_narrative_paths": [
+      "claims[claim_type=fundamental_price_realization].conclusion",
+      "claims[claim_type=etf_confirmation].conclusion",
+      "claims[claim_type=liquidation_confirmation].conclusion",
+      "observations[source=TradingView].metrics.chart_component_rationales"
+    ],
+    "prose_keyword_inference_allowed": false,
+    "compiler_typed_projection_required": true
+  },
+  "server_projection": {
+    "schema_version": "reasoning-server-projection-v4",
+    "server_owned_paths": [
+      "schema_version",
+      "trading_date",
+      "slot",
+      "evidence_snapshot_sha256",
+      "reasoning_authority_sha256",
+      "observations[*].id",
+      "observations[*].kind",
+      "observations[*].source",
+      "observations[*].observed_at",
+      "observations[*].evidence_refs",
+      "observations[kind=structured_observation].structured_binding",
+      "observations[kind=visual_judgment].visual_review.metrics_sha256",
+      "observations[kind=visual_judgment].visual_review.evidence_sha256",
+      "methodology.account_separation",
+      "methodology.scenario_tree",
+      "methodology.independent_synthesis.dominant_leg",
+      "methodology.fundamental_price_realization.fundamental_claim_id",
+      "methodology.fundamental_price_realization.price_claim_id",
+      "methodology.fundamental_price_realization.realization_claim_id",
+      "methodology.fundamental_price_realization.realization_state",
+      "methodology.fundamental_price_realization.historical_market_fact_used",
+      "methodology.fundamental_event_assessments[*].realization_claim_id",
+      "methodology.fundamental_event_assessments[*].boundary_code",
+      "methodology.same_pivot_orderflow.observation_id",
+      "methodology.same_pivot_orderflow.claim_id",
+      "methodology.same_pivot_orderflow.leg_selected",
+      "methodology.same_pivot_orderflow.pullback_anchor_checked",
+      "methodology.same_pivot_orderflow.four_dimensions_same_anchor",
+      "methodology.footprint_cross_check.observation_id",
+      "methodology.footprint_cross_check.claim_id",
+      "methodology.footprint_cross_check.relationship",
+      "methodology.multi_timeframe_transition.observation_id",
+      "methodology.multi_timeframe_transition.claim_id",
+      "methodology.volume_profile_liquidity.claim_id",
+      "methodology.volume_profile_liquidity.liquidation_observation_id",
+      "methodology.volume_profile_liquidity.user_drawn_profile_primary",
+      "methodology.volume_profile_liquidity.liquidation_auxiliary",
+      "methodology.volume_profile_liquidity.liquidation_confirmation",
+      "methodology.etf_flow_relation.observation_id",
+      "methodology.etf_flow_relation.claim_id",
+      "methodology.etf_flow_relation.price_relation",
+      "methodology.cannot_do_derivation.claim_id",
+      "methodology.cannot_do_derivation.basis_claim_ids",
+      "scenario_tree",
+      "claims[claim_type=orderflow_interpretation].direction",
+      "claims[claim_type=strongest_counterevidence|invalidation_path].trigger_logic.clauses[source=Coinglass,field=final_direction,paired_with=Exocharts].operator",
+      "claims[claim_type=strongest_counterevidence|invalidation_path].trigger_logic.clauses[source=Exocharts,field=cross_check_result].operator",
+      "pipeline_units"
+    ],
+    "observation_source_order": [
+      "BlockBeats",
+      "FedWatch",
+      "Farside",
+      "Coinglass",
+      "Exocharts",
+      "TradingView"
+    ],
+    "observation_id_by_source": {
+      "BlockBeats": "obs_bb",
+      "FedWatch": "obs_fw",
+      "Farside": "obs_fs",
+      "Coinglass": "obs_cg",
+      "Exocharts": "obs_exo",
+      "TradingView": "obs_tv"
+    },
+    "observation_kind_by_contract_source": {
+      "BlockBeats": "structured_observation",
+      "FedWatch": "visual_judgment",
+      "FedWatchPlanC": "structured_observation",
+      "Farside": "structured_observation",
+      "Coinglass": "visual_judgment",
+      "Exocharts": "visual_judgment",
+      "TradingView": "visual_judgment"
+    },
+    "observation_mechanical_ownership": {
+      "schema_version": "observation-mechanical-ownership-v1",
+      "evidence_refs_semantics": "sealed_same_source_artifact_inventory_not_visual_read_proof",
+      "structured_artifact_filename_by_contract_source": {
+        "BlockBeats": "blockbeats.json",
+        "Farside": "farside_btc_etf.json",
+        "FedWatchPlanC": "fedwatch.json"
+      },
+      "structured_binding_fields": [
+        "artifact_path",
+        "artifact_sha256",
+        "metrics_sha256"
+      ],
+      "visual_review_hash_fields": [
+        "metrics_sha256",
+        "evidence_sha256"
+      ],
+      "model_owned_visual_proof_paths": [
+        "observations[*].visual_citations[*].evidence_ref",
+        "observations[*].visual_citations[*].metric_paths",
+        "observations[*].visual_citations[*].crop",
+        "claims[claim_type=invalidation_path].structural_noise_buffer.visual_evidence_ref"
+      ]
+    },
+    "account_claim_bindings": {
+      "main_claim_id": {
+        "claim_type": "main_account_thesis",
+        "account": "main"
+      },
+      "maker_claim_id": {
+        "claim_type": "maker_thesis",
+        "account": "maker"
+      },
+      "main_regime_claim_id": {
+        "claim_type": "market_regime",
+        "account": "main"
+      },
+      "maker_regime_claim_id": {
+        "claim_type": "market_regime",
+        "account": "maker"
+      },
+      "main_counter_claim_id": {
+        "claim_type": "strongest_counterevidence",
+        "account": "main"
+      },
+      "maker_counter_claim_id": {
+        "claim_type": "strongest_counterevidence",
+        "account": "maker"
+      },
+      "main_invalidation_claim_id": {
+        "claim_type": "invalidation_path",
+        "account": "main"
+      },
+      "maker_invalidation_claim_id": {
+        "claim_type": "invalidation_path",
+        "account": "maker"
+      }
+    },
+    "methodology_leaf_ownership": {
+      "schema_version": "methodology-leaf-ownership-v1",
+      "server_owned_subtrees": [
+        "methodology.account_separation",
+        "methodology.scenario_tree"
+      ],
+      "server_owned_bindings": {
+        "methodology.independent_synthesis.dominant_leg": {
+          "resolver": "observation_field",
+          "source": "Coinglass",
+          "field_path": "metrics.pivot.dominant_leg"
+        },
+        "methodology.fundamental_price_realization.fundamental_claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "fundamental_context",
+          "account": "shared"
+        },
+        "methodology.fundamental_price_realization.price_claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "chart_interpretation",
+          "account": "shared"
+        },
+        "methodology.fundamental_price_realization.realization_claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "fundamental_price_realization",
+          "account": "shared"
+        },
+        "methodology.fundamental_price_realization.realization_state": {
+          "resolver": "unique_claim_field",
+          "claim_type": "fundamental_price_realization",
+          "account": "shared",
+          "field_path": "realization_state"
+        },
+        "methodology.fundamental_price_realization.historical_market_fact_used": {
+          "resolver": "literal",
+          "value": false
+        },
+        "methodology.fundamental_event_assessments[*].realization_claim_id": {
+          "resolver": "event_realization_claim_id",
+          "claim_type": "fundamental_event_realization",
+          "account": "shared",
+          "key_field": "selected_event_sha256",
+          "claim_match_field": "selected_event_sha256"
+        },
+        "methodology.fundamental_event_assessments[*].boundary_code": {
+          "resolver": "single_policy_value",
+          "policy_path": "gold_methodology.fundamental_event_assessment_policy.boundary_codes"
+        },
+        "methodology.same_pivot_orderflow.observation_id": {
+          "resolver": "observation_id",
+          "source": "Coinglass"
+        },
+        "methodology.same_pivot_orderflow.claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "orderflow_interpretation",
+          "account": "shared"
+        },
+        "methodology.same_pivot_orderflow.leg_selected": {
+          "resolver": "literal",
+          "value": true
+        },
+        "methodology.same_pivot_orderflow.pullback_anchor_checked": {
+          "resolver": "literal",
+          "value": true
+        },
+        "methodology.same_pivot_orderflow.four_dimensions_same_anchor": {
+          "resolver": "literal",
+          "value": true
+        },
+        "methodology.footprint_cross_check.observation_id": {
+          "resolver": "observation_id",
+          "source": "Exocharts"
+        },
+        "methodology.footprint_cross_check.claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "orderflow_interpretation",
+          "account": "shared"
+        },
+        "methodology.footprint_cross_check.relationship": {
+          "resolver": "observation_field",
+          "source": "Exocharts",
+          "field_path": "metrics.cross_check_result"
+        },
+        "methodology.multi_timeframe_transition.observation_id": {
+          "resolver": "observation_id",
+          "source": "TradingView"
+        },
+        "methodology.multi_timeframe_transition.claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "chart_interpretation",
+          "account": "shared"
+        },
+        "methodology.volume_profile_liquidity.claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "chart_interpretation",
+          "account": "shared"
+        },
+        "methodology.volume_profile_liquidity.liquidation_observation_id": {
+          "resolver": "observation_id",
+          "source": "Coinglass"
+        },
+        "methodology.volume_profile_liquidity.user_drawn_profile_primary": {
+          "resolver": "literal",
+          "value": true
+        },
+        "methodology.volume_profile_liquidity.liquidation_auxiliary": {
+          "resolver": "literal",
+          "value": true
+        },
+        "methodology.volume_profile_liquidity.liquidation_confirmation": {
+          "resolver": "unique_claim_field",
+          "claim_type": "liquidation_confirmation",
+          "account": "shared",
+          "field_path": "confirmation_result"
+        },
+        "methodology.etf_flow_relation.observation_id": {
+          "resolver": "observation_id",
+          "source": "Farside"
+        },
+        "methodology.etf_flow_relation.claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "etf_confirmation",
+          "account": "shared"
+        },
+        "methodology.etf_flow_relation.price_relation": {
+          "resolver": "unique_claim_field",
+          "claim_type": "etf_confirmation",
+          "account": "shared",
+          "field_path": "price_relation"
+        },
+        "methodology.cannot_do_derivation.claim_id": {
+          "resolver": "unique_claim_id",
+          "claim_type": "cannot_do",
+          "account": "maker"
+        },
+        "methodology.cannot_do_derivation.basis_claim_ids": {
+          "resolver": "ordered_unique_claim_ids",
+          "bindings": [
+            {
+              "claim_type": "maker_thesis",
+              "account": "maker"
+            },
+            {
+              "claim_type": "strongest_counterevidence",
+              "account": "maker"
+            },
+            {
+              "claim_type": "invalidation_path",
+              "account": "maker"
+            }
+          ]
+        }
+      },
+      "model_owned_paths": [
+        "methodology.independent_synthesis.market_stage_claim_id",
+        "methodology.independent_synthesis.primary_evidence_claim_ids",
+        "methodology.independent_synthesis.strongest_counter_claim_id",
+        "methodology.independent_synthesis.action_claim_id",
+        "methodology.fundamental_event_assessments[*].impact_channel",
+        "methodology.fundamental_event_assessments[*].expected_effect",
+        "methodology.fundamental_event_assessments[*].counter_claim_ids",
+        "methodology.multi_timeframe_transition.transition_summary"
+      ],
+      "producer_key_paths": [
+        "methodology.fundamental_event_assessments[*].selected_event_sha256"
+      ],
+      "unclassified_leaf_policy": "preflight_hard_stop",
+      "leaf_count": 54
+    },
+    "methodology_trigger_claim_ids_policy_path": "gold_methodology.account_trigger_logic.scenario_control_binding.methodology_trigger_claim_ids_source",
+    "orderflow_direction_policy_path": "maker_score.orderflow.final_direction_to_claim_direction",
+    "relative_trigger_operator_projection": {
+      "schema_version": "relative-trigger-operator-projection-v1",
+      "claim_types": ["strongest_counterevidence", "invalidation_path"],
+      "required_mode": "all",
+      "relative_source": "Exocharts",
+      "relative_field": "cross_check_result",
+      "relative_operator": "equals_at_trigger",
+      "reference_source": "Coinglass",
+      "reference_field": "final_direction",
+      "reference_operator_when_target_equals_current": "equals_at_trigger",
+      "reference_operator_when_target_differs_current": "becomes",
+      "projection_scope": "operators_only",
+      "missing_or_ambiguous_behavior": "leave_unmodified_for_gate_rejection",
+      "clause_presence_order_target_and_relation_mutation_forbidden": true
+    },
+    "producer_values_at_server_owned_paths_authoritative": false,
+    "projection_must_run_inside_reasoning_attempt": true,
+    "business_judgment_repair_forbidden": true
+  },
+  "visual_citation_policy": {
+    "schema_version": "visual-citation-leaf-policy-v1",
+    "empty_collections_are_metric_leaves": true,
+    "empty_collection_semantics": "observable_absence_requires_bounded_citation"
+  },
+  "observation_fields_by_source": {
+    "BlockBeats": [
+      "id",
+      "kind",
+      "source",
+      "observed_at",
+      "fact",
+      "metrics",
+      "evidence_refs",
+      "uncertainty",
+      "structured_binding"
+    ],
+    "Farside": [
+      "id",
+      "kind",
+      "source",
+      "observed_at",
+      "fact",
+      "metrics",
+      "evidence_refs",
+      "uncertainty",
+      "structured_binding"
+    ],
+    "FedWatch": [
+      "id",
+      "kind",
+      "source",
+      "observed_at",
+      "fact",
+      "metrics",
+      "evidence_refs",
+      "uncertainty",
+      "alternate_interpretation",
+      "visual_citations",
+      "visual_review"
+    ],
+    "FedWatchPlanC": [
+      "id",
+      "kind",
+      "source",
+      "observed_at",
+      "fact",
+      "metrics",
+      "evidence_refs",
+      "uncertainty",
+      "structured_binding"
+    ],
+    "Coinglass": [
+      "id",
+      "kind",
+      "source",
+      "observed_at",
+      "fact",
+      "metrics",
+      "evidence_refs",
+      "uncertainty",
+      "subject",
+      "timeframe",
+      "pivot_id",
+      "alternate_interpretation",
+      "visual_citations",
+      "visual_review"
+    ],
+    "Exocharts": [
+      "id",
+      "kind",
+      "source",
+      "observed_at",
+      "fact",
+      "metrics",
+      "evidence_refs",
+      "uncertainty",
+      "subject",
+      "timeframe",
+      "alternate_interpretation",
+      "visual_citations",
+      "visual_review"
+    ],
+    "TradingView": [
+      "id",
+      "kind",
+      "source",
+      "observed_at",
+      "fact",
+      "metrics",
+      "evidence_refs",
+      "uncertainty",
+      "subject",
+      "timeframe",
+      "alternate_interpretation",
+      "visual_citations",
+      "visual_review"
+    ]
+  },
+  "claim_fields_by_type": {
+    "fundamental_context": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation"
+    ],
+    "fundamental_event_realization": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "selected_event_sha256",
+      "realization_state"
+    ],
+    "fundamental_price_realization": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "realization_state"
+    ],
+    "orderflow_interpretation": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "direction",
+      "score_assessment"
+    ],
+    "chart_interpretation": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation"
+    ],
+    "etf_confirmation": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "price_relation",
+      "method_tags"
+    ],
+    "liquidation_confirmation": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "confirmation_result",
+      "method_tags"
+    ],
+    "liquidity_hunt": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "method_tags"
+    ],
+    "market_regime": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation"
+    ],
+    "strongest_counterevidence": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "current_basis",
+      "trigger_logic"
+    ],
+    "invalidation_path": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "current_basis",
+      "trigger_logic",
+      "structural_noise_buffer"
+    ],
+    "main_account_thesis": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "direction",
+      "invalidation_id"
+    ],
+    "maker_thesis": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "direction",
+      "invalidation_id",
+      "method_tags"
+    ],
+    "cannot_do": [
+      "id",
+      "claim_type",
+      "account",
+      "conclusion",
+      "support_ids",
+      "counter_ids",
+      "invalidation",
+      "prohibition"
+    ]
+  },
+  "scenario_fields": [
+    "id",
+    "account",
+    "scenario_type",
+    "owner_claim_id"
+  ],
+  "scenario_ownership": {
+    "schema_version": "scenario-ownership-v1",
+    "items": [
+      {
+        "id": "scenario_main_base",
+        "account": "main",
+        "scenario_type": "base",
+        "owner_claim_type": "main_account_thesis"
+      },
+      {
+        "id": "scenario_main_counter",
+        "account": "main",
+        "scenario_type": "counter",
+        "owner_claim_type": "strongest_counterevidence"
+      },
+      {
+        "id": "scenario_main_invalidation",
+        "account": "main",
+        "scenario_type": "invalidation",
+        "owner_claim_type": "invalidation_path"
+      },
+      {
+        "id": "scenario_maker_base",
+        "account": "maker",
+        "scenario_type": "base",
+        "owner_claim_type": "maker_thesis"
+      },
+      {
+        "id": "scenario_maker_counter",
+        "account": "maker",
+        "scenario_type": "counter",
+        "owner_claim_type": "strongest_counterevidence"
+      },
+      {
+        "id": "scenario_maker_invalidation",
+        "account": "maker",
+        "scenario_type": "invalidation",
+        "owner_claim_type": "invalidation_path"
+      }
+    ],
+    "transition_code_by_type": {
+      "base": "retain_certified_assessment",
+      "counter": "reassess_on_typed_counter",
+      "invalidation": "invalidate_and_recollect_evidence"
+    },
+    "producer_free_prose_allowed": false,
+    "execution_lifecycle_owner": "decision_and_continuity"
+  },
+  "pipeline_unit_fields": [
+    "unit_id",
+    "sequence",
+    "unit_type",
+    "account_scope",
+    "source_scope",
+    "depends_on_unit_ids",
+    "input_node_ids",
+    "output_node_ids"
+  ],
+  "pipeline_unit_order": [
+    "source.blockbeats",
+    "source.fedwatch",
+    "source.farside",
+    "source.coinglass",
+    "source.exocharts",
+    "source.tradingview",
+    "join.fundamental_context",
+    "join.orderflow_footprint",
+    "join.chart_trend",
+    "join.etf_relation",
+    "join.intraday_location",
+    "join.fundamental_realization",
+    "main.controls",
+    "main.strategy",
+    "maker.controls",
+    "maker.thesis_score_basis",
+    "maker.cannot_do_closure"
+  ],
+  "methodology": {
+    "field_order": [
+      "independent_synthesis",
+      "fundamental_price_realization",
+      "fundamental_event_assessments",
+      "same_pivot_orderflow",
+      "footprint_cross_check",
+      "multi_timeframe_transition",
+      "volume_profile_liquidity",
+      "etf_flow_relation",
+      "account_separation",
+      "scenario_tree",
+      "cannot_do_derivation"
+    ],
+    "objects": {
+      "independent_synthesis": {
+        "field_order": [
+          "market_stage_claim_id",
+          "dominant_leg",
+          "primary_evidence_claim_ids",
+          "strongest_counter_claim_id",
+          "action_claim_id"
+        ],
+        "string_fields": [
+          "market_stage_claim_id",
+          "strongest_counter_claim_id",
+          "action_claim_id"
+        ],
+        "string_array_fields": {
+          "primary_evidence_claim_ids": {
+            "min_items": 2
+          }
+        },
+        "enum_fields": {
+          "dominant_leg": {
+            "policy_path": "gold_methodology.dominant_legs"
+          }
+        }
+      },
+      "fundamental_price_realization": {
+        "field_order": [
+          "fundamental_claim_id",
+          "price_claim_id",
+          "realization_claim_id",
+          "realization_state",
+          "historical_market_fact_used"
+        ],
+        "string_fields": [
+          "fundamental_claim_id",
+          "price_claim_id",
+          "realization_claim_id"
+        ],
+        "boolean_fields": [
+          "historical_market_fact_used"
+        ],
+        "exact_values": {
+          "historical_market_fact_used": false
+        },
+        "enum_fields": {
+          "realization_state": {
+            "policy_path": "gold_methodology.fundamental_realization_states"
+          }
+        }
+      },
+      "same_pivot_orderflow": {
+        "field_order": [
+          "observation_id",
+          "claim_id",
+          "leg_selected",
+          "pullback_anchor_checked",
+          "four_dimensions_same_anchor"
+        ],
+        "string_fields": [
+          "observation_id",
+          "claim_id"
+        ],
+        "boolean_fields": [
+          "leg_selected",
+          "pullback_anchor_checked",
+          "four_dimensions_same_anchor"
+        ],
+        "exact_values": {
+          "leg_selected": true,
+          "pullback_anchor_checked": true,
+          "four_dimensions_same_anchor": true
+        }
+      },
+      "footprint_cross_check": {
+        "field_order": [
+          "observation_id",
+          "claim_id",
+          "relationship"
+        ],
+        "string_fields": [
+          "observation_id",
+          "claim_id"
+        ],
+        "enum_fields": {
+          "relationship": {
+            "policy_path": "gold_methodology.cross_check_results"
+          }
+        }
+      },
+      "multi_timeframe_transition": {
+        "field_order": [
+          "observation_id",
+          "claim_id",
+          "transition_summary"
+        ],
+        "string_fields": [
+          "observation_id",
+          "claim_id",
+          "transition_summary"
+        ],
+        "string_min_lengths": {
+          "transition_summary": 20
+        }
+      },
+      "volume_profile_liquidity": {
+        "field_order": [
+          "claim_id",
+          "liquidation_observation_id",
+          "user_drawn_profile_primary",
+          "liquidation_auxiliary",
+          "liquidation_confirmation"
+        ],
+        "string_fields": [
+          "claim_id",
+          "liquidation_observation_id"
+        ],
+        "boolean_fields": [
+          "user_drawn_profile_primary",
+          "liquidation_auxiliary"
+        ],
+        "exact_values": {
+          "user_drawn_profile_primary": true,
+          "liquidation_auxiliary": true
+        },
+        "enum_fields": {
+          "liquidation_confirmation": {
+            "policy_path": "gold_methodology.liquidation_confirmation_results"
+          }
+        }
+      },
+      "etf_flow_relation": {
+        "field_order": [
+          "observation_id",
+          "claim_id",
+          "price_relation"
+        ],
+        "string_fields": [
+          "observation_id",
+          "claim_id"
+        ],
+        "enum_fields": {
+          "price_relation": {
+            "policy_path": "gold_methodology.price_relations"
+          }
+        }
+      },
+      "account_separation": {
+        "field_order": [
+          "main_priority",
+          "maker_priority",
+          "main_claim_id",
+          "maker_claim_id",
+          "main_regime_claim_id",
+          "maker_regime_claim_id",
+          "main_counter_claim_id",
+          "maker_counter_claim_id",
+          "main_invalidation_claim_id",
+          "maker_invalidation_claim_id",
+          "conflict_policy",
+          "forced_consensus"
+        ],
+        "string_fields": [
+          "main_claim_id",
+          "maker_claim_id",
+          "main_regime_claim_id",
+          "maker_regime_claim_id",
+          "main_counter_claim_id",
+          "maker_counter_claim_id",
+          "main_invalidation_claim_id",
+          "maker_invalidation_claim_id",
+          "conflict_policy"
+        ],
+        "boolean_fields": [
+          "forced_consensus"
+        ],
+        "exact_values": {
+          "forced_consensus": false
+        },
+        "exact_policy_values": {
+          "main_priority": "gold_methodology.main_account_priority",
+          "maker_priority": "gold_methodology.maker_priority",
+          "conflict_policy": "gold_methodology.account_independence.conflict_policy"
+        }
+      },
+      "cannot_do_derivation": {
+        "field_order": [
+          "claim_id",
+          "basis_claim_ids"
+        ],
+        "string_fields": [
+          "claim_id"
+        ],
+        "string_array_fields": {
+          "basis_claim_ids": {
+            "min_items": 3
+          }
+        }
+      }
+    },
+    "arrays": {
+      "fundamental_event_assessments": {
+        "min_items": 3,
+        "max_items": 3,
+        "item": {
+          "field_order": [
+            "selected_event_sha256",
+            "impact_channel",
+            "expected_effect",
+            "realization_claim_id",
+            "counter_claim_ids",
+            "boundary_code"
+          ],
+          "string_fields": [
+            "selected_event_sha256",
+            "realization_claim_id"
+          ],
+          "string_array_fields": {
+            "counter_claim_ids": {
+              "min_items": 1
+            }
+          },
+          "enum_fields": {
+            "impact_channel": {
+              "policy_path": "gold_methodology.fundamental_event_assessment_policy.impact_channels"
+            },
+            "expected_effect": {
+              "policy_path": "gold_methodology.fundamental_event_assessment_policy.expected_effects"
+            },
+            "boundary_code": {
+              "policy_path": "gold_methodology.fundamental_event_assessment_policy.boundary_codes"
+            }
+          }
+        }
+      },
+      "scenario_tree": {
+        "min_items": 6,
+        "max_items": 6,
+        "item": {
+          "field_order": [
+            "account",
+            "kind",
+            "claim_id",
+            "trigger_claim_ids",
+            "action"
+          ],
+          "string_fields": [
+            "claim_id"
+          ],
+          "string_array_fields": {
+            "trigger_claim_ids": {
+              "min_items": 1
+            }
+          },
+          "enum_fields": {
+            "account": {
+              "values": [
+                "main",
+                "maker"
+              ]
+            },
+            "kind": {
+              "values": [
+                "base",
+                "counter",
+                "invalidation"
+              ]
+            },
+            "action": {
+              "values": [
+                "retain_certified_assessment",
+                "reassess_on_typed_counter",
+                "invalidate_and_recollect_evidence"
+              ]
+            }
+          },
+          "exact_account_kind_matrix": true
+        }
+      }
+    }
+  },
+  "scaffold_policy": {
+    "schema_version": "reasoning-submission-scaffold-v6",
+    "business_semantics_checked": false,
+    "attempt_created": false,
+    "null_means_producer_must_supply": false,
+    "model_owned_null_means_producer_must_supply": true,
+    "server_owned_null_means_pending_projection": true,
+    "authority_constants_may_be_prefilled": true,
+    "business_direction_or_action_may_be_prefilled": false,
+    "authority_transition_codes_may_be_prefilled": true,
+    "server_projection_is_authoritative": true,
+    "claim_topology_visible_before_attempt": true,
+    "typed_narrative_ownership_visible_before_attempt": true
+  }
+}

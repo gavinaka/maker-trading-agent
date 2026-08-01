@@ -13,6 +13,40 @@
     "started_at": {"type": "string"},
     "completed_at": {"type": "string"},
     "success": {"type": "boolean"},
+    "full_fallback_used": {"type": "boolean"},
+    "full_fallback_suppressed_reason_code": {
+      "type": ["string", "null"],
+      "enum": [null, "rate_expectation_capture_failed", "plan_c_attempt_already_consumed"]
+    },
+    "rate_expectation_provider": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "selection_mode",
+            "provider_id",
+            "series_ticker",
+            "provider_fallback_used",
+            "fallback_reason_code",
+            "provenance_path",
+            "provenance_sha256"
+          ],
+          "properties": {
+            "schema_version": {"const": "fomc-rate-source-provenance-v1"},
+            "selection_mode": {"enum": ["cme_primary", "kalshi_plan_c_fallback"]},
+            "provider_id": {"enum": ["cme_fedwatch_ui", "kalshi_public_market_data_api"]},
+            "series_ticker": {"type": ["string", "null"]},
+            "provider_fallback_used": {"type": "boolean"},
+            "fallback_reason_code": {"type": "string"},
+            "provenance_path": {"const": "rate_expectation_provenance.json"},
+            "provenance_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "fallback_reasons": {"type": "array", "items": {"type": "string"}}
   },
   "additionalProperties": true

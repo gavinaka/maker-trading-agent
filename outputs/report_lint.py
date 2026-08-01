@@ -13,6 +13,8 @@
 与用户实仓完全解耦；出现「已执行100%/走防守层管理/管理(已)持仓/中线空保持/应止损离场/持仓中·走管」
 等联动短语 = HARD FAIL。含解耦声明（解耦/不联动/与用户…无关/不纳入判断/事后对照）的行豁免。
 """
+import argparse
+import json
 import sys, re
 from datetime import date
 from pathlib import Path
@@ -36,12 +38,17 @@ COUPLING = [
 # 更不能改变 Maker 是否挂单/方向/入场/止盈止损/防守计划。以下命中不允许用“解耦声明”豁免。
 POSITION_COUPLING = [
     (r"持仓校准", "分析锁前/正文出现持仓校准"),
-    (r"(?:主账户|Maker账户|双账户).{0,18}(?:无持仓|空仓|已平仓|未开仓|已成交|持仓)", "账户实际持仓事实混入独立报告"),
     (r"(?:已有|当前|实际).{0,18}(?:持仓|空单|多单).{0,24}(?:阻断|禁止|不挂|新增|补仓|风控门|观望)", "用实际持仓改变 Maker 决策"),
     (r"方向相反.{0,12}持仓", "用实际持仓方向否决系统独立计划"),
     (r"风控门阻断新增", "用持仓风控门阻断新增 Maker 计划"),
     (r"先补齐风控", "用 Notion 持仓字段缺失改变报告决策"),
 ]
+ACCOUNT_POSITION_PREFIX = re.compile(r"(?:主账户|Maker账户|双账户)")
+ACCOUNT_POSITION_TERM = re.compile(r"无持仓|空仓|已平仓|未开仓|已成交|持仓中|持仓|空单|多单")
+ACCOUNT_POSITION_ACTUAL = re.compile(r"当前|实际|已有|现有|仍有|持有|持仓中|已成交|已平仓|未开仓|无持仓")
+ACCOUNT_POSITION_PROSPECTIVE = re.compile(r"若|则|继续|保持|计划|等待|重新评估|失效|条件|仅在|不在现价")
+PURE_DECOUPLING_BOUNDARY = re.compile(r"与用户.{0,12}实际持仓.{0,12}(?:解耦|无关|不联动|不纳入判断)")
+EXPLICIT_POSITION_STATE = re.compile(r"已有|当前|现有|仍有|持有|持仓中|已成交|已平仓|未开仓|无持仓|空仓|空单|多单")
 # 含以下任一标记的行 = 显式解耦声明，豁免（如『与用户实际持仓完全解耦·不联动』）。
 # 注意：只豁免旧 COUPLING 项；POSITION_COUPLING 永不豁免。
 DECOUPLE_MARK = r"解耦|不联动|与用户.{0,8}无关|不纳入.{0,6}判断|事后对照|完全独立·与"
@@ -50,6 +57,25 @@ def coupling_check(lines):
     """返回 [(行号, 描述, 命中文本, 行摘要)]。命中=系统稿混入联动用户实仓的语言。"""
     hits = []
     for i, ln in enumerate(lines, 1):
+        # "主账户当前有仓" is an actual-position fact; "若结构失效则继续
+        # 空仓" is a prospective system-plan state.  The old proximity regex
+        # conflated the two and made a deterministic report retry impossible.
+        for prefix in ACCOUNT_POSITION_PREFIX.finditer(ln):
+            segment = ln[prefix.start(): prefix.start() + 48]
+            if PURE_DECOUPLING_BOUNDARY.search(segment) and not EXPLICIT_POSITION_STATE.search(segment):
+                continue
+            position = ACCOUNT_POSITION_TERM.search(segment)
+            if not position:
+                continue
+            actual = ACCOUNT_POSITION_ACTUAL.search(segment)
+            prospective = ACCOUNT_POSITION_PROSPECTIVE.search(segment)
+            if actual or not prospective:
+                hits.append((
+                    i,
+                    "账户实际持仓事实混入独立报告",
+                    segment[:position.end()],
+                    ln.strip()[:60],
+                ))
         for pat, desc in POSITION_COUPLING:
             m = re.search(pat, ln)
             if m:
@@ -182,48 +208,191 @@ def winrate_anchor_check(lines):
 
 # ---------------- 流动性读位门（门②扩展·2026-06-21） ----------------
 # 见 scoring/chart_methodology.md §九（流动性猎杀）+ memory/precise-numbers-no-fuzzy：
-# 报告提「流动性密集区/猎杀位/清算带」并带价位时，必须标明读取周期（日线/4H/1H/15m/3天/48H/24H），
+# vNext 报告提「流动性密集区/猎杀位/清算带」并带价位时，必须标明 canonical 周期（1D/4H/1H/15m/3天/48H/24H），
 # 否则=读位无尺度依据（清算热力图肉眼曾误差~200点）。价位本身的模糊位由 HARD 门已覆盖；本门只补「必带周期」。
 # 只卡"带价位的流动性位"行——基本面宏观流动性(如「流动性缺失/未回归」无价位)不触发。
 _LIQ_LEVEL = re.compile(r"流动性|猎杀|清算(?:带|区|位|磁吸|密集|热力)")
+_VNEXT_LIQ_LEVEL = re.compile(
+    r"流动性(?:认证区间|密集(?:区|带)?|猎杀(?:位|区|机会)?|价位|位置|区域|区间|带|位|磁吸(?:位|区)?)"
+    r"|猎杀(?:位|区|机会)?|清算(?:地图|图|带|区|位|磁吸|密集|热力)"
+)
 _HAS_PRICE5 = re.compile(r"\d{2}[,，]?\d{3}")  # 5位价位 6X,XXX / 62000 / 64,266
 _PERIOD_TOK = re.compile(r"日线|周线|4\s*[Hh]|1\s*[Hh]|15\s*[Mm]|3\s*天|48\s*[Hh]|24\s*[Hh]|周期|小时级别|日内")
+_LIQ_PRICE_CONTEXT = re.compile(
+    r"认证区间|密集(?:区|带)?|猎杀|清算|流动性|磁吸|辅助位置|上方|下方|价位"
+)
+_TIMEFRAME_DISPLAY_SCHEMA_VERSION = "timeframe-display-v1"
+_PRESENTATION_CONTRACT_SCHEMA_VERSION = "vnext-report-presentation-contract-v11"
+_TIMEFRAME_DISPLAY_CODES = frozenset({"1d", "4h", "1h", "15m", "3d", "48h", "24h"})
+_TRADINGVIEW_TIMEFRAME_CODES = ("1d", "4h", "1h", "15m")
 
-def liquidity_check(lines):
+
+def canonical_timeframe_pattern(presentation_contract):
+    """Build the strict vNext token matcher from report authority, independently of the compiler."""
+
+    value = presentation_contract.get("timeframe_display_contract") if isinstance(presentation_contract, dict) else None
+    mapping = value.get("canonical_by_code") if isinstance(value, dict) else None
+    order = value.get("tradingview_projection_order") if isinstance(value, dict) else None
+    if (
+        not isinstance(presentation_contract, dict)
+        or presentation_contract.get("schema_version")
+        != _PRESENTATION_CONTRACT_SCHEMA_VERSION
+        or not isinstance(value, dict)
+        or value.get("schema_version") != _TIMEFRAME_DISPLAY_SCHEMA_VERSION
+        or not isinstance(mapping, dict)
+        or set(mapping) != _TIMEFRAME_DISPLAY_CODES
+        or any(
+            not isinstance(code, str)
+            or not isinstance(label, str)
+            or not label
+            or label != label.strip()
+            for code, label in mapping.items()
+        )
+        or len(set(mapping.values())) != len(mapping)
+        or tuple(order or ()) != _TRADINGVIEW_TIMEFRAME_CODES
+    ):
+        raise ValueError("vNext timeframe display contract is invalid")
+    alternatives = "|".join(
+        re.escape(label)
+        for label in sorted(mapping.values(), key=lambda item: (-len(item), item))
+    )
+    return re.compile(rf"(?<![A-Za-z0-9])(?:{alternatives})(?![A-Za-z0-9])")
+
+
+def load_timeframe_display_pattern(path):
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    return canonical_timeframe_pattern(payload)
+
+
+def _split_liquidity_segments(line):
+    """Split top-level liquidity clauses while preserving separators inside parentheses and prices."""
+
+    segments = []
+    buffer = []
+    depth = 0
+    for index, char in enumerate(line):
+        if char in "（(":
+            depth += 1
+        elif char in "）)":
+            depth = max(0, depth - 1)
+        previous = line[index - 1] if index else ""
+        following = line[index + 1] if index + 1 < len(line) else ""
+        thousands_separator = char in ",，" and previous.isdigit() and following.isdigit()
+        if depth == 0 and (
+            char in "；;。！？、" or (char in ",，" and not thousands_separator)
+        ):
+            segments.append("".join(buffer))
+            buffer = []
+        else:
+            buffer.append(char)
+    segments.append("".join(buffer))
+    return segments
+
+
+def liquidity_check(lines, *, period_pattern=None):
     """提流动性密集区/猎杀位且带价位的行，必须含周期标注。返回 [(行号, 命中词, 摘要)]。"""
+    strict_vnext = period_pattern is not None
+    period_pattern = _PERIOD_TOK if not strict_vnext else period_pattern
+    level_pattern = _VNEXT_LIQ_LEVEL if strict_vnext else _LIQ_LEVEL
     hits = []
     for i, ln in enumerate(lines, 1):
-        m = _LIQ_LEVEL.search(ln)
-        if m and _HAS_PRICE5.search(ln) and not _PERIOD_TOK.search(ln):
-            hits.append((i, m.group(0), ln.strip()[:60]))
+        m = level_pattern.search(ln)
+        if not m:
+            continue
+        if not strict_vnext:
+            if _HAS_PRICE5.search(ln) and not period_pattern.search(ln):
+                hits.append((i, m.group(0), ln.strip()[:60]))
+            continue
+        for segment in _split_liquidity_segments(ln):
+            local = level_pattern.search(segment)
+            if (
+                _HAS_PRICE5.search(segment)
+                and (local or _LIQ_PRICE_CONTEXT.search(segment))
+                and not period_pattern.search(segment)
+            ):
+                hits.append((i, (local or m).group(0), segment.strip()[:60]))
     return hits
 
-# ---------------- 盘面五步·VRVP概率主判 软提醒门（门②扩展·2026-06-21·WARN-only） ----------------
-# 见 chart_methodology §九：流动性猎杀概率「主判」= TV 成交量结构(VRVP/VAL/VAH/HVN/LVN/价值区)·
+# ---------------- 盘面五步·用户手绘成交量分布主判 软提醒门（门②扩展·2026-06-21·WARN-only） ----------------
+# 见 chart_methodology §九：流动性猎杀概率「主判」只来自用户手绘成交量分布区域；
+# TradingView 平台 VRVP/VAH/VAL/HVN/LVN 当前禁用，不能以裸指标名冒充用户手绘证据。
 # 清算热力图仅「辅助印证」。防漂移＝「拿辅助源(热力图)当主判、§九五步只走③④⑤(热力图+落点)跳过①②
 # (各周期摆动高低 + VRVP概率主判)」(2026-06-21 核验发现 6/21 早报 0 引用、晚报靠热力图articulate足
 # 但 VRVP/POC 主判articulate不足)。WARN-only·不阻 push·只提醒每份盘面走满五步、主判用 VRVP 非热力图。
-# 🟥 主判词刻意排除裸「POC」——②Exocharts 六源每份都有「POC 阶梯」会误判；§九主判用 TV-VRVP 专属词。
-_MAINJUDGE = re.compile(r"VRVP|VAH|VAL|HVN|LVN|价值区|高量节点|成交量结构|量峰")
+# 🟥 主判词刻意排除裸「POC」——Exocharts 每份都有 POC，会误判为手绘盘面证据。
+_MANUAL_PROFILE_READABLE = re.compile(
+    r"(?:用户|人工|手工)(?:手绘|绘制|标注)?(?:的)?"
+    r"(?:VRVP|成交量分布|量价分布|价值区|价格区域|POC|HVN|LVN)"
+    r"|(?:VRVP|成交量分布|量价分布|价值区|价格区域|POC|HVN|LVN)"
+    r"(?:由)?(?:用户|人工|手工)(?:手绘|绘制|标注)",
+    re.I,
+)
+_MAINJUDGE = _MANUAL_PROFILE_READABLE
 _AUXHEAT   = re.compile(r"清算热力|热力图|liqheatmap|清算带")
 _PANEL     = re.compile(r"流动性掠夺|流掠|流动性猎杀|猎杀位|猎杀")
+_MANUAL_PROFILE_INSUFFICIENT = re.compile(
+    r"(?:用户|人工|手工)(?:手绘|绘制|标注)?(?:的)?"
+    r"(?:VRVP|成交量分布|量价分布|价值区|价格区域|区域)"
+    r".{0,24}(?:证据不足|不可读|无法确认)"
+    r"|(?:证据不足|不可读|无法确认).{0,24}"
+    r"(?:用户|人工|手工)(?:手绘|绘制|标注)?(?:的)?"
+    r"(?:VRVP|成交量分布|量价分布|价值区|价格区域|区域)",
+    re.I,
+)
 
 def panel_mainjudge_check(lines):
-    """盘面/流动性猎杀节点应含 VRVP/VAH/VAL 概率「主判」(§九 C·步②)。WARN-only。
+    """盘面/流动性猎杀节点应含用户手绘区域概率主判(§九 C·步②)。WARN-only。
     只在报告确有盘面流动性猎杀内容时触发；两档：
-      (a) 引清算热力图(辅助)却缺 VRVP 主判 = 疑似拿辅助当主判(强提醒·正是 2026-06-21 发现的反转)
-      (b) 有流动性掠夺/猎杀内容但全篇无 VRVP 主判 = §九步①②疑未走(普通提醒)。
+      (a) 引清算热力图(辅助)却缺用户手绘主判 = 疑似拿辅助当主判
+      (b) 有流动性掠夺/猎杀内容但全篇无用户手绘主判 = §九步①②疑未走。
     返回 [(档, 提示)]。"""
     full = "\n".join(lines)
     if not _PANEL.search(full):
         return []
+    if _MANUAL_PROFILE_INSUFFICIENT.search(full):
+        return []
     if _MAINJUDGE.search(full):
         return []
     if _AUXHEAT.search(full):
-        return [("a", "引清算热力图(辅助)却缺 VRVP/VAH/VAL 概率主判——疑似拿辅助源当主判"
-                       "(§九 C=主判=TV成交量结构·D=热力图仅辅助)·补各周期摆动高低+VRVP概率主判走满五步")]
-    return [("b", "盘面流动性掠夺/猎杀缺 VRVP/VAH/VAL 概率主判措辞——§九步①②(各周期摆动高低+VRVP概率主判)"
-                   "疑未走满·补主判读法(热力图为辅助·非主判)")]
+        return [("a", "引清算热力图(辅助)却缺用户手绘成交量分布概率主判——疑似拿辅助源当主判"
+                       "(§九 C=用户手绘区域主判·D=热力图仅辅助)·补各周期摆动高低+用户手绘区域走满五步")]
+    return [("b", "盘面流动性掠夺/猎杀缺用户手绘成交量分布概率主判措辞——§九步①②"
+                   "疑未走满·若手绘证据不可读则必须明确证据不足(热力图为辅助·非主判)")]
+
+
+def manual_profile_boundary_check(lines):
+    """Condition the existing depth gate for an insufficient manual profile."""
+
+    section = _third_section_text(lines)
+    if not _MANUAL_PROFILE_INSUFFICIENT.search(section):
+        return []
+    issues = []
+    forbidden_level = re.compile(
+        r"(?:VRVP|VAH|VAL|HVN|LVN|价值区|价格区域|量价分布|"
+        r"(?:用户|人工|手工)(?:手绘|绘制|标注)?(?:的)?(?:成交量分布|VRVP|价格区域))"
+        r"[^。；\n]{0,28}(?:\d{1,3}(?:,\d{3})+|\d{4,})",
+        re.I,
+    )
+    for index, line in enumerate(lines, 1):
+        match = forbidden_level.search(line)
+        if match:
+            issues.append((
+                index,
+                "用户手绘成交量分布证据不足时禁止输出POC/VAH/VAL/HVN/LVN或概率落点",
+                match.group(0),
+                line.strip()[:70],
+            ))
+    if _AUXHEAT.search(section) and not re.search(
+        r"清算(?:图|热力图).{0,30}(?:仅辅助|不替代|不得替代|不能替代)",
+        section,
+    ):
+        issues.append((
+            0,
+            "手绘成交量分布证据不足时清算图必须明确不替代该维度",
+            "清算图",
+            "Coinglass清算图可以保留为辅助观察，但不能生成手绘VRVP位置或翻向",
+        ))
+    return issues
 
 # ---------------- 正文英文术语门（门②扩展·2026-06-25·用户迭代） ----------------
 # 见 memory/report-chinese-only-narrative.md：日报【Notion 正文】(① 正文 + ② Maker)叙事术语一律
@@ -489,40 +658,47 @@ _FOUR_H = re.compile(r"4\s*[Hh]|4\s*小时|四小时")
 _BAD_FIRST_LAYER_TF = re.compile(r"15\s*[mM]|15\s*分钟|十五分钟|1\s*[Hh]|1\s*小时|一小时")
 _DYNAMIC_FIRST_LAYER_EXTREME = re.compile(r"(?:成交|入场|开仓)后|后续|新形成|未来")
 _CONFIRMED_FIRST_LAYER_EXTREME = re.compile(r"确认|形成")
+_WEIGHTED_FIRST_TRIGGER = re.compile(r"实际加权成交价\s*[±＋+-]\s*1\.5\s*[Rr]")
+_WEIGHTED_SECOND_TRIGGER = re.compile(r"实际加权成交价\s*[±＋+-]\s*2(?:\.0)?\s*[Rr]")
+# These exact compiler-owned observe projections are non-executable.  Exact
+# equality is intentional: mixed or altered defense text must still be linted.
+_INACTIVE_FIRST_DEFENSE = "第一层：无可执行 Maker 计划，第一层防守暂不触发。"
+_INACTIVE_SECOND_DEFENSE = "第二层：无可执行 Maker 计划，第二层防守暂不触发。"
 
 
 def maker_defense_check(lines):
     """Maker 浮盈防守硬门。
 
-    第一层必须写具体触发价；移动止损目标只能是成交后后续形成并确认的
-    4H K线结构性极点，禁止在报告阶段预填历史极点价格。
+    单一成交价已被禁止。分档 Maker 在成交前无法知道实际加权成交价，
+    因此第一层/第二层允许使用精确的实际加权成交价±R公式；移动止损目标
+    只能是成交后后续形成并确认的4H K线结构性极点，禁止预填历史极点价格。
     第二层只设保本损。
     返回 [(行号, 描述, 命中文本, 行摘要)]。
     """
     sec = _maker_section(lines)
     if sec is None:
         return []
-    sec_text = "\n".join(ln for _, ln in sec)
-    if re.search(r"观望", sec_text) and re.search(r"无新增挂单|不挂新单|不挂单", sec_text):
-        return []
     issues = []
     first = [
         (lineno, ln.strip())
         for lineno, ln in sec
         if re.search(r"(?:第一层[：:]|第一层防守|触发第一层)", ln)
+        and ln.strip() != _INACTIVE_FIRST_DEFENSE
     ]
     second = [
         (lineno, ln.strip())
         for lineno, ln in sec
         if re.search(r"(?:第二层[：:]|第二层防守|触发第二层)", ln)
+        and ln.strip() != _INACTIVE_SECOND_DEFENSE
     ]
     for lineno, ln in first:
         trigger = re.search(r"(?:触及|(?:上行|下行)?至)\s*" + _PRICE, ln)
-        if not trigger:
-            issues.append((lineno, "Maker第一层缺具体触发价格", "第一层", ln[:70]))
+        formula_trigger = _WEIGHTED_FIRST_TRIGGER.search(ln)
+        if not trigger and not formula_trigger:
+            issues.append((lineno, "Maker第一层缺具体触发价或加权成交公式", "第一层", ln[:70]))
             operation_text = ln
         else:
-            operation_text = ln[trigger.end():]
+            operation_text = ln[(trigger or formula_trigger).end():]
         if "极点" not in ln:
             issues.append((lineno, "Maker第一层缺“极点”", "第一层", ln[:70]))
         if not _FOUR_H.search(ln):
@@ -545,8 +721,8 @@ def maker_defense_check(lines):
         if "小时级别" in ln and not re.search(r"4\s*小时级别|四小时级别", ln):
             issues.append((lineno, "Maker第一层禁止笼统“小时级别”", "小时级别", ln[:70]))
     for lineno, ln in second:
-        if not re.search(r"(?:触及|(?:上行|下行)?至)\s*" + _PRICE, ln):
-            issues.append((lineno, "Maker第二层缺具体触发价格", "第二层", ln[:70]))
+        if not re.search(r"(?:触及|(?:上行|下行)?至)\s*" + _PRICE, ln) and not _WEIGHTED_SECOND_TRIGGER.search(ln):
+            issues.append((lineno, "Maker第二层缺具体触发价或加权成交公式", "第二层", ln[:70]))
         if "保本损" not in ln:
             issues.append((lineno, "Maker第二层必须设保本损", "第二层", ln[:70]))
         if re.search(r"(?:减仓|平仓)\s*\d", ln) and "不减仓" not in ln:
@@ -619,8 +795,8 @@ def analysis_depth_check(lines):
     for marker, desc in required_markers:
         if marker not in section:
             issues.append((0, f"③后附缺{desc}", marker, ""))
-    if not re.search(r"VRVP|VAH|VAL|POC", section):
-        issues.append((0, "③后附缺 VRVP/VAH/VAL/POC 盘面主判证据", "VRVP/VAH/VAL/POC", ""))
+    if not _MANUAL_PROFILE_READABLE.search(section) and not _MANUAL_PROFILE_INSUFFICIENT.search(section):
+        issues.append((0, "③后附缺用户手绘VRVP盘面主判或证据不足边界", "用户手绘VRVP/证据不足", ""))
     if not re.search(r"情景|情形|路径|反证|失效", section):
         issues.append((0, "③后附缺情景/反证/失效路径推理", "情景/反证/失效", ""))
     return issues
@@ -710,8 +886,8 @@ def strict_reasoning_trace_check(lines, report_path=None):
     issues = []
 
     winrate_chain = _has_all_patterns(section, [
-        r"胜率",
-        r"rubric|winrate_methodology|胜率方法论",
+        r"胜率|计划时置信度",
+        r"rubric|winrate_methodology|胜率方法论|胜率基准|基准推导链|置信度推导链",
         r"锚|anchor",
         r"次因|微调|上调|下调|[+\-]\s*\d|±",
         r"落值|落点|落到|真实值|估值",
@@ -720,8 +896,8 @@ def strict_reasoning_trace_check(lines, report_path=None):
     if not winrate_chain:
         issues.append((
             0,
-            "严格推理留痕：缺胜率 rubric 全链",
-            "胜率 rubric 锚→次因±n→落值→比60",
+            "严格推理留痕：缺胜率基准全链",
+            "胜率基准锚→次因±n→落值→比60",
             "从 2026-07-06 午报起必须写清胜率锚、调整因子、真实落值与 60 门槛比较；禁止只给胜率结论",
         ))
 
@@ -756,7 +932,8 @@ def strict_reasoning_trace_check(lines, report_path=None):
         r"pivot|枢轴|摆动|趋势线|突破|未破",
         r"CVD",
         r"SMA20",
-        r"VRVP|VAH|VAL|POC",
+        r"(?:用户|人工|手工)(?:手绘|绘制|标注)?(?:的)?(?:VRVP|成交量分布|量价分布|价值区|价格区域|POC|HVN|LVN)"
+        r"|(?:用户|人工|手工)(?:手绘|绘制|标注)?.{0,30}(?:证据不足|不可读|无法确认)",
     ]
     critical_count = sum(1 for pattern in critical_markers if re.search(pattern, section, re.I))
     if critical_count < 3:
@@ -764,14 +941,14 @@ def strict_reasoning_trace_check(lines, report_path=None):
             0,
             "严格推理留痕：承重点证据颗粒度不足",
             f"{critical_count}/4 markers",
-            "③后附至少覆盖 pivot/结构锚、CVD、SMA20、VRVP/VAH/VAL/POC 中 3 类承重点；推理必须聚焦关键数据",
+            "③后附至少覆盖 pivot/结构锚、CVD、SMA20、用户手绘成交量分布（或其证据不足边界）中 3 类承重点；推理必须聚焦关键数据",
         ))
 
     return issues
 
 
 def v3_semantics_check(lines, report_path=None):
-    """Reject legacy representative-price and probability semantics after v3."""
+    """Reject legacy Maker and platform-profile semantics after v3."""
     if report_path is None:
         return []
     name = Path(report_path).name
@@ -790,7 +967,32 @@ def v3_semantics_check(lines, report_path=None):
         return []
     text = "\n".join(lines)
     issues = []
-    if "胜率自估（计划时置信度，非回测命中率）" not in text:
+
+    def semantic_clauses(value):
+        # Do not split on ASCII comma: it is part of canonical prices such as 64,100.
+        return [item.strip() for item in re.split(r"[。！？；;，]+", value) if item.strip()]
+
+    def explicitly_rejected(clause, match):
+        prefix = clause[:match.start()].rstrip()
+        suffix = clause[match.end():].lstrip()
+        return bool(
+            re.search(
+                r"(?:禁止|不得|不采用|不使用|拒绝|不能|不可|杜绝)"
+                r"(?:\s*(?:本轮|当前|正式计划|正式Maker计划|Maker|TradingView|平台|内置|自动|使用|从|根据))*\s*$",
+                prefix,
+                re.I,
+            )
+            or re.match(
+                r"^[^。！？；;，]{0,16}(?:均|一律)?"
+                r"(?:禁止使用|不得使用|不允许使用|禁止|不得|不允许|不可采用|不可使用)",
+                suffix,
+            )
+        )
+
+    if (
+        "胜率自估（计划时置信度，非回测命中率）" not in text
+        and not re.search(r"计划时置信度.{0,24}非回测命中率", text)
+    ):
         issues.append(
             (0, "v3置信度语义缺失", "胜率自估", "必须明确非回测命中率")
         )
@@ -814,6 +1016,90 @@ def v3_semantics_check(lines, report_path=None):
                     "模型与推理强度只能由host_capability/host_usage工件证明，不进入交易报告",
                 )
             )
+        for clause in semantic_clauses(line):
+            reverse_inference = re.search(
+                r"(?:1\.5R|2R|TP\d?|止盈|止损|区间中点|代表价)"
+                r"[^。！？；;，]{0,30}(?:反推|倒推)"
+                r"[^。！？；;，]{0,30}(?:实际加权成交价|实仓均价|持仓均价)"
+                r"|(?:实际加权成交价|实仓均价|持仓均价)"
+                r"[^。！？；;，]{0,30}(?:由|根据)"
+                r"[^。！？；;，]{0,30}(?:1\.5R|2R|TP\d?|止盈|止损|区间中点|代表价)"
+                r"[^。！？；;，]{0,16}(?:反推|倒推)",
+                clause,
+                re.I,
+            )
+            reverse_is_prohibited = bool(
+                re.search(
+                    r"(?:禁止|不得|不能|不可|拒绝)"
+                    r"[^。！？；;，]{0,20}(?:反推|倒推)",
+                    clause,
+                )
+            )
+            if reverse_inference and not reverse_is_prohibited:
+                issues.append((
+                    index,
+                    "v3 禁止从R、止盈止损或代表价反推实际成交均价",
+                    reverse_inference.group(0),
+                    "实际加权成交价只认哈希绑定的成交明细；缺失时必须保持未知",
+                ))
+            single_entry = re.search(
+                r"一次性\s*(?:100\s*[%％]|全额|满额|全仓|全部仓位)"
+                r"|单一入场价|单点入场"
+                r"|单档[^。！？；;，,]{0,14}(?:100\s*[%％]|全额|满额|全仓|全部仓位)"
+                r"|(?:100\s*[%％]|全额|满额|全仓|全部仓位)[^。！？；;，,]{0,10}(?:单价|单点|单档)"
+                r"|\bsingle\b",
+                clause,
+                re.I,
+            )
+            if single_entry and not explicitly_rejected(clause, single_entry):
+                issues.append((
+                    index,
+                    "v3 Maker 禁止单点或一次性满额入场",
+                    single_entry.group(0),
+                    "Maker 必须使用 2–5 档真实不同价格与合计100%的分配；不可用单价伪装区间",
+                ))
+            manual_same_clause = _MANUAL_PROFILE_READABLE.search(clause)
+            platform_context = re.search(r"平台|内置|自动", clause, re.I)
+            if not platform_context and not manual_same_clause:
+                platform_context = re.search(r"TradingView", clause, re.I)
+            platform_indicator = re.search(
+                r"VRVP|VAH|VAL|HVN|LVN|POC|成交量分布", clause, re.I
+            )
+            platform_policy_violation = bool(
+                platform_context
+                and platform_indicator
+                and not explicitly_rejected(clause, platform_indicator)
+                and not re.search(r"隐藏|永不取值|不取值|禁用", clause)
+            )
+            if platform_policy_violation:
+                issues.append((
+                    index,
+                    "v3 禁止使用平台内置成交量分布",
+                    platform_indicator.group(0),
+                    "TradingView 平台 VRVP/POC/VAH/VAL/HVN/LVN 必须隐藏且永不取值",
+                ))
+
+            profile_level = re.search(
+                r"(?:VRVP|VAH|VAL|HVN|LVN)[^。！？；;，,]{0,36}(?:\d{1,3}(?:,\d{3})+|\d{4,})"
+                r"|(?:\d{1,3}(?:,\d{3})+|\d{4,})[^。！？；;，,]{0,36}(?:VRVP|VAH|VAL|HVN|LVN)"
+                r"|(?:TradingView|平台|内置|自动)[^。！？；;，,]{0,24}POC[^。！？；;，,]{0,24}(?:\d{1,3}(?:,\d{3})+|\d{4,})"
+                r"|(?:\d{1,3}(?:,\d{3})+|\d{4,})[^。！？；;，,]{0,24}(?:TradingView|平台|内置|自动)[^。！？；;，,]{0,24}POC",
+                clause,
+                re.I,
+            )
+            if (
+                profile_level
+                and not platform_policy_violation
+                and not _MANUAL_PROFILE_INSUFFICIENT.search(clause)
+                and not (manual_same_clause and not platform_context)
+                and not explicitly_rejected(clause, profile_level)
+            ):
+                issues.append((
+                    index,
+                    "v3 禁止把平台VRVP点位当作用户手绘成交量分布证据",
+                    profile_level.group(0),
+                    "只允许同一子句明确标注的用户手绘区域；不可读时写证据不足，禁止反推平台POC/VAH/VAL/HVN/LVN",
+                ))
     has_range = bool(re.search(r"入场(?:区间)?[^\n]{0,20}\d[\d,.]*\s*[-—–~～]\s*\d", text))
     if has_range and not re.search(r"分档|条件观察区|不是可执行订单", text):
         issues.append(
@@ -848,12 +1134,16 @@ def golden_surface_proxy_check(lines):
             f"WARN only；{source_label}缺失仍会由分析深度门/源覆盖门硬拦",
         ))
     rubric_refs = section.lower().count("rubric")
-    if rubric_refs < 2:
+    chinese_baseline_refs = len(
+        re.findall(r"胜率基准|基准推导链|基准锚", section, re.I)
+    )
+    reasoning_chain_refs = rubric_refs + chinese_baseline_refs
+    if reasoning_chain_refs < 2:
         issues.append((
             0,
             "golden-surface-proxy：评分/胜率推导链留痕不足",
-            f"rubric={rubric_refs}",
-            "WARN only；真实胜率推导按 winrate rubric 绝对估算",
+            f"reasoning_chain_refs={reasoning_chain_refs}",
+            "WARN only；真实胜率推导必须按胜率基准绝对估算",
         ))
     return issues
 
@@ -871,11 +1161,23 @@ def golden_quality_check(lines):
     return hits
 
 
-def main():
+def main(argv=None):
     # GBK 控制台防崩：正文里的 emoji（如🔴）无法编码时替换为 ?，不让 lint 自身崩溃
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
-    path = sys.argv[1]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("path")
+    parser.add_argument("--timeframe-contract")
+    args = parser.parse_args(argv)
+    path = args.path
+    if args.timeframe_contract:
+        try:
+            period_pattern = load_timeframe_display_pattern(args.timeframe_contract)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            print(f"[HARD] vNext timeframe display contract invalid: {exc}")
+            return 1
+    else:
+        period_pattern = _PERIOD_TOK
     txt = open(path, encoding="utf-8").read()
     lines = txt.splitlines()
     structure_hits = []
@@ -907,9 +1209,10 @@ def main():
     meta_hits = meta_narrative_check(lines)
     wr_band, wr_chain, wr_scoped = winrate_anchor_check(lines)
     wr_fail = bool(wr_band) and not wr_chain
-    liq_hits = liquidity_check(lines)
+    liq_hits = liquidity_check(lines, period_pattern=period_pattern)
     en_hits = en_jargon_check(lines)
     panel_hits = panel_mainjudge_check(lines)  # 软提醒·WARN-only·不进 FAIL
+    manual_profile_hits = manual_profile_boundary_check(lines)
     defense_hits = maker_defense_check(lines)
     exo_hits = exocharts_ohlc_check(lines)
     depth_hits = analysis_depth_check(lines)
@@ -947,6 +1250,9 @@ def main():
     for i, desc, hit, ctx in depth_hits:
         loc = f"L{i}" if i else "全文"
         print(f"[HARD] {loc} 分析深度门·{desc}: '{hit}'  | {ctx}")
+    for i, desc, hit, ctx in manual_profile_hits:
+        loc = f"L{i}" if i else "全文"
+        print(f"[HARD] {loc} 用户手绘VRVP边界·{desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in anchor_dump_hits:
         loc = f"L{i}" if i else "全文"
         print(f"[HARD] {loc} 金标推理门·{desc}: '{hit}'  | {ctx}")
@@ -974,7 +1280,7 @@ def main():
     for kind, msg in panel_hits:
         print(f"[WARN] 盘面五步·VRVP主判门: {msg}")
     if not panel_hits:
-        print("[OK] 盘面五步·VRVP主判门: 含 VRVP/VAH/VAL 概率主判(或无盘面流动性猎杀节点)")
+        print("[OK] 盘面五步·VRVP主判门: 含用户手绘区域主判、明确证据不足边界，或无盘面流动性猎杀节点")
     if wr_fail:
         print(f"[HARD] 胜率反下偏门: 胜率落临界带{wr_band}(贴60门槛下方)·③后附无 rubric 推导链"
               f"(锚=X→次因→落值)→疑似贴门槛下偏·补 rubric 推导或纠真实值(见 winrate-anchoring-bias)")
@@ -983,7 +1289,7 @@ def main():
     else:
         print("[OK] 胜率反下偏门: 胜率未落临界带[55,59](无贴门槛下偏嫌疑)")
     print()
-    if structure_hits or hard_hits or ledger_issues or coupling_hits or tool_wrapper_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or anchor_dump_hits or strict_trace_hits or v3_hits:
+    if structure_hits or hard_hits or ledger_issues or coupling_hits or tool_wrapper_hits or meta_hits or wr_fail or liq_hits or en_hits or defense_hits or exo_hits or depth_hits or manual_profile_hits or anchor_dump_hits or strict_trace_hits or v3_hits:
         msgs = []
         if structure_hits:
             msgs.append(f"{len(structure_hits)} 处底稿结构/六源契约错误（修正 combined 骨架、日期展示或六源证据）")
@@ -1000,15 +1306,17 @@ def main():
         if wr_fail:
             msgs.append(f"胜率临界带{wr_band}无 rubric 推导链（补「锚=X→次因→落值」或纠真实值·见 winrate-anchoring-bias）")
         if liq_hits:
-            msgs.append(f"{len(liq_hits)} 处流动性/猎杀价位缺周期标注（必带 日线/4H/1H/15m/3天/48H/24H·见 chart_methodology §九）")
+            msgs.append(f"{len(liq_hits)} 处流动性/猎杀价位缺周期标注（vNext 必带 1D/4H/1H/15m/3天/48H/24H·见 report presentation authority）")
         if en_hits:
             msgs.append(f"{len(en_hits)} 处正文未中译叙事英文（→中文·保留缩写/模板/专有名词除外·见 report-chinese-only-narrative）")
         if defense_hits:
-            msgs.append(f"{len(defense_hits)} 处 Maker 防守层违规（第一层只能写触发价+成交后确认4H极点规则，禁预填极点价；第二层只保本损）")
+            msgs.append(f"{len(defense_hits)} 处 Maker 防守层违规（第一层写触发价或实际加权成交公式+成交后确认4H极点规则，禁预填极点价；第二层只保本损）")
         if exo_hits:
             msgs.append(f"{len(exo_hits)} 处 Exocharts OHLC/当前价不自洽（重读截图或重采）")
         if depth_hits:
             msgs.append(f"{len(depth_hits)} 处分析深度不足（③后附必须承载完整六源/评分/胜率/风险/情景）")
+        if manual_profile_hits:
+            msgs.append(f"{len(manual_profile_hits)} 处用户手绘VRVP证据不足边界违规（删除推断点位并声明清算图不替代）")
         if anchor_dump_hits:
             msgs.append(f"{len(anchor_dump_hits)} 处数值锚点组堆砌（数字必须嵌入推理链而非列表凑数）")
         if strict_trace_hits:
@@ -1022,4 +1330,4 @@ def main():
     print(f"[PASS] 无模糊位/占位/臆造{suffix}·无联动（{warn_count} 处 WARN 需人工确认是否核过）")
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

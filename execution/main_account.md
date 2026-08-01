@@ -2,8 +2,9 @@
 
 > 主账户 = Binance 上的 BTC USDT 永续合约中线持仓账户。
 > 决定**自身中线大方向**（基本面>盘面>盘口）；**与 Maker 计划互不干扰，一直如此**。
-> ⚠️ 订正（2026-05-31）：「不能做」是**当天 Maker** 字段、与中线无关，**不**由主账户决定，旧表述已改（见 `memory/cannot-do-is-maker-only.md`）。
-> 当前持仓：动态数据，**真值以 Notion（主）交易Check 为准**（5/29-30 曾因沿用过期 short@79150 失真）；下文具体点位为历史示例、仅示意结构。
+> ⚠️ 订正（2026-05-31）：「不能做」是**当天 Maker** 字段、与中线无关，**不**由主账户决定。
+> 当前持仓、均价、方向、防守层与已执行比例都是动态业务事实，不属于 reasoning authority。vNext 只能在独立推理锁定后从当次 run 绑定的 `continuity_contract` 读取；缺失时写未提供，禁止读 Notion、旧 state、历史报告或用计划数字反推。
+> 主账户必须拥有独立的 `market_regime → strongest_counterevidence → invalidation_path → base/counter/invalidation scenarios → main_account_thesis → plan` 闭环。它不拥有 `cannot_do`；Maker 的 `cannot_do` 也不得进入、改写或否决主账户闭环。
 
 ---
 
@@ -25,31 +26,40 @@
 ### 核心原则
 **不是一次性入场，而是分批构建。**
 
-### 入场结构（标准 4 档 25%）
-
-示例（2026/04/19 BTC 中线做空）：
+### 入场结构（分批构建）
 
 | 档 | 比例 | 触发价 |
 |---|---:|---|
-| 底仓 | 25% | 已持仓（起始价） |
-| 第二档 | 25% | 79300 |
-| 第三档 | 25% | 81000 |
-| 第四档 | 25% | 83500 |
+| 底仓 | 由当次主账户计划决定 | 由当次主账户证据决定 |
+| 后续档 | 各档明确，全部比例闭合 | 每档必须有当次结构依据 |
 
-止损：85000（有效突破则止损，整体）
-TP1：66000（减仓）
-终局止盈位：60000（下破后终极目标）
+止损、TP1、终局止盈和每档价格都由本轮主账户闭环生成；本方法文件不嵌入任何历史市场价格。
+
+主账户计划中的承重方向、计划状态、动作、价格区间、分档、仓位、止损、止盈、反证和失效条件必须由结构化主账户决策字段唯一拥有；正文只能从这些字段投影，不得让自由 `plan_text` 另写一套事实或数字。shadow 不读取实际持仓，相关字段只能明确写“未验证”；production 的锁后 continuity 事实只做连续性校准，不得回改独立计划。
+
+### 主账户独立风险上限
+
+主账户不受 Maker 3% 上限约束。四档分批计划必须枚举全部 `2^4-1=15` 个非空成交组合，按各组合真实比例计算加权入场，并逐一复算：
+
+`名义风险% = abs(加权入场 - 止损) / 加权入场 × 杠杆 × 100`
+
+每个组合均须 `≤8%`；任一组合超过 8% 时主账户计划不可认证。该 8% 只属于主账户，不得传递给 Maker，也不取代结构止损、反证与失效闭环。
+
+### 主账户独立初始止损
+
+主账户不得复用 Maker 止损政策。初始止损只能由主账户 `invalidation_path` 从本轮 TradingView 认证的 1D/4H 中线结构选择真正失效锚；1H/15m 只可服务短周期观察或 Maker 执行，不得作主账户初始止损主锚。当前 active 锚只允许带 timeframe 的 readable 手绘 profile 中性上/下沿或非当前入场区的 structure zone 外沿；裸支撑/阻力/摆动价格数组只供展示，不能先主观贴周期再充当 authority。空单 structure zone role 只允许 `resistance|breakdown_retest`，多单只允许 `support|breakout_retest`；手绘 profile role 不承担方向语义。合法锚还须严格位于主账户入场区与全部分档价外侧，当前入场区边界自身、弱中间结构和数值最近层都不能自动取得优先权。
+
+外向 buffer 不是由 8% 反解的万能公式。主账户 `invalidation_path` 必须在 reasoning 阶段拥有 exact `structural-noise-buffer-v2` 的 13 个字段：`schema_version/status/method_code/observation_id/timeframe/visual_evidence_ref/anchor_kind/anchor_source_field/anchor_price/noise_outer_boundary/price_distance/risk_budget_input_used/insufficiency_reason_code`。`certified` 必须绑定该 claim support DAG 可达的本轮 TradingView、`1d|4h`、同周期截图、可机械定位锚与图上 `noise_outer_boundary`，`risk_budget_input_used=false`，最终 stop 严格越过该边界；证据不足只允许 `insufficient`、闭合原因、空 anchor/boundary/distance 与 `observe`。decision 的主账户 stop basis 中存在的 observation/timeframe/anchor identity/price/outward distance 必须精确等于 reasoning owner，并维持同一 `buffer_claim_id`、`buffer_backsolved_from_risk=false`；Gate 另读 reasoning 的 status、截图与 boundary 验证。8% 只在止损确定后验算，不得用固定点数、ATR、风险倒推或压缩，compiler 只能校验/投影、不得推断。结构止损不合格时只能调整分档或观察。
 
 ---
 
-## 仓位演变日志（图谱十四节）
+## 仓位演变日志（结构模板）
 
 每次价格触及关键位都更新一次描述字段：
 
 ```
-"击中 79300 现有仓位：50%"
-"迭代：高位横盘减仓 20% 现有仓位：30%"
-"中线计划止损迭代：78900（结构性防守）"
+"触发[当次认证价格] 后已执行[可核验比例]"
+"基于[当次结构证据]迭代仓位/止损"
 ```
 
 → 一个持仓历时数十天，描述字段可有 **20+ 条更新**。
@@ -70,21 +80,9 @@ TP1：66000（减仓）
 | 第四层 | 价格触及 XXXX | 减仓 20% |
 | 第五层 | 价格再次触及 XXXX | 止损设为当周线级别极点高点 |
 
-### 5 层防守实例（历史示例 · BTCUSDT short @ 79150，2026/04/19 起）
+### 5 层防守执行原则
 
-> ⚠️ 此为历史持仓的结构示例（仅示意 5 层防守如何展开）；**当前真实持仓以 Notion（主）交易Check 为准**，该 short@79150 实为已平仓旧单。
-
-| 层 | 触发条件（当前持仓的具体价位） | 操作 |
-|---|---|---|
-| 第一层 | 价格首次跌破 78900（结构关键位） | 设保本损 @ 79150 + 取消第二/三/四档加仓 |
-| 第二层 | 价格继续下跌到 75000-76000 区间 | 止损上调到日线极点（如 78500） |
-| 第三层 | 价格反弹触及 79300（前期加仓位）未破反转 | 止损重设为反弹高点 +0.3% |
-| 第四层 | 价格触及 TP1 @ 66000 | 减仓 20%（即从 50% 降到 40%） |
-| 第五层 | 价格再次反弹触及 72000 区间 | 止损升级到周线级别极点 |
-
-→ 现实数据：当前 `current_defense_layer = 5`（state 文件），表示价格演化已触发了**前 5 层全部**，保本损 + 动态止损均生效。
-
-→ 终局止盈位（图谱十四节）：**60000**（下破后终极目标，触发后视为中线计划成功）
+5 层只定义防守动作的递进关系，不携带当前层级、方向、持仓或历史价格。当前已触发层级必须来自分析锁后绑定的 continuity 事实；缺失即不得宣称任何层级已生效。
 
 ---
 
@@ -116,7 +114,7 @@ new_avg = (old_qty × old_avg + add_qty × add_price) / (old_qty + add_qty)
 **中线计划与 Maker 计划互不干扰，一直如此。**
 * 主账户**不**向 Maker 下达"不能做"，**不**约束 Maker 方向。
 * 「不能做」是**当天 Maker 自身**的日内禁令（写完日报后最后回填的收口结论），由当天市场（盘口>盘面>基本面）推导，与中线持仓方向无关。
-* Maker「不能做」→ Maker 可做方向的映射见 `constitution/cannot_do_mapping.md`（已改为 Maker 内部规则）。
+* Maker「不能做」的终局限制与计划兼容校验见 `constitution/cannot_do_mapping.md`；它不得反向生成或翻转 Maker thesis。
 * 旧框架「主账户 cannot_do → Maker 允许方向」**已废弃**（误把两账户耦合）。
 
 ---
@@ -127,39 +125,17 @@ new_avg = (old_qty × old_avg + add_qty × add_price) / (old_qty + add_qty)
 |---|---|---|
 | 周期 | 天 ~ 周 | 日内 |
 | 单笔规模 | $2000 - $4000 | $500 - $1000 |
-| 入场 | 分批 4 档 25% | 标准 50%+50% 或一次性 |
-| 浮盈防守层数 | **5 层** | **2-3 层** |
-| 减仓比例（TP1） | 20% | 30%-50% |
+| 入场 | 分批 4 档 25% | 2 至 5 档 `ladder`，比例合计 100%，禁止单一价位一次性入场 |
+| 浮盈防守层数 | **5 层** | **2 层**（只移动止损／取消加仓，不减仓） |
+| 减仓比例（TP1） | 20% | 精确 50%（TP2 清剩余 50%） |
 | 描述字段 | 跨日演变日志 | 事后单次复盘 |
-| 是否有终局止盈位 | **有**（长期目标，如 60000） | 无 |
+| 是否有终局止盈位 | **有**（具体价格由当次主账户证据决定） | 无 |
 
 ---
 
-## 持仓快照（历史示例 · 真相源=Notion（主）交易Check）
+## 持仓快照边界
 
-> ⚠️ 持仓为动态数据，以 Notion 最新行为准；`state/` 为参考快照。下方 JSON 为历史结构示例（short@79150 实为已平仓旧单）。
-
-```json
-"position_status": {
-  "symbol": "BTCUSDT",
-  "direction": "short",
-  "holding_status": "holding",
-  "position_size_usd": 500,
-  "position_ratio": "50%",
-  "average_entry": 79150,
-  "leverage": 5
-},
-"mid_term_structure": {
-  "active_plan": true,
-  "plan_type": "中线做空",
-  "layer_count": 5,
-  "current_defense_layer": 5,
-  "breakeven_active": true,
-  "dynamic_stop_loss": true
-}
-```
-
-→ 主账户已触发**第五层（保本损 + 动态止损）**。
+本文不保存任何持仓快照。当次主账户事实只能在独立 reasoning 锁后进入 source/hash-bound continuity 工件，并且只用于撤旧、保留、迭代与执行对照，不得改变已锁定的方向、价格区间、评分或决策。
 
 ---
 
@@ -167,9 +143,9 @@ new_avg = (old_qty × old_avg + add_qty × add_price) / (old_qty + add_qty)
 
 | 字段 | 谁维护 |
 |---|---|
-| position_status.* | 用户实际开/平仓后手动同步 |
-| mid_term_structure.current_defense_layer | review_agent 每日 Q5 时确认 + 用户校准 |
-| trend_confirmation | 用户每日早间根据日/小时级别判断 |
+| 当次实仓事实 | 分析锁后的 source/hash-bound continuity 工件 |
+| 当次防守层级 | 同一 continuity 工件中的可核验记录 |
+| trend_confirmation | 当次六源中 TradingView 1D/4H/1H/15m 结构独立推导 |
 
 > 注：「不能做」**不是主账户字段**，归当天 Maker（写完日报最后回填），不在本表维护。
 

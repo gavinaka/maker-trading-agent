@@ -266,5 +266,55 @@ def assert_rendered_docx_structure(docx_path: str | Path, trading_date: str, slo
     for marker in REQUIRED_H2_ORDER:
         if not any(text.startswith(marker) for text in headings):
             issues.append(StructureIssue(0, "docx.heading_missing", f"rendered DOCX missing heading '{marker}'"))
+    if len(headings) > 18:
+        issues.append(
+            StructureIssue(
+                0,
+                "docx.heading_overflow",
+                f"rendered DOCX has {len(headings)} headings; gold contract allows at most 18",
+            )
+        )
+    bullet_count = sum(
+        1
+        for paragraph in paragraphs
+        if paragraph.style is not None and paragraph.style.name == "List Bullet"
+    )
+    if bullet_count / max(len(paragraphs), 1) > 0.35:
+        issues.append(
+            StructureIssue(
+                0,
+                "docx.fragmentation",
+                "rendered DOCX bullet ratio exceeds the gold reading-rhythm contract",
+            )
+        )
+    if len(doc.sections) != 1:
+        issues.append(StructureIssue(0, "docx.section_count", "gold report must use one portrait section"))
+    else:
+        section = doc.sections[0]
+        actual = {
+            "width": section.page_width.inches,
+            "height": section.page_height.inches,
+            "top": section.top_margin.inches,
+            "right": section.right_margin.inches,
+            "bottom": section.bottom_margin.inches,
+            "left": section.left_margin.inches,
+        }
+        expected = {
+            "width": 8.5,
+            "height": 11.0,
+            "top": 1.0,
+            "right": 1.25,
+            "bottom": 1.0,
+            "left": 1.25,
+        }
+        for name, value in expected.items():
+            if abs(actual[name] - value) > 0.01:
+                issues.append(
+                    StructureIssue(
+                        0,
+                        "docx.page_geometry",
+                        f"{name} must be {value:.2f}in, got {actual[name]:.2f}in",
+                    )
+                )
     if issues:
         raise ValueError("rendered DOCX structure gate failed: " + "; ".join(issue.format() for issue in issues))

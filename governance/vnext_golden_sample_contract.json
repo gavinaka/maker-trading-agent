@@ -1,0 +1,148 @@
+{
+  "schema_version": "golden-sample-contract-v1",
+  "purpose": "offline_methodology_and_structure_calibration_only",
+  "sample_count": 8,
+  "total_pages": 58,
+  "required_markers": [
+    "author_self_check",
+    "frontstage",
+    "cannot_do",
+    "fundamental",
+    "orderflow",
+    "chart",
+    "trend",
+    "maker",
+    "risk_reward",
+    "take_profit",
+    "stop_loss",
+    "defense",
+    "appendix",
+    "score_detail",
+    "score_70_30",
+    "source_support",
+    "mechanical_check",
+    "winrate_calibration",
+    "cannot_do_derivation",
+    "blockbeats",
+    "exocharts",
+    "coinglass",
+    "fedwatch",
+    "tradingview"
+  ],
+  "method_invariants": [
+    "concise_frontstage_with_deep_audit_appendix",
+    "main_account_and_maker_are_independent",
+    "cannot_do_is_derived_from_current_evidence",
+    "fundamental_orderflow_chart_and_risk_form_one_closed_loop",
+    "orderflow_score_and_chart_score_remain_separate",
+    "exocharts_uses_bybit_btcusd_daily_tick120_bidask_imbalance_none_fpbs_vwap",
+    "winrate_is_rubric_anchored_then_adjusted",
+    "risk_reward_stop_loss_take_profit_and_defense_are_explicit",
+    "maker_defense_first_and_second_layers_have_arabic_numeric_exact_trigger_prices",
+    "maker_defense_trigger_price_is_distinct_from_unknown_future_4h_stop_price",
+    "maker_entry_is_a_price_range_and_never_a_single_price",
+    "maker_execution_explicitly_includes_exchange_instrument_position_entry_type_and_leverage",
+    "main_account_plan_and_maker_plan_are_both_projected_without_cross_account_inference",
+    "continuity_is_source_bound_after_reasoning_and_does_not_mutate_locked_analysis",
+    "tradingview_projects_1d_4h_1h_and_15m_explicitly",
+    "source_claims_are_traceable"
+  ],
+  "required_semantic_invariants": [
+    "maker_entry_is_price_range",
+    "defense_first_exact_trigger_price",
+    "defense_second_exact_trigger_price",
+    "defense_layers_are_not_generic_formula_only"
+  ],
+  "july_additions": {
+    "required": [
+      "vrvp",
+      "liquidity_hunt",
+      "liquidation_map",
+      "etf_net_flow"
+    ],
+    "policy": "additive_dimensions_must_not_replace_the_original_method_chain"
+  },
+  "runtime_boundary": {
+    "allowed": [
+      "file_hashes",
+      "page_and_paragraph_counts",
+      "structural_markers",
+      "method_invariants"
+    ],
+    "forbidden": [
+      "historical_prices",
+      "historical_directions",
+      "historical_scores",
+      "historical_trade_levels",
+      "historical_narrative_as_market_evidence",
+      "historical_trigger_prices_in_production_context"
+    ]
+  },
+  "visual_qa": {
+    "reviewed_on": "2026-07-13",
+    "rendered_sample_count": 8,
+    "rendered_page_count": 58,
+    "all_pages_inspected": true,
+    "layout_pass": true,
+    "no_clipping_or_overlap": true,
+    "no_missing_glyphs": true
+  },
+  "samples": [
+    {
+      "file": "2026-06-22_evening_render.docx",
+      "sha256": "929e2685eb2b6165faeab447b4df3845141050512056614fc67663690fd96559",
+      "bytes": 46594,
+      "page_count": 7,
+      "paragraphs": 71
+    },
+    {
+      "file": "2026-06-22_midday_render.docx",
+      "sha256": "d2c648c3c0bfe8ddbd029624d2e8cd848136d8d6627f066458954166cb1dee3e",
+      "bytes": 46458,
+      "page_count": 7,
+      "paragraphs": 75
+    },
+    {
+      "file": "2026-06-22_morning_render.docx",
+      "sha256": "b9bc72db722afbc1345b15e7ef478968f4ea9aadf716cbe6d1ac7b48d6a126d4",
+      "bytes": 45319,
+      "page_count": 6,
+      "paragraphs": 73
+    },
+    {
+      "file": "2026-06-23_morning_render.docx",
+      "sha256": "277a30b6bb26bc7886457b6653d272ce4d94c9a249e417dcea2459978b8020b0",
+      "bytes": 46284,
+      "page_count": 7,
+      "paragraphs": 72
+    },
+    {
+      "file": "2026-06-24_evening_render.docx",
+      "sha256": "fddad7b89a59f04ddf1eec875d75335aee44b1712be6affdc0c26649b507c428",
+      "bytes": 46188,
+      "page_count": 7,
+      "paragraphs": 70
+    },
+    {
+      "file": "2026-06-25_morning_render.docx",
+      "sha256": "3cb8d16e924f9155dda8fe6e6d876a87e86e1665a3ba0e6d8f02309ac857ba7c",
+      "bytes": 46771,
+      "page_count": 8,
+      "paragraphs": 72
+    },
+    {
+      "file": "2026-06-26_midday_render.docx",
+      "sha256": "decc9b7f02fa7148ecef6810cf7d287e11c69e7df92f522a16f65508ffa8aa3b",
+      "bytes": 47452,
+      "page_count": 8,
+      "paragraphs": 73
+    },
+    {
+      "file": "2026-06-26_morning_render.docx",
+      "sha256": "0405261acfac71bd2b081b11eba85df590729110f635fbd20c8530e88139295d",
+      "bytes": 47212,
+      "page_count": 8,
+      "paragraphs": 72
+    }
+  ]
+}

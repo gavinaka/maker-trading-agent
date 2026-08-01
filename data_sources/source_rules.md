@@ -18,14 +18,14 @@
 - 使用历史缓存
 
 ## 规则3
-读取失败，必须停止对应模块输出。
+任一必需源读取失败，整个 vNext evidence stage 必须失败。
 例如：
 - CVD读取失败
 - 资金费率失败
 - BlockBeats失败
 - Farside BTC ETF Flow 读取失败或 `latest.total_usd_m` 非数值
 
-则该模块标记“待补充”。
+不得把对应模块标记“待补充”后继续生成部分报告；不得进入 reasoning、decision、report 或 delivery。只允许当前 evidence stage 的同输入局部纠正预算，预算耗尽进入 `needs_review`。
 
 ## 规则4
 禁止混淆时间周期。
@@ -67,7 +67,7 @@ BlockBeats 必须截图。
 - 数据为空
 - API异常
 
-必须停止生成对应数据。
+必须把该源标记 `valid:false` 并让整个 evidence stage 失败；禁止旧源替代、部分报告或整轮循环。
 
 ---
 

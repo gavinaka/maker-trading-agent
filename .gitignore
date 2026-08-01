@@ -8,6 +8,10 @@ desktop.ini
 # Temp files
 *.tmp
 *.bak
+tmp/
+
+# Local sensitive repair preimages
+repair_backups/
 
 # Python
 __pycache__/
@@ -34,3 +38,4 @@ sessions/_*.png
 
 # 三时段共享状态与执行遥测（运行态，不入库）
 runtime_state/
+runtime_state_vnext/

@@ -1,0 +1,137 @@
+{
+  "schema_version": "fomc-rate-provider-contract-v1",
+  "logical_source": "fomc_rate_expectation",
+  "compatibility_source_id": "FedWatch",
+  "selection_modes": {
+    "cme_primary": {
+      "provider_id": "cme_fedwatch_ui",
+      "acquisition_channel": "rendered_official_ui",
+      "method_class": "cme_target_rate_probability",
+      "method_equivalence": "canonical",
+      "sample_source_class": "cme_canonical",
+      "quote_basis_code": "cme_rendered_probability_table_v1",
+      "normalization_method_code": "identity_cme_distribution_v1",
+      "series_ticker": null
+    },
+    "kalshi_plan_c_fallback": {
+      "provider_id": "kalshi_public_market_data_api",
+      "acquisition_channel": "public_market_data_api",
+      "method_class": "independent_event_contract_market",
+      "method_equivalence": "non_equivalent",
+      "sample_source_class": "kalshi_plan_c_observation",
+      "quote_basis_code": "kalshi_yes_bid_ask_midpoint_dollars_v1",
+      "normalization_method_code": "kalshi_bounded_simplex_other_unlisted_v1",
+      "series_ticker": "KXFEDDECISION"
+    }
+  },
+  "cme": {
+    "official_url": "https://www.cmegroup.com/cn-s/markets/interest-rates/cme-fedwatch-tool.html",
+    "ready_marker": "Target Rate Probabilities",
+    "attempt_artifact": {
+      "exact_fields": [
+        "schema_version",
+        "capture_run_id",
+        "provider_id",
+        "status",
+        "defect_code",
+        "started_at",
+        "completed_at",
+        "output",
+        "attempt_sha256"
+      ],
+      "status_values": [
+        "passed",
+        "failed"
+      ],
+      "passed_output_exact_fields": [
+        "path",
+        "sha256",
+        "bytes"
+      ],
+      "passed_output_path": "fedwatch.png",
+      "failed_output_must_be_null": true,
+      "hash_field": "attempt_sha256",
+      "hash_method_code": "sha256_canonical_json_without_self_v1"
+    },
+    "eligible_fallback_codes": [
+      "cme_tool_content_load_error",
+      "cme_probability_tool_unrendered",
+      "cme_navigation_transport_failure",
+      "cme_access_blocked"
+    ],
+    "non_fallback_codes": [
+      "cme_browser_launch_failure",
+      "cme_page_schema_unclassified",
+      "cme_local_artifact_write_failure",
+      "cme_result_integrity_failure"
+    ]
+  },
+  "kalshi": {
+    "api_base_url": "https://api.elections.kalshi.com/trade-api/v2",
+    "series_ticker": "KXFEDDECISION",
+    "contract_terms_url": "https://kalshi-public-docs.s3.amazonaws.com/contract_terms/FEDDECISION.pdf",
+    "contract_terms_sha256": "54d560744b93d7cc2b5724d08ee8dd93f2a7c22d41d0ad3d01ead89cb76ca5f9",
+    "settlement_source_name": "Federal Reserve",
+    "outcome_mapping_version": "kxfeddecision-five-bucket-v1",
+    "outcome_mappings": [
+      {
+        "custom_strike_key": "Cut",
+        "custom_strike_value": ">25",
+        "subtitle": "Cut >25bps",
+        "outcome_key": "cut_gt_25bp"
+      },
+      {
+        "custom_strike_key": "Cut",
+        "custom_strike_value": "25",
+        "subtitle": "Cut 25bps",
+        "outcome_key": "cut_25bp"
+      },
+      {
+        "custom_strike_key": "Hike",
+        "custom_strike_value": "0",
+        "subtitle": "Hike 0bps",
+        "outcome_key": "hold"
+      },
+      {
+        "custom_strike_key": "Hike",
+        "custom_strike_value": "25",
+        "subtitle": "Hike 25bps",
+        "outcome_key": "hike_25bp"
+      },
+      {
+        "custom_strike_key": "Hike",
+        "custom_strike_value": ">25",
+        "subtitle": "Hike >25bps",
+        "outcome_key": "hike_gt_25bp"
+      }
+    ],
+    "required_outcomes": [
+      "cut_gt_25bp",
+      "cut_25bp",
+      "hold",
+      "hike_25bp",
+      "hike_gt_25bp",
+      "other_unlisted"
+    ],
+    "history": {
+      "period_interval_minutes": 60,
+      "anchor_offsets_seconds": {
+        "change_1d": 86400,
+        "change_1w": 604800,
+        "change_1m": 2592000
+      },
+      "max_anchor_age_seconds": 86400,
+      "max_cross_bucket_skew_seconds": 86400
+    },
+    "normalization": {
+      "probability_total": "100",
+      "output_quantum_percentage_points": "0.001",
+      "other_outcome_key": "other_unlisted",
+      "reject_all_listed_midpoints_zero": true
+    }
+  },
+  "provenance_schema_version": "fomc-rate-source-provenance-v1",
+  "cme_attempt_schema_version": "cme-fedwatch-attempt-v1",
+  "kalshi_raw_schema_version": "kalshi-kxfeddecision-raw-v1",
+  "kalshi_normalized_schema_version": "kalshi-kxfeddecision-normalized-v1"
+}

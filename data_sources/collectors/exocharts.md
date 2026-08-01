@@ -1,86 +1,61 @@
 # Exocharts Collector SOP
 
-> 🟥 **源角色（2026-06-14 用户校准·宪法级）**：exocharts **不是盘口主源**。盘口四变量（CVD/价格/OI/资金费率）解读核心 = **coinglass 截图**。exocharts 仅作 **印证 + 更细颗粒度（footprint 足迹）的数据参照**，确保 coinglass 判断准确。与 coinglass 冲突时以 coinglass 为准复核，exocharts 不单方覆盖。
+> 🟥 **源角色（宪法级）**：Exocharts 不是盘口四维主源。价格 / CVD / OI / 资金费率的主判来自 Coinglass；Exocharts 只提供日线足迹与主动成交的细颗粒印证。两源冲突时必须复核，Exocharts 不得单方覆盖主判、翻转方向或制造极端评分。
 
-## 目标
-采集 BTC / ETH 永续合约的 footprint 足迹（印证·细颗粒）+ CVD/价格/结构（交叉核对，核心读数取 coinglass）→ `inbox/<YYYY-MM-DD>/exocharts_<symbol>_<tf>.{png,json}`
+## 当前自动化目标
 
-## 文件命名约定（必须遵守）
-* `<symbol>`：小写，`btc` 或 `eth`（文件名层级；JSON 内 symbol 字段仍写 `BTCUSDT`）
-* `<tf>`：`1h` / `4h` / `1d` / `15m`
-* 例：`exocharts_btc_1h.png` / `exocharts_btc_1h.json`
-
-## 数据源
-https://exocharts.com/web/
+- 页面：`https://exocharts.com/web/`
+- 产物：`data_sources/inbox/<YYYY-MM-DD>/exocharts.png`
+- 唯一合格配置：`Bybit BTCUSD / D / Tick 120 / Bid-Ask Profile / Imbalance / Candle None / FPBS / vWap`
+- 配置顺序先确认 `Bybit BTCUSD`，再设置其余控件；禁止继承旧 symbol、选择页面中的“第一个 BTCUSD”或用其它交易所的同名合约代替。
+- `D` 是 Exocharts 的固定日线足迹基线；它只与 Coinglass 的同一 BTC 盘口主判做跨源强弱印证，不冒充 Coinglass 的 1H 同 pivot 四维主判。
 
 ## 通道约束
-* 主通道：**A**（Chrome MCP）—— Exocharts 是 SPA，有登录墙，WebFetch 不可用
-* 兜底：**C**（用户截图投递）
-* 禁止：**B**
 
----
+- 主通道：**A**（已登录的独立 Chrome profile + Playwright）。Exocharts 是 SPA，WebFetch 不可用。
+- 兜底：**C**（用户提供当前截图／结构化转录）。
+- 禁止：**B**。
+- 不自动登录、不读取或导出 cookie、localStorage、sessionStorage、token、密码或账户信息。
 
-## 通道 A 执行流
+## 通道 A 状态机
 
-1. `tabs_context_mcp` → 复用本会话 tab
-2. `navigate` → `https://exocharts.com/web/`
-3. 若未登录，停止并写 `valid:false, error:"未登录"`（不自动登录，遵守 `user_privacy`）
-4. 对每个标的 × 周期组合采集：
-   * BTCUSDT 1h / BTCUSDT 4h / BTCUSDT 1d
-   * ETHUSDT 1h（可选）
-5. 每个组合：
-   * 切换图表到对应 symbol + timeframe
-   * 等待 CVD 指标加载完成（`read_page` 确认 CVD 面板可见）
-   * 截图保存为 `exocharts_<symbol>_<tf>.png`
-   * 抽取最近若干根 K 线的关键值，写 `exocharts_<symbol>_<tf>.json`：
-     ```json
-     {
-       "symbol": "BTCUSDT",
-       "timeframe": "1h",
-       "captured_at": "<ISO>",
-       "last_close": <number>,
-       "cvd_direction": "up | down | sideways",
-       "price_direction": "up | down | sideways",
-       "recent_structure": "higher_high | lower_low | range | breakout_up | breakout_down",
-       "key_levels": {
-         "support": [<number>, ...],
-         "resistance": [<number>, ...]
-       },
-       "footprint_signals": {
-         "absorption": "buy_absorbed | sell_absorbed | none",
-         "imbalance": "stacked_bid | stacked_ask | scattered | none",
-         "poc": { "shift": "up | down | flat", "price_vs_poc": "far | near" }
-       }
-     }
-     ```
+1. 导航到官方页面，等待以下任一真实条件出现，而不是固定睡眠：
+   - 唯一可见的图表配置控件就绪；或
+   - 唯一可见的 `plan does not allow more LIVE connections` 阻断提示。
+2. 若出现 LIVE 阻断，只允许点击阻断区域内唯一、可见、精确匹配的接管动作；禁止固定坐标、隐藏重复节点或 `.first()` 猜选。接管后必须等到阻断消失且配置控件真实就绪。
+3. 每个控件均按“读取当前状态 → 必要时执行一次动作 → 回读确认”处理。第一次未确认时只允许 **1 次同控件局部纠正**；仍未确认即失败。不得刷新整页、重启整轮或无限点击。
+4. 逐项机械确认：
+   - symbol：`Bybit: BTCUSD`；
+   - timeframe：`D`（菜单项 `Daily`）；
+   - tick multiplier：`120`；
+   - cluster：`Bid-Ask Profile`；
+   - text：`Imbalance`；
+   - candle：`None`；
+   - toggle：`FPBS` 与 `vWap` 均为 active。
+5. toggle 先读取 `aria-*` / `data-*` / active class 等显式状态，再读取可见样式。不能再用“RGB 三通道均大于等于 200”作为唯一依据，因为高亮的黄色 `vWap` 也属于 active。
+6. 等主图 canvas 就绪，把光标移到最新 K 线区域；再次回读全部配置、LIVE 阻断和 24h delayed 状态。全部成立后才写 `exocharts.png`。
 
-   ### footprint_signals 采集规则（2026-06-14 迭代 · exocharts 微观订单流）
-   * **仅当 footprint 足迹档位可见时填写**（exocharts 切到 footprint/订单流视图、能看到逐价位主动买卖 delta）。看不到档位 → **整块写 `"footprint_signals": null`**，绝不臆造。
-   * `absorption`：某价位大额主动买但价不涨/反跌=`buy_absorbed`（隐性派发）；大额主动卖但价不跌/反涨=`sell_absorbed`（隐性吸筹）；无明显吸收=`none`。
-   * `imbalance`：对角线买:卖 ≥3:1 连续 ≥3 档=`stacked_bid`；卖:买 ≥3:1 连续 ≥3 档=`stacked_ask`；失衡零散无堆叠=`scattered`；无失衡=`none`。
-   * `poc`：成交量最大价位相对前段上移/下移/持平=`shift`；现价远离 POC=`far`，贴近=`near`。
-   * 这三项是 footprint_agent 的**印证因子**（只调强度、不翻向），权威逻辑见 `scoring/orderflow_methodology.md` 第八节。
-6. 写入 manifest 主条目（指向 BTCUSDT 1h 为主，其余作 files 列表附加）
+## 去敏失败诊断
 
----
+vNext 由 controller 将诊断目录绑定到当前 `evidence/attempt-NNN/exocharts/`；collector 不接受任意仓外目录。失败时尽最大努力生成：
 
-## 通道 C 执行流
+- `exocharts_diagnostic.png`：当前页面截图，输入框和常见 account/profile/user 元素遮罩；
+- `exocharts_diagnostic.json`：只含安全故障枚举、控件状态分类（`expected / unexpected / missing_or_ambiguous / active / inactive / unknown`）、动作次数、局部纠正次数和隐私布尔声明；
+- `exocharts_result.json`：只含 `passed / failed`、安全 `capture.exocharts.*` leaf code 和诊断是否存在。
 
-用户截图 + 手填 JSON → 放入 inbox → 通知
+诊断 JSON 与 result 禁止包含自由文本异常、DOM 正文、价格、方向、评分、仓位、cookie、浏览器存储、token 或绝对敏感数据。vNext controller 只接受当前 capture manifest 中经过 run/date/slot/capture-id 绑定且匹配 `capture.exocharts.*` allowlist 的 leaf code；其它内容统一降为 `capture.failed`，不得进入 `sample_outcome.json`。
 
----
+## 失败与预算
 
-## 失败处理
+- 登录态／页面未就绪：该源无效，等待人工处理；不得伪造截图。
+- LIVE 接管动作缺失或接管后仍阻断：该源无效。
+- 任一固定配置两次动作后仍无法机械确认：该源无效，并使用对应安全 leaf code（如 `symbol_unconfirmed`、`vwap_unconfirmed`）。
+- 24h delayed：该源无效。
+- 单个控件的局部纠正不增加 Evidence 阶段总预算。Evidence 仍只有 **2 次完整采集 attempt**；第二次失败进入人工复核，不得扩门、加第三次或重跑其它业务阶段。
 
-* 登录墙 → 用户介入
-* SPA 加载超时（> 60s）→ 重试 1 次 → 仍失败标 `valid:false`
-* 结构判断不确定 → `recent_structure: "uncertain"`，不允许猜测
-* **footprint 档位不可见 / 不确定 → `footprint_signals: null`，禁止猜测吸收/失衡/POC**
+## 足迹转录边界
 
----
-
-## 注意
-
-* `cvd_direction` / `footprint_signals.*` 等枚举值必须使用规定值，禁止自由文本
-* 若 1h / 4h / 1d 出现冲突方向，全部记录到 raw_summary，由 scoring_agent 综合判断
-* **足迹信号是印证因子（只调强度、不翻向），缺失时降级不阻塞**——无 footprint 视图时整块置 null，按四维正常评分（见 `scoring/orderflow_methodology.md` 第八节）
+- 仅在截图中逐价位足迹真实可读时转录吸收、失衡、POC、OHLC、Delta、CVD、Volume。
+- 足迹档位不可见／不确定时，`footprint_signals` 整块为 `null`，禁止猜测。
+- `absorption`、`imbalance` 与 POC 只作强弱印证；缺失时降低该维度置信度，不允许由 Exocharts 单独翻向。
+- 与 Coinglass 结果冲突时保留冲突并进入反证链，不允许为了报告一致而抹平差异。

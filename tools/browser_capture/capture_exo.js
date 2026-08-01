@@ -1,18 +1,29 @@
 // Exocharts 足迹自动截图(Playwright/Chrome)。
-// 目标对齐基准:Bybit BTCUSD · D · Tick×120 · Bid-Ask Profile · 底部 Footprint bar statistics。
-//
-// 用法: node capture_exo.js
-// 输出: data_sources/inbox/<YYYY-MM-DD>/exocharts.png
+// 严格基准: Bybit BTCUSD / D / Tick120 / Bid-Ask Profile / Imbalance /
+// Candle None / FPBS / vWap。每个控件最多一次局部纠正，不做整轮重试。
 
-import { chromium } from 'playwright';
+import crypto from 'crypto';
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
+
+import { chromium } from 'playwright';
+
+import {
+  EXOCHARTS_DEFECT_CODES,
+  ExochartsUiError,
+  asExochartsUiError,
+  configureExocharts,
+  defectForUiState,
+  ensureLiveConnection,
+  readExochartsUiState,
+  writeCaptureResult,
+  writeSanitizedDiagnostic,
+} from './exocharts_ui_state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
-// 与 TV 共用同一个已登录的独立 Chrome 配置目录(登录态在普通 Chrome 里就地建立)
 const PROFILE_DIR = path.join(os.homedir(), '.tv_chrome_profile');
 const URL = 'https://exocharts.com/web/';
 
@@ -21,150 +32,181 @@ function today() {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-const OUT_DIR = path.join(REPO_ROOT, 'data_sources', 'inbox', today());
-fs.mkdirSync(OUT_DIR, { recursive: true });
 
-const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
-  channel: 'chrome', headless: process.env.HEADLESS === '1',
-  viewport: { width: 2560, height: 1440 }, // 输出统一 2560×1440(提升读数准确性)
-  screen: { width: 2560, height: 1440 },
-  args: ['--window-position=0,0', '--window-size=2576,1500'],
-});
-const page = ctx.pages()[0] || (await ctx.newPage());
-
-console.log(`[exo] 打开: ${URL}`);
-await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-await page.waitForLoadState('networkidle', { timeout: 60000 }).catch(() => {});
-await page.waitForTimeout(12000);
-
-// Exocharts may retain a stale server-side LIVE connection after the previous
-// browser closes. Explicitly take over that connection before configuring the
-// chart; otherwise the top bar looks valid while the chart body is an error.
-const liveConnectionBlocked = await page.getByText(
-  /plan does not allow more LIVE connections/i
-).count().catch(() => 0);
-if (liveConnectionBlocked) {
-  console.log('[exo] 检测到 LIVE 连接占用，尝试刷新并接管当前连接');
-  // The takeover text is rendered in a non-visible duplicate node, so text
-  // locators stall. Its visible link has a stable position in this viewport.
-  await page.mouse.click(180, 280);
-  await page.waitForTimeout(12000);
+function requireRepoPath(value, fallback) {
+  const resolved = path.resolve(value || fallback);
+  const relative = path.relative(REPO_ROOT, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new ExochartsUiError(EXOCHARTS_DEFECT_CODES.unexpected, 'capture');
+  }
+  return resolved;
 }
 
-// ---- 设置参数对齐基准:Bybit BTCUSD / D / Tick×120 / Bid-Ask Profile ----
+const date = today();
+const OUT_DIR = path.join(REPO_ROOT, 'data_sources', 'inbox', date);
+const invocationId = crypto.randomUUID();
+const diagnosticDir = requireRepoPath(
+  process.env.EXO_CAPTURE_DIAGNOSTIC_DIR,
+  path.join(
+    REPO_ROOT,
+    'runtime_state',
+    date,
+    'capture_diagnostics',
+    'exocharts',
+    invocationId,
+  ),
+);
+const resultPath = requireRepoPath(
+  process.env.EXO_CAPTURE_RESULT_PATH,
+  path.join(diagnosticDir, 'exocharts_result.json'),
+);
 
-// 1) 交易对 -> Bybit BTCUSD(弹窗按交易所分列,Bybit 列在 x≈152,其下 BTCUSD 即 Bybit 反向永续)
-try {
-  await page.locator('#topPeriodSelector').first().click();
-  await page.waitForTimeout(1000);
-  await page.locator('.labelRow', { hasText: /^BTCUSD$/ }).first().click();
-  await page.waitForTimeout(2500); // 换标的后图表重载
-  console.log('[exo] 交易对设为 Bybit BTCUSD');
-} catch (e) { console.log('[exo] 交易对失败:', e.message); }
+async function dismissTrialNotice(page) {
+  const labels = page.getByText(/Trial user/i);
+  const visible = [];
+  for (let index = 0; index < await labels.count(); index += 1) {
+    const candidate = labels.nth(index);
+    if (await candidate.isVisible().catch(() => false)) visible.push(candidate);
+  }
+  if (!visible.length) return false;
 
-// 2) Tick 倍数 -> 120
-try {
-  const tick = page.locator('input.topTickMultiplier');
-  await tick.click(); await tick.fill('120'); await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
-  console.log('[exo] Tick 设为 120');
-} catch (e) { console.log('[exo] Tick 失败:', e.message); }
+  let scope = visible[0];
+  for (let depth = 0; depth < 5; depth += 1) {
+    scope = scope.locator('xpath=..');
+    const controls = scope.locator(
+      '[aria-label="close" i], button, [role="button"], .close',
+    );
+    const closers = [];
+    for (let index = 0; index < await controls.count(); index += 1) {
+      const candidate = controls.nth(index);
+      if (!(await candidate.isVisible().catch(() => false))) continue;
+      const label = String(
+        await candidate.getAttribute('aria-label')
+        || await candidate.innerText().catch(() => ''),
+      ).replace(/\s+/g, ' ').trim().toLowerCase();
+      if (['close', 'x', '×'].includes(label)) closers.push(candidate);
+    }
+    if (closers.length === 1) {
+      await closers[0].click({ timeout: 5000 }).catch(() => {});
+      return true;
+    }
+    if (closers.length > 1) return false;
+  }
+  return false;
+}
 
-// 3) 簇类型 -> Bid-Ask Profile
-try {
-  await page.locator('#topChartTypeSelector').click();
-  await page.waitForTimeout(600);
-  await page.getByText('Bid-Ask Profile', { exact: true }).first().click();
-  await page.waitForTimeout(2000);
-  console.log('[exo] 簇类型设为 Bid-Ask Profile');
-} catch (e) { console.log('[exo] 簇类型失败:', e.message); }
-
-// 4) FPBS = Footprint Bar Statistics(底部足迹统计面板)-> 打开
-try {
-  await page.getByText('FPBS', { exact: true }).first().click();
-  await page.waitForTimeout(1500);
-  console.log('[exo] 已点 FPBS(底部足迹统计)');
-} catch (e) { console.log('[exo] FPBS 失败:', e.message); }
-
-// 5) vWap -> 打开(基准里连接各日 profile 的黄色 VWAP 线)
-try {
-  await page.getByText('vWap', { exact: true }).first().click();
-  await page.waitForTimeout(1500);
-  console.log('[exo] 已点 vWap(VWAP 线)');
-} catch (e) { console.log('[exo] vWap 失败:', e.message); }
-
-// 关闭 "Trial user" 提示:定位弹窗盒子,点其右上角 X
-try {
-  const box = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('div,span,section')].find((e) => {
-      const t = (e.textContent || '');
-      const r = e.getBoundingClientRect();
-      return t.includes('Trial user') && r.width > 150 && r.width < 460 && r.height > 40 && r.height < 160;
-    });
-    if (!el) return null;
-    const r = el.getBoundingClientRect();
-    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width) };
-  });
-  if (box) {
-    await page.mouse.click(box.x + box.w - 16, box.y + 16); // 右上角 X
-    await page.waitForTimeout(800);
-    console.log('[exo] 关闭 Trial 提示 @', JSON.stringify(box));
-  } else { console.log('[exo] 未定位到 Trial 弹窗'); }
-} catch (e) { console.log('[exo] 关提示失败:', e.message); }
-
-await page.waitForTimeout(2500); // 等数据加载完(OHLC)
-const probe = await page.evaluate(() => ({ title: document.title })).catch(() => ({}));
-console.log('[exo] title:', probe.title);
-
-// 2026-07-04 quality gate: LIVE takeover uses a fixed click near the left side.
-// If the cursor stays there, Exocharts can keep the top OHLC panel pinned to an
-// old daily candle while the price label shows the current candle. Before the
-// screenshot, move the crosshair to the right side of the main chart so the
-// selected candle is the latest/current bar.
-try {
-  const hoverPoint = await page.evaluate(() => {
+async function latestChartHoverPoint(page) {
+  return page.evaluate(() => {
     const canvases = [...document.querySelectorAll('canvas')]
-      .map((el) => {
-        const r = el.getBoundingClientRect();
-        return { x: r.left, y: r.top, w: r.width, h: r.height };
+      .map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
       })
-      .filter((r) => r.w > 800 && r.h > 400)
-      .sort((a, b) => (b.w * b.h) - (a.w * a.h));
-    const chart = canvases[0] || { x: 80, y: 120, w: 2300, h: 1000 };
+      .filter((rect) => rect.width > 800 && rect.height > 400)
+      .sort((left, right) => (
+        (right.width * right.height) - (left.width * left.height)
+      ));
+    if (!canvases.length) return null;
+    const chart = canvases[0];
     return {
-      x: Math.round(chart.x + chart.w * 0.92),
-      y: Math.round(chart.y + chart.h * 0.45),
+      x: Math.round(chart.x + (chart.width * 0.92)),
+      y: Math.round(chart.y + (chart.height * 0.45)),
     };
   });
-  await page.mouse.move(hoverPoint.x, hoverPoint.y);
-  await page.waitForTimeout(900);
-  console.log('[exo] 十字光标已移动到最新K线区域', JSON.stringify(hoverPoint));
-} catch (e) {
-  console.log('[exo] 最新K线 hover 失败:', e.message);
 }
 
-const file = path.join(OUT_DIR, 'exocharts.png');
-await page.screenshot({ path: file, fullPage: false });
-console.log(`[exo] 已保存 ${file}`);
-
-// 有效性机械门:顶栏须 Bybit BTCUSD + Bid-Ask Profile,且非"24h延迟"(免费/掉登录态)
-const chk = await page.evaluate(() => {
-  const top = document.querySelector('#exo-center')?.textContent || '';
-  const body = document.body.innerText || '';
-  return {
-    top,
-    delayed: /delayed by 24 hours/i.test(body),
-    liveConnectionBlocked: /plan does not allow more LIVE connections/i.test(body),
-  };
-}).catch(() => ({ top: '', delayed: true }));
-const valid = /BTCUSD/.test(chk.top)
-  && /Bid-Ask Profile/.test(chk.top)
-  && !chk.delayed
-  && !chk.liveConnectionBlocked;
-if (!valid) {
-  console.log(`[exo] VALIDITY: FAIL - 顶栏="${chk.top.slice(0,60)}" delayed=${chk.delayed} liveConnectionBlocked=${chk.liveConnectionBlocked}(需 Bybit BTCUSD/Bid-Ask、非24h延迟且图表连接有效)`);
-  await ctx.close(); process.exit(2);
+async function waitForChartCanvas(page, timeoutMs = 20000) {
+  await page.waitForFunction(() => [...document.querySelectorAll('canvas')].some((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 800 && rect.height > 400;
+  }), null, { timeout: timeoutMs, polling: 125 });
 }
-console.log('[exo] VALIDITY: OK');
-await ctx.close();
-process.exit(0);
+
+function writeResultSafely(status, defectCode = null, diagnosticAvailable = false) {
+  if (fs.existsSync(resultPath)) return;
+  writeCaptureResult(resultPath, { status, defectCode, diagnosticAvailable });
+}
+
+async function main() {
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  const actionCounts = {};
+  let context = null;
+  let page = null;
+  let failure = null;
+  let diagnosticAvailable = false;
+
+  try {
+    try {
+      context = await chromium.launchPersistentContext(PROFILE_DIR, {
+        channel: 'chrome',
+        headless: process.env.HEADLESS === '1',
+        viewport: { width: 2560, height: 1440 },
+        screen: { width: 2560, height: 1440 },
+        args: ['--window-position=0,0', '--window-size=2576,1500'],
+      });
+    } catch {
+      throw new ExochartsUiError(
+        EXOCHARTS_DEFECT_CODES.browser,
+        'capture',
+      );
+    }
+    page = context.pages()[0] || (await context.newPage());
+    console.log(`[exo] 打开: ${URL}`);
+    try {
+      await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    } catch {
+      throw new ExochartsUiError(EXOCHARTS_DEFECT_CODES.navigation, 'capture');
+    }
+
+    await ensureLiveConnection(page, { actionCounts });
+    await configureExocharts(page, { actionCounts });
+    await dismissTrialNotice(page);
+    try {
+      await waitForChartCanvas(page);
+    } catch {
+      throw new ExochartsUiError(EXOCHARTS_DEFECT_CODES.uiNotReady, 'capture');
+    }
+
+    const hoverPoint = await latestChartHoverPoint(page);
+    if (!hoverPoint) {
+      throw new ExochartsUiError(EXOCHARTS_DEFECT_CODES.uiNotReady, 'capture');
+    }
+    await page.mouse.move(hoverPoint.x, hoverPoint.y);
+    await page.evaluate(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }));
+
+    const state = await readExochartsUiState(page);
+    const stateDefect = defectForUiState(state);
+    if (stateDefect) throw new ExochartsUiError(stateDefect, 'capture');
+
+    const screenshotPath = path.join(OUT_DIR, 'exocharts.png');
+    try {
+      await page.screenshot({ path: screenshotPath, fullPage: false });
+    } catch {
+      throw new ExochartsUiError(EXOCHARTS_DEFECT_CODES.screenshot, 'capture');
+    }
+    writeResultSafely('passed');
+    console.log('[exo] CONFIGURATION: OK');
+    console.log(`[exo] 已保存 ${screenshotPath}`);
+    console.log('[exo] VALIDITY: OK');
+    return 0;
+  } catch (error) {
+    failure = asExochartsUiError(error);
+    if (page) {
+      diagnosticAvailable = await writeSanitizedDiagnostic(page, {
+        directory: diagnosticDir,
+        error: failure,
+        actionCounts,
+      }).then(() => true).catch(() => false);
+    }
+    writeResultSafely('failed', failure.code, diagnosticAvailable);
+    console.log(`[exo] FAILURE_CODE=${failure.code}`);
+    console.log('[exo] VALIDITY: FAIL');
+    return 2;
+  } finally {
+    await context?.close().catch(() => {});
+  }
+}
+
+process.exitCode = await main();

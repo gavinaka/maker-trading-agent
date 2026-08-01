@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { classifyImpact, compareRowsByPriority } from './blockbeats_priority.js';
+import { classifyImpact, selectTopRowsByPriority } from './blockbeats_priority.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -174,9 +174,7 @@ try {
       ...row,
       analysis_priority: classifyImpact(row, nowMs, WINDOW_HOURS),
     }));
-  const selected = [...candidateRows]
-    .sort(compareRowsByPriority)
-    .slice(0, TOP_N)
+  const selected = selectTopRowsByPriority(candidateRows, TOP_N)
     .map((row, index) => ({
       ...row,
       selected_rank: index + 1,
@@ -196,6 +194,7 @@ try {
         important_only: importantOnly,
         capture_window_hours: WINDOW_HOURS,
         selection_policy: 'last_12h_all_important_then_top3_by_fundamental_priority',
+        event_family_deduplication_policy: 'ppi_by_jurisdiction_and_reported_period',
         selected_count_required: TOP_N,
         window_start: windowStartIso,
         window_end: now.toISOString(),

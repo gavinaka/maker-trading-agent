@@ -1,18 +1,116 @@
 {
-  "schema_version": "trading-scoring-contract-v3",
+  "schema_version": "trading-scoring-contract-v4",
   "maker_score": {
     "formula": "orderflow(0..70)+chart(0..30)",
     "threshold": 65,
     "fundamentals_in_score": false,
     "orderflow": {
       "method": "holistic_four_dimension_same_pivot",
+      "final_direction_to_claim_direction": {"bullish": "long", "bearish": "short", "neutral": "observe", "mixed": "observe"},
       "minimum_score": 0,
       "maximum_score": 70,
       "integer_only": true,
-      "manual_notion_reference_options": [10, 20, 30, 40, 50, 55, 60, 70],
       "non_extreme_max": 60,
       "extreme_score": 70,
+      "legal_score_domain": {
+        "normal_minimum": 0,
+        "normal_maximum": 60,
+        "reserved_invalid": [61, 62, 63, 64, 65, 66, 67, 68, 69],
+        "extreme_only": 70
+      },
       "extreme_candidate_combinations": ["C19", "C22", "C56", "C59"],
+      "extreme_candidate_directions": {
+        "C19": "short",
+        "C22": "short",
+        "C56": "long",
+        "C59": "long"
+      },
+      "extreme_candidate_semantics": {
+        "C19": {
+          "cvd_direction": "up",
+          "price_direction": "down",
+          "oi_direction": "up",
+          "funding_direction": "up",
+          "funding_sign": "positive",
+          "effect_divergence": {
+            "cvd_break": "higher_high",
+            "price_confirmation": "not_confirmed",
+            "interpretation": "bearish"
+          },
+          "price_break_status": "new_low_or_breakdown",
+          "oi_price_context": "new_short_expansion",
+          "main_triad_direction": "bearish",
+          "final_direction": "bearish"
+        },
+        "C22": {
+          "cvd_direction": "up",
+          "price_direction": "down",
+          "oi_direction": "flat",
+          "funding_direction": "up",
+          "funding_sign": "positive",
+          "effect_divergence": {
+            "cvd_break": "higher_high",
+            "price_confirmation": "not_confirmed",
+            "interpretation": "bearish"
+          },
+          "price_break_status": "new_low_or_breakdown",
+          "oi_price_context": "mixed",
+          "main_triad_direction": "bearish",
+          "final_direction": "bearish"
+        },
+        "C56": {
+          "cvd_direction": "down",
+          "price_direction": "up",
+          "oi_direction": "up",
+          "funding_direction": "down",
+          "funding_sign": "negative",
+          "effect_divergence": {
+            "cvd_break": "lower_low",
+            "price_confirmation": "not_confirmed",
+            "interpretation": "bullish"
+          },
+          "price_break_status": "new_high_or_breakout",
+          "oi_price_context": "new_long_expansion",
+          "main_triad_direction": "bullish",
+          "final_direction": "bullish"
+        },
+        "C59": {
+          "cvd_direction": "down",
+          "price_direction": "up",
+          "oi_direction": "flat",
+          "funding_direction": "down",
+          "funding_sign": "negative",
+          "effect_divergence": {
+            "cvd_break": "lower_low",
+            "price_confirmation": "not_confirmed",
+            "interpretation": "bullish"
+          },
+          "price_break_status": "new_high_or_breakout",
+          "oi_price_context": "mixed",
+          "main_triad_direction": "bullish",
+          "final_direction": "bullish"
+        }
+      },
+      "extreme_confirmation": {
+        "self_attestation_sufficient": false,
+        "production_enabled": false,
+        "capability_state": "reserved_unimplemented",
+        "configuration_only_enable_forbidden": true,
+        "activation_requires_native_validator_implementation": true,
+        "unavailable_behavior": "cap_at_60_without_blocking_report",
+        "proof_source_mode": "native_structured",
+        "visual_transcription_sufficient": false,
+        "proof_schema_version": "orderflow-extreme-proof-v1",
+        "proof_filename": "orderflow_extreme_proof.json",
+        "proof_must_be_presealed_in_evidence": true,
+        "proof_requires_distinct_visual_passes": true,
+        "proof_required_sources": ["Coinglass", "Exocharts"],
+        "same_pivot_required": true,
+        "coinglass_effect_and_final_direction_match_required": true,
+        "funding_must_strengthen": true,
+        "exocharts_must_confirm": true,
+        "maker_counter_and_invalidation_closure_required": true
+      },
       "required_dimensions": [
         "orderflow.pivot",
         "orderflow.price_cvd",
@@ -48,6 +146,590 @@
         "reliability_and_brier_analysis",
         "out_of_sample_review"
       ]
+    },
+    "adjustment_policy": {
+      "schema_version": "winrate-adjustment-reason-v1",
+      "required_adjustment_fields": ["reason_code", "label", "delta", "claim_ids", "rationale"],
+      "unknown_adjustment_fields_forbidden": true,
+      "reason_code_required": true,
+      "delta_integer_required": true,
+      "zero_delta_forbidden": true,
+      "reason_codes": {
+        "etf_confirm": {
+          "allowed_claim_types": ["etf_confirmation"],
+          "required_reachable_sources": ["Coinglass", "Farside"],
+          "typed_value_owners": [
+            {"owner_type": "claim", "claim_type": "etf_confirmation", "field": "price_relation", "allowed_values": ["confirm"]}
+          ],
+          "delta_sign": "positive"
+        },
+        "etf_weaken": {
+          "allowed_claim_types": ["etf_confirmation"],
+          "required_reachable_sources": ["Coinglass", "Farside"],
+          "typed_value_owners": [
+            {"owner_type": "claim", "claim_type": "etf_confirmation", "field": "price_relation", "allowed_values": ["weaken"]}
+          ],
+          "delta_sign": "negative"
+        },
+        "fundamental_confirm": {
+          "allowed_claim_types": ["fundamental_price_realization"],
+          "required_reachable_sources": ["BlockBeats", "TradingView"],
+          "typed_value_owners": [
+            {"owner_type": "claim", "claim_type": "fundamental_price_realization", "field": "realization_state", "allowed_values": ["realized"]}
+          ],
+          "delta_sign": "positive"
+        },
+        "fundamental_weaken": {
+          "allowed_claim_types": ["fundamental_price_realization"],
+          "required_reachable_sources": ["BlockBeats", "TradingView"],
+          "typed_value_owners": [
+            {"owner_type": "claim", "claim_type": "fundamental_price_realization", "field": "realization_state", "allowed_values": ["partially_realized", "not_realized", "conflicted"]}
+          ],
+          "delta_sign": "negative"
+        },
+        "maker_counter_current": {
+          "allowed_claim_types": ["strongest_counterevidence"],
+          "required_claim_account": "maker",
+          "required_reasoning_binding": "methodology.account_separation.maker_counter_claim_id",
+          "typed_value_owner_mode": "selected_current_basis_clauses",
+          "delta_sign": "negative"
+        }
+      },
+      "reason_code_unique": true,
+      "claim_ids_unique_within_adjustment": true,
+      "claim_ids_disjoint_across_adjustments": true,
+      "typed_owner_signatures_disjoint_across_adjustments": true,
+      "anchor_adjustment_direct_claim_overlap_forbidden": true,
+      "label_authority": "gate_only_not_user_visible_business_fact",
+      "rationale_authority": "gate_only_not_user_visible_business_fact",
+      "required_first_reason_code": "maker_counter_current",
+      "compiler_projection_fields": ["reason_code", "delta", "claim_ids", "typed_values"],
+      "compiler_may_project_label_or_rationale": false
+    },
+    "anchor_policy": {
+      "allowed_claim_accounts": ["shared", "maker"],
+      "required_claim_types_by_axis": {
+        "orderflow": ["orderflow_interpretation"],
+        "structural_position": ["chart_interpretation", "invalidation_path"]
+      },
+      "optional_claim_types": ["liquidity_hunt"],
+      "forbidden_claim_types": ["maker_thesis", "market_regime", "strongest_counterevidence", "cannot_do", "fundamental_context", "fundamental_price_realization", "etf_confirmation"],
+      "required_reachable_sources_by_axis": {
+        "orderflow": ["Coinglass", "Exocharts"],
+        "structural_position": ["TradingView"]
+      },
+      "canonical_rationale": "盘口轴与结构位置轴均已按类型化 claim 和可达来源认证；基准锚不读取计划状态、60%门槛或开单结果。",
+      "claim_ids_unique": true,
+      "anchor_adjustment_direct_claim_overlap_forbidden": true
+    },
+    "counter_resolution_policy": {
+      "schema_version": "maker-counter-resolution-v2",
+      "required_fields": ["counter_claim_id", "disposition", "adjustment_reason_code", "residual_clause_indexes", "resolution_claim_ids"],
+      "allowed_dispositions": ["adjusted"],
+      "adjusted_reason_code": "maker_counter_current",
+      "residual_clause_coverage": "all_current_basis_clauses_in_order"
+    },
+    "secondary_signal_disposition_policy": {
+      "schema_version": "secondary-signal-disposition-v1",
+      "required_fields": [
+        "signal_type",
+        "claim_id",
+        "disposition",
+        "adjustment_reason_code",
+        "no_adjustment_reason_code"
+      ],
+      "allowed_dispositions": ["adjusted", "no_adjustment"],
+      "allowed_no_adjustment_reason_codes": [
+        "neutral_signal",
+        "reviewed_no_independent_incremental_effect",
+        "event_price_attribution_unavailable"
+      ],
+      "signals": {
+        "etf_confirmation": {
+          "value_field": "price_relation",
+          "adjustment_reason_by_value": {
+            "confirm": "etf_confirm",
+            "weaken": "etf_weaken"
+          }
+        },
+        "fundamental_price_realization": {
+          "value_field": "realization_state",
+          "adjustment_reason_by_value": {},
+          "load_bearing": false,
+          "required_disposition": "no_adjustment",
+          "required_no_adjustment_reason_code": "event_price_attribution_unavailable"
+        }
+      },
+      "coverage": "exactly_once_per_signal_type",
+      "compiler_may_infer_missing_disposition": false
+    }
+  },
+  "tradingview_profile_policy": {
+    "source_mode": "user_drawn_manual_only",
+    "platform_indicator_policy": "hide_and_never_use",
+    "automated_numeric_values_allowed": false,
+    "allowed_statuses": ["readable", "insufficient"],
+    "allowed_platform_indicator_states": ["hidden", "absent", "visible", "unknown"],
+    "readable_platform_indicator_states": ["hidden", "absent"],
+    "allowed_zone_timeframes": ["1d", "4h", "1h", "15m"],
+    "allowed_zone_roles": ["value_area", "poc_zone", "hvn_zone", "lvn_zone"],
+    "allowed_structure_zone_roles": ["support", "resistance", "breakout_retest", "breakdown_retest"],
+    "state_sidecar_filename": "tradingview_profile_state.json",
+    "state_sidecar_schema_version": "tradingview-profile-state-v2",
+    "state_sidecar_binding_schema_version": "tradingview-profile-capture-binding-v1",
+    "state_sidecar_identity_fields": ["capture_run_id", "capture_nonce"],
+    "allowed_certification_bases": ["profile_control", "certified_legend_inventory", "unverified"],
+    "certified_absence_basis": "certified_legend_inventory",
+    "state_sidecar_write_failure_behavior": "profile_dimension_insufficient_non_blocking",
+    "uncertified_platform_indicator_behavior": "profile_dimension_insufficient",
+    "unreadable_manual_profile_behavior": "profile_dimension_insufficient_no_inference",
+    "insufficient_liquidity_hunt_score": 0,
+    "coinglass_substitution_allowed": false,
+    "directional_use": false
+  },
+  "risk_execution": {
+    "main_account": {
+      "exchange": "Binance",
+      "instrument": "BTCUSDT",
+      "minimum_position_notional_usdt": 2000,
+      "maximum_position_notional_usdt": 4000,
+      "fixed_leverage": 5,
+      "entry_mode": "staged_ladder",
+      "entry_levels": 4,
+      "entry_allocation_each_pct": 25,
+      "risk_formula": "abs(weighted_entry-stop)/weighted_entry*leverage*100",
+      "risk_fill_scenarios": "all_non_empty_combinations",
+      "maximum_nominal_risk_pct": 8,
+      "risk_failure_behavior": "observe",
+      "plan_rejection_reason_codes": [
+        "main_risk_above_8",
+        "main_entry_zone_invalid",
+        "main_risk_geometry_invalid"
+      ],
+      "tp1_close_pct": 20
+    },
+    "structural_noise_buffer_judgment": {
+      "schema_version": "structural-noise-buffer-v2",
+      "required_fields": [
+        "schema_version",
+        "status",
+        "method_code",
+        "observation_id",
+        "timeframe",
+        "visual_evidence_ref",
+        "anchor_kind",
+        "anchor_source_field",
+        "anchor_price",
+        "noise_outer_boundary",
+        "price_distance",
+        "risk_budget_input_used",
+        "insufficiency_reason_code"
+      ],
+      "allowed_statuses": ["certified", "insufficient"],
+      "method_code": "pre_risk_tradingview_structure_noise_judgment",
+      "source": "TradingView",
+      "required_claim_type": "invalidation_path",
+      "risk_budget_input_used": false,
+      "certified_reason_code": null,
+      "insufficient_reason_codes": [
+        "visual_noise_envelope_not_readable",
+        "not_applicable_non_directional_thesis"
+      ],
+      "non_directional_subject_directions": ["neutral", "observe"],
+      "non_directional_reason_code": "not_applicable_non_directional_thesis",
+      "insufficient_numeric_fields_must_be_null": ["anchor_price", "noise_outer_boundary", "price_distance"],
+      "anchor_and_noise_must_be_selected_before_decision_risk_math": true,
+      "fixed_minimum_or_atr_multiplier_forbidden": true,
+      "compiler_may_infer": false
+    },
+    "maker_exchange": "OKX",
+    "maker_instruments": {
+      "BTCUSDT": {
+        "minimum_position_notional_usdt": 500,
+        "maximum_position_notional_usdt": 1000
+      },
+      "ETHUSDT": {
+        "minimum_position_notional_usdt": 300,
+        "maximum_position_notional_usdt": 800
+      }
+    },
+    "maker_fixed_leverage": 5,
+    "maker_strategy_types": ["高空", "低多", "反弹空", "观望"],
+    "maker_entry_types": ["left", "right"],
+    "maker_non_directional_entry_type": "not_applicable",
+    "right_entry_confirmation_policy": {
+      "status": "fail_closed_until_typed_confirmation_basis",
+      "constructible_in_decision_model_v7": false,
+      "authority": "execution/entry_models.md"
+    },
+    "entry_reach_probability_applicability": {
+      "allowed_statuses": [
+        "applicable",
+        "not_applicable_no_certified_entry_geometry"
+      ],
+      "applicable_requires": [
+        "certified_tradingview_entry_zone",
+        "at_least_one_typed_candidate_entry_within_zone",
+        "complete_tradingview_1h_reach_geometry"
+      ],
+      "not_applicable_probability_value": null,
+      "not_applicable_geometry_fields_must_be_null": [
+        "reference_entry",
+        "entry_distance",
+        "reach_direction"
+      ],
+      "numeric_zero_is_not_a_null_sentinel": true,
+      "compiler_may_infer_or_coerce": false
+    },
+    "maker_order_method": "Maker",
+    "maker_daily_trade_limit": 3,
+    "cannot_do_codes": ["做多", "追多", "做空", "追空", "追多空"],
+    "minimum_rr_to_tp1": 2.5,
+    "maximum_nominal_risk_pct": 3,
+    "risk_formula": "abs(weighted_entry-stop)/weighted_entry*leverage*100",
+    "risk_fill_scenarios": "all_non_empty_combinations",
+    "tp1_close_pct": 50,
+    "tp2_close_pct": 50,
+    "defense_first_r": 1.5,
+    "defense_second_r": 2,
+    "first_stop_rule": "confirmed_post_fill_4h_structural_extreme",
+    "second_action": "move_stop_to_breakeven_only",
+    "maker_entry_mode": "ladder_only",
+    "minimum_entry_levels": 2,
+    "maximum_entry_levels": 5,
+    "maker_entry_zone_sources": ["tradingview_manual_profile", "tradingview_multitimeframe_structure"],
+    "maker_entry_zone_preference": "tradingview_manual_profile_first",
+    "maker_entry_zone_forbidden_substitutes": ["coinglass_liquidation_map", "exocharts_poc"],
+    "maker_plan_constructibility_reason_codes": [
+      "constructible",
+      "non_directional_thesis",
+      "no_certified_entry_zone",
+      "entry_zone_binding_invalid",
+      "entry_zone_role_invalid",
+      "maker_order_marketable",
+      "entry_semantics_invalid",
+      "cannot_do_conflict",
+      "order_lifecycle_invalid",
+      "structural_stop_invalid",
+      "risk_math_invalid",
+      "defense_trigger_invalid"
+    ],
+    "maker_entry_semantics": {
+      "schema_version": "maker-entry-semantics-v1",
+      "resting_order_relation": {
+        "short": "all_entries_strictly_above_current_price",
+        "long": "all_entries_strictly_below_current_price"
+      },
+      "required_reach_direction": {
+        "short": "up_to_entry",
+        "long": "down_to_entry"
+      },
+      "structure_zone_roles": {
+        "short": ["resistance", "breakdown_retest"],
+        "long": ["support", "breakout_retest"]
+      },
+      "manual_profile_role_directional_use": false,
+      "cancel_path_rule": "prefill_cancel_must_be_on_the_opposite_branch_from_current_to_every_entry",
+      "failure_order": [
+        "no_certified_entry_zone",
+        "entry_zone_binding_invalid",
+        "entry_zone_role_invalid",
+        "maker_order_marketable",
+        "entry_semantics_invalid",
+        "cannot_do_conflict",
+        "order_lifecycle_invalid",
+        "structural_stop_invalid",
+        "risk_math_invalid",
+        "defense_trigger_invalid"
+      ],
+      "single_primary_reason_may_hide_other_failures": false
+    },
+    "maker_order_lifecycle": {
+      "schema_version": "maker-order-lifecycle-v1",
+      "required_fields": [
+        "schema_version",
+        "state",
+        "legal_fill_path_exists",
+        "legal_cancel_path_exists",
+        "fill_probability",
+        "fill_probability_applicability",
+        "reason_code"
+      ],
+      "states": [
+        "fillable",
+        "cancel_blocks_all_entries",
+        "entry_before_cancel",
+        "invalid_geometry",
+        "not_applicable_no_candidate_geometry"
+      ],
+      "gate_derives_exact_object": true,
+      "actual_fill_probability_is_not_estimated": true,
+      "compiler_may_infer_or_rewrite": false
+    },
+    "entry_allocation_total_pct": 100,
+    "ladder_mode": "ladder_pending_fill",
+    "main_initial_stop_policy": {
+      "primary_source": "TradingView",
+      "basis": "current_run_certified_main_structural_invalidation_anchor",
+      "required_stop_basis_fields": [
+        "observation_id",
+        "claim_id",
+        "timeframe",
+        "anchor_kind",
+        "anchor_source_field",
+        "anchor_price",
+        "buffer_basis_code",
+        "buffer_claim_id",
+        "outward_buffer_price",
+        "buffer_backsolved_from_risk",
+        "derived_stop"
+      ],
+      "allowed_anchor_kinds": [
+        "manual_profile_upper_outer_boundary",
+        "manual_profile_lower_outer_boundary",
+        "structure_zone_outer_boundary"
+      ],
+      "allowed_anchor_source_fields": [
+        "metrics.volume_profile.zones[*].upper_bound",
+        "metrics.volume_profile.zones[*].lower_bound",
+        "metrics.chart_basis.structure_zones[*].upper_bound",
+        "metrics.chart_basis.structure_zones[*].lower_bound"
+      ],
+      "anchor_price_must_equal_certified_field_value": true,
+      "anchor_observation_source_must_equal_primary_source": true,
+      "manual_profile_anchor_requires_profile_status": "readable",
+      "manual_profile_anchor_requires_source_mode": "user_drawn_manual_only",
+      "manual_profile_short_anchor": "manual_profile_upper_outer_boundary:metrics.volume_profile.zones[*].upper_bound",
+      "manual_profile_long_anchor": "manual_profile_lower_outer_boundary:metrics.volume_profile.zones[*].lower_bound",
+      "structure_zone_short_anchor": "structure_zone_outer_boundary:metrics.chart_basis.structure_zones[*].upper_bound",
+      "structure_zone_long_anchor": "structure_zone_outer_boundary:metrics.chart_basis.structure_zones[*].lower_bound",
+      "direction_allowed_structure_zone_roles": {
+        "short": ["resistance", "breakdown_retest"],
+        "long": ["support", "breakout_retest"]
+      },
+      "structure_zone_role_must_be_mechanically_bound": true,
+      "manual_profile_role_directional_use": false,
+      "unscoped_level_arrays_are_display_only": true,
+      "current_entry_zone_structure_must_not_be_anchor": true,
+      "non_entry_structure_zone_outer_boundary_allowed": true,
+      "anchor_selection": "same_account_invalidation_path_selects_current_run_certified_medium_term_structure_strictly_outside_entry_zone_and_all_entries",
+      "short_anchor_relation": "anchor_price>entry_zone_upper_and_max_entry",
+      "long_anchor_relation": "anchor_price<entry_zone_lower_and_min_entry",
+      "claim_type": "invalidation_path",
+      "claim_account": "main",
+      "anchor_claim_id_must_equal_same_account_invalidation_claim": true,
+      "nearest_numeric_level_required": false,
+      "weak_intermediate_level_must_not_be_forced_as_anchor": true,
+      "allowed_buffer_basis_codes": [
+        "current_run_typed_market_noise_allowance"
+      ],
+      "buffer_claim_id_must_equal_same_account_invalidation_claim": true,
+      "buffer_value_owner_claim_field": "structural_noise_buffer.price_distance",
+      "buffer_observation_owner_claim_field": "structural_noise_buffer.observation_id",
+      "buffer_timeframe_owner_claim_field": "structural_noise_buffer.timeframe",
+      "buffer_status_owner_claim_field": "structural_noise_buffer.status",
+      "buffer_anchor_kind_owner_claim_field": "structural_noise_buffer.anchor_kind",
+      "buffer_anchor_source_field_owner_claim_field": "structural_noise_buffer.anchor_source_field",
+      "buffer_anchor_price_owner_claim_field": "structural_noise_buffer.anchor_price",
+      "buffer_noise_outer_boundary_owner_claim_field": "structural_noise_buffer.noise_outer_boundary",
+      "buffer_value_semantics": "positive_price_distance_not_absolute_price",
+      "buffer_backsolved_from_risk_must_be_false": true,
+      "free_text_buffer_rationale_forbidden": true,
+      "allowed_timeframes": ["1d", "4h"],
+      "intraday_1h_or_15m_primary_anchor_forbidden": true,
+      "short_relation": "derived_stop=anchor_price+outward_buffer_price",
+      "long_relation": "derived_stop=anchor_price-outward_buffer_price",
+      "outward_buffer_required": true,
+      "outward_buffer_must_be_positive": true,
+      "derived_stop_must_be_strictly_beyond_anchor": true,
+      "derived_stop_must_be_strictly_beyond_noise_outer_boundary": true,
+      "stop_must_equal_anchor_plus_directional_buffer": true,
+      "risk_budget_may_shrink_structural_stop": false,
+      "forbidden_primary_bases_mechanically_enforced": true,
+      "validation_order": [
+        "bind_current_run_main_structural_invalidation_anchor",
+        "bind_claim_bound_typed_judgment_outward_buffer",
+        "derive_initial_stop",
+        "enumerate_all_non_empty_fill_scenarios",
+        "validate_main_nominal_risk"
+      ],
+      "risk_failure_behavior": "adjust_staging_or_observe_never_compress_stop",
+      "forbidden_primary_bases": [
+        "current_entry_zone_boundary_only",
+        "risk_threshold_backsolve",
+        "maker_intraday_stop_policy",
+        "coinglass_liquidation_map",
+        "exocharts_poc",
+        "representative_entry_price"
+      ]
+    },
+    "maker_initial_stop_policy": {
+      "primary_source": "TradingView",
+      "basis": "current_run_certified_structural_invalidation_anchor",
+      "required_stop_basis_fields": [
+        "observation_id",
+        "claim_id",
+        "timeframe",
+        "anchor_kind",
+        "anchor_source_field",
+        "anchor_price",
+        "buffer_basis_code",
+        "buffer_claim_id",
+        "outward_buffer_price",
+        "buffer_backsolved_from_risk",
+        "derived_stop"
+      ],
+      "allowed_anchor_kinds": [
+        "manual_profile_upper_outer_boundary",
+        "manual_profile_lower_outer_boundary",
+        "structure_zone_outer_boundary"
+      ],
+      "allowed_anchor_source_fields": [
+        "metrics.volume_profile.zones[*].upper_bound",
+        "metrics.volume_profile.zones[*].lower_bound",
+        "metrics.chart_basis.structure_zones[*].upper_bound",
+        "metrics.chart_basis.structure_zones[*].lower_bound"
+      ],
+      "anchor_price_must_equal_certified_field_value": true,
+      "anchor_observation_source_must_equal_primary_source": true,
+      "manual_profile_anchor_requires_profile_status": "readable",
+      "manual_profile_anchor_requires_source_mode": "user_drawn_manual_only",
+      "manual_profile_short_anchor": "manual_profile_upper_outer_boundary:metrics.volume_profile.zones[*].upper_bound",
+      "manual_profile_long_anchor": "manual_profile_lower_outer_boundary:metrics.volume_profile.zones[*].lower_bound",
+      "structure_zone_short_anchor": "structure_zone_outer_boundary:metrics.chart_basis.structure_zones[*].upper_bound",
+      "structure_zone_long_anchor": "structure_zone_outer_boundary:metrics.chart_basis.structure_zones[*].lower_bound",
+      "direction_allowed_structure_zone_roles": {
+        "short": ["resistance", "breakdown_retest"],
+        "long": ["support", "breakout_retest"]
+      },
+      "structure_zone_role_must_be_mechanically_bound": true,
+      "manual_profile_role_directional_use": false,
+      "unscoped_level_arrays_are_display_only": true,
+      "current_entry_zone_structure_must_not_be_anchor": true,
+      "non_entry_structure_zone_outer_boundary_allowed": true,
+      "anchor_selection": "same_account_invalidation_path_selects_current_run_certified_structure_strictly_outside_entry_zone_and_all_entries",
+      "short_anchor_relation": "anchor_price>entry_zone_upper_and_max_entry",
+      "long_anchor_relation": "anchor_price<entry_zone_lower_and_min_entry",
+      "claim_type": "invalidation_path",
+      "claim_account": "maker",
+      "anchor_claim_id_must_equal_same_account_invalidation_claim": true,
+      "nearest_numeric_level_required": false,
+      "weak_intermediate_level_must_not_be_forced_as_anchor": true,
+      "allowed_buffer_basis_codes": [
+        "current_run_typed_market_noise_allowance"
+      ],
+      "buffer_claim_id_must_equal_same_account_invalidation_claim": true,
+      "buffer_value_owner_claim_field": "structural_noise_buffer.price_distance",
+      "buffer_observation_owner_claim_field": "structural_noise_buffer.observation_id",
+      "buffer_timeframe_owner_claim_field": "structural_noise_buffer.timeframe",
+      "buffer_status_owner_claim_field": "structural_noise_buffer.status",
+      "buffer_anchor_kind_owner_claim_field": "structural_noise_buffer.anchor_kind",
+      "buffer_anchor_source_field_owner_claim_field": "structural_noise_buffer.anchor_source_field",
+      "buffer_anchor_price_owner_claim_field": "structural_noise_buffer.anchor_price",
+      "buffer_noise_outer_boundary_owner_claim_field": "structural_noise_buffer.noise_outer_boundary",
+      "buffer_value_semantics": "positive_price_distance_not_absolute_price",
+      "buffer_backsolved_from_risk_must_be_false": true,
+      "free_text_buffer_rationale_forbidden": true,
+      "allowed_timeframes": ["4h", "1h", "15m"],
+      "short_relation": "derived_stop=anchor_price+outward_buffer_price",
+      "long_relation": "derived_stop=anchor_price-outward_buffer_price",
+      "outward_buffer_required": true,
+      "outward_buffer_must_be_positive": true,
+      "derived_stop_must_be_strictly_beyond_anchor": true,
+      "derived_stop_must_be_strictly_beyond_noise_outer_boundary": true,
+      "stop_must_equal_anchor_plus_directional_buffer": true,
+      "risk_budget_may_shrink_structural_stop": false,
+      "forbidden_primary_bases_mechanically_enforced": true,
+      "validation_order": [
+        "bind_current_run_structural_invalidation_anchor",
+        "bind_claim_bound_typed_judgment_outward_buffer",
+        "derive_initial_stop",
+        "enumerate_all_non_empty_fill_scenarios",
+        "validate_rr_and_nominal_risk"
+      ],
+      "risk_failure_behavior": "adjust_ladder_or_observe_never_compress_stop",
+      "forbidden_primary_bases": [
+        "current_entry_zone_boundary_only",
+        "risk_threshold_backsolve",
+        "coinglass_liquidation_map",
+        "exocharts_poc",
+        "representative_entry"
+      ]
+    },
+    "defense_trigger_policy": {
+      "decision_required_fields": [
+        "mode",
+        "prefill_anchor",
+        "trigger_scenarios",
+        "postfill_recalculation",
+        "first_stop_rule",
+        "second_action"
+      ],
+      "prefill_anchor_required_fields": [
+        "kind",
+        "weighted_fill",
+        "is_actual_fill",
+        "is_single_entry"
+      ],
+      "trigger_scenario_required_fields": [
+        "risk_scenario_id",
+        "filled_level_indexes",
+        "weighted_fill",
+        "first_trigger_price_raw",
+        "second_trigger_price_raw",
+        "rounding_rule",
+        "rounding_step",
+        "first_trigger_price",
+        "second_trigger_price"
+      ],
+      "postfill_recalculation_required_fields": [
+        "required",
+        "anchor",
+        "replace_prefill_projection"
+      ],
+      "first_r": 1.5,
+      "second_r": 2,
+      "prefill_anchor": "planned_full_ladder_weighted_fill",
+      "prefill_anchor_is_actual_fill": false,
+      "prefill_anchor_is_single_entry": false,
+      "prefill_exact_trigger_prices_required": true,
+      "prefill_all_non_empty_fill_scenarios_required": true,
+      "postfill_anchor": "actual_weighted_fill",
+      "postfill_recompute_unique_trigger_prices": true,
+      "arabic_numeric_prices_required": true,
+      "generic_plus_minus_formula_forbidden": true,
+      "decision_mode": "ladder_prefill_exact_scenarios",
+      "risk_scenario_id_format": "fill-<one_based_level_indexes_joined_by_hyphen>",
+      "risk_scenario_binding": "risk_scenario_id_and_filled_level_indexes_must_match_risk_plan_scenario",
+      "allowed_rounding_rules": [
+        "exact_no_rounding",
+        "nearest_step_half_up"
+      ],
+      "raw_trigger_value_encoding": "canonical_decimal_string",
+      "rounding_step_encoding": "canonical_decimal_string_or_null",
+      "canonical_decimal_string_regex": "^(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$",
+      "canonical_decimal_normalization": "format(Decimal(text).normalize(),'f')",
+      "canonical_decimal_forbidden_forms": ["leading_plus", "negative_zero", "leading_zero", "exponent", "trailing_fractional_zero", "bare_decimal_point"],
+      "raw_trigger_value_must_be_positive": true,
+      "non_null_rounding_step_must_be_positive": true,
+      "exact_no_rounding_requires_null_step": true,
+      "nearest_step_half_up_requires_positive_step": true,
+      "rounding_step_source": "supported_instrument_price_step_policy",
+      "raw_trigger_values_required": true,
+      "rounded_trigger_must_be_recomputable_from_raw_rule_and_step": true,
+      "direction_formulas": {
+        "long": {
+          "first": "weighted_fill+1.5*abs(weighted_fill-stop)",
+          "second": "weighted_fill+2*abs(weighted_fill-stop)"
+        },
+        "short": {
+          "first": "weighted_fill-1.5*abs(stop-weighted_fill)",
+          "second": "weighted_fill-2*abs(stop-weighted_fill)"
+        }
+      },
+      "first_stop_rule": "confirmed_post_fill_4h_structural_extreme",
+      "future_first_stop_price_may_be_prefilled": false,
+      "second_action": "move_stop_to_breakeven_only"
     }
   },
   "gold_methodology": {
@@ -82,6 +764,7 @@
       "market_regime",
       "orderflow_interpretation",
       "chart_interpretation",
+      "fundamental_event_realization",
       "main_account_thesis",
       "maker_thesis",
       "strongest_counterevidence",
@@ -90,6 +773,185 @@
     ],
     "main_account_priority": ["fundamentals", "chart", "orderflow"],
     "maker_priority": ["orderflow", "chart", "fundamentals"],
+    "account_independence": {
+      "shared_layer_account": "shared",
+      "shared_layer_may_reference_accounts": false,
+      "account_claims_may_reference": ["shared", "same_account"],
+      "account_loop_claim_types": [
+        "market_regime",
+        "strongest_counterevidence",
+        "invalidation_path"
+      ],
+      "required_scenarios_per_account": ["base", "counter", "invalidation"],
+      "cannot_do_account": "maker",
+      "cannot_do_cardinality": 1,
+      "cannot_do_required_ancestor_claim_types": ["maker_thesis", "strongest_counterevidence", "invalidation_path", "market_regime"],
+      "cannot_do_required_scenario_types": ["base", "counter", "invalidation"],
+      "cannot_do_required_source_coverage": ["BlockBeats", "Coinglass", "Exocharts", "FedWatch", "Farside", "TradingView"],
+      "cannot_do_may_be_reasoning_input": false,
+      "posthoc_comparison_may_drive_decisions": false,
+      "conflict_policy": "preserve_independent_outputs"
+    },
+    "account_trigger_logic": {
+      "schema_version": "account-trigger-logic-v5",
+      "claim_effects": {"strongest_counterevidence": "counter", "invalidation_path": "invalidate"},
+      "allowed_modes": ["all", "any"],
+      "invalidation_mode": "all",
+      "minimum_clause_count": 2,
+      "allowed_operators": ["becomes", "equals_at_trigger", "one_of_at_trigger"],
+      "observation_fields": {
+        "TradingView": {
+          "timeframes.1d.structure": ["bullish", "bearish", "range"],
+          "timeframes.4h.structure": ["bullish", "bearish", "range"],
+          "timeframes.1h.structure": ["bullish", "bearish", "range"],
+          "timeframes.15m.structure": ["bullish", "bearish", "range"]
+        },
+        "Farside": {
+          "flow_direction": ["inflow", "outflow", "flat"]
+        },
+        "Coinglass": {
+          "final_direction": ["bullish", "bearish", "neutral", "mixed"],
+          "pivot.anchor_reset": [true, false]
+        },
+        "Exocharts": {
+          "cross_check_result": ["confirm", "weaken", "contradict"]
+        }
+      },
+      "claim_fields": {
+        "fundamental_price_realization": {
+          "realization_state": ["realized", "partially_realized", "not_realized", "conflicted"]
+        }
+      },
+      "account_source_requirements": {
+        "main": {
+          "always": ["TradingView"],
+          "one_of_sources": ["Farside"],
+          "one_of_claim_types": ["fundamental_price_realization"]
+        },
+        "maker_counter": {
+          "always": ["TradingView"],
+          "one_of_sources": ["Coinglass", "Exocharts"]
+        },
+        "maker_invalidation": {
+          "always": ["TradingView", "Coinglass"]
+        }
+      },
+      "opposite_state_required": true,
+      "non_directional_subject_directions": ["neutral", "observe"],
+      "non_directional_future_direction_fields": {
+        "TradingView": ["timeframes.1d.structure", "timeframes.4h.structure", "timeframes.1h.structure", "timeframes.15m.structure"],
+        "Coinglass": ["final_direction"]
+      },
+      "future_direction_value_map": {"bullish": "long", "bearish": "short", "range": "neutral", "neutral": "neutral", "mixed": "neutral"},
+      "relative_direction_observation_fields": {"Exocharts": {"cross_check_result": {"reference_source": "Coinglass", "reference_field": "final_direction", "reference_operator_policy": {"target_equals_current": "equals_at_trigger", "target_differs_from_current": "becomes"}, "relative_operator": "equals_at_trigger", "relation_map": {"confirm": "same_as_reference", "contradict": "opposite_of_reference", "weaken": "neutral"}}}},
+      "future_trigger_current_truth_quantifier_by_mode": {"all": "all", "any": "any"},
+      "non_directional_future_requires_one_coherent_alternative_direction": true,
+      "non_directional_counter_future_must_match_current_counter_direction": true,
+      "any_clause_requires_independent_counter_polarity": true,
+      "all_directional_clauses_must_match_counter_polarity": true,
+      "one_of_direction_targets_must_have_single_polarity": true,
+      "exocharts_confirm_counter_policy": "confirm_is_valid_only_in_all_mode_with_one_canonical_coinglass_final_direction_reference",
+      "scenario_control_binding": {
+        "schema_version": "scenario-control-binding-v2",
+        "ownership_contract_schema_version": "scenario-ownership-v1",
+        "compiler_condition_source_by_type": {"base": "bound_owner_claim.typed_state", "counter": "bound_owner_claim.trigger_logic", "invalidation": "bound_owner_claim.trigger_logic"},
+        "compiler_transition_source": "scenario_ownership.transition_code_by_type",
+        "methodology_trigger_claim_ids_source": "bound_owner_claim.direct_support_claim_ids",
+        "methodology_trigger_order": "owner_support_order_first_occurrence",
+        "methodology_trigger_observation_ids_excluded": true,
+        "methodology_trigger_owner_self_reference_allowed": false,
+        "producer_free_prose_allowed": false,
+        "execution_lifecycle_owner": "decision_and_continuity"
+      },
+      "compiler_may_infer_missing_conditions": false
+    },
+    "reasoning_pipeline": {
+      "schema_version": "reasoning-pipeline-v1",
+      "runtime_boundary": "single_atomic_reasoning_attempt",
+      "unit_checkpoint_or_retry_forbidden": true,
+      "model_self_attested_status_or_hash_forbidden": true,
+      "report_sections_forbidden_in_reasoning_v5": true,
+      "unit_order": ["source.blockbeats", "source.fedwatch", "source.farside", "source.coinglass", "source.exocharts", "source.tradingview", "join.fundamental_context", "join.orderflow_footprint", "join.chart_trend", "join.etf_relation", "join.intraday_location", "join.fundamental_realization", "main.controls", "main.strategy", "maker.controls", "maker.thesis_score_basis", "maker.cannot_do_closure"],
+      "every_observation_claim_and_scenario_owned_exactly_once": true,
+      "input_nodes_derived_from_typed_references": true,
+      "source_scope_derived_from_support_dag": true,
+      "main_maker_cross_dependency_forbidden": true,
+      "gate_generates_certification_hashes": true
+    },
+    "account_current_basis": {
+      "schema_version": "account-current-basis-v2",
+      "required_claim_types": ["strongest_counterevidence", "invalidation_path"],
+      "required_fields": ["mode", "clauses"],
+      "allowed_modes": ["all", "any"],
+      "minimum_clause_count": 1,
+      "clause_required_fields": ["owner_type", "owner_id", "field", "operator", "value"],
+      "allowed_operators": ["equals"],
+      "observation_fields": {
+        "TradingView": {
+          "timeframes.1d.structure": ["bullish", "bearish", "range"],
+          "timeframes.4h.structure": ["bullish", "bearish", "range"],
+          "timeframes.1h.structure": ["bullish", "bearish", "range"],
+          "timeframes.15m.structure": ["bullish", "bearish", "range"]
+        },
+        "Farside": {
+          "flow_direction": ["inflow", "outflow", "flat"]
+        },
+        "Coinglass": {
+          "final_direction": ["bullish", "bearish", "neutral", "mixed"],
+          "pivot.anchor_reset": [true, false]
+        },
+        "Exocharts": {
+          "cross_check_result": ["confirm", "weaken", "contradict"]
+        }
+      },
+      "claim_fields": {
+        "fundamental_price_realization": {
+          "realization_state": ["realized", "partially_realized", "not_realized", "conflicted"]
+        },
+        "etf_confirmation": {
+          "price_relation": ["confirm", "weaken", "neutral"]
+        }
+      },
+      "evidence_polarity": {
+        "schema_version": "evidence-polarity-v1",
+        "allowed_subject_directions": ["long", "short", "neutral", "observe"],
+        "non_directional_subject_directions": ["neutral", "observe"],
+        "effects": ["support", "counter", "neutral"],
+        "strongest_counter_required_effect": "counter",
+        "non_directional_counter_requires_one_coherent_alternative_direction": true,
+        "direct_direction_observation_fields": {
+          "TradingView": [
+            "timeframes.1d.structure",
+            "timeframes.4h.structure",
+            "timeframes.1h.structure",
+            "timeframes.15m.structure"
+          ],
+          "Coinglass": ["final_direction"]
+        },
+        "direction_value_map": {
+          "bullish": "long",
+          "bearish": "short",
+          "range": "neutral",
+          "neutral": "neutral",
+          "mixed": "neutral"
+        },
+        "relative_exocharts_field": "cross_check_result",
+        "relative_exocharts_reference_source": "Coinglass",
+        "relative_exocharts_reference_field": "final_direction",
+        "relative_exocharts_map": {
+          "confirm": "same_as_reference",
+          "contradict": "opposite_of_reference",
+          "weaken": "neutral"
+        },
+        "all_other_allowed_owner_fields": "neutral",
+        "source_diversity_cannot_be_satisfied_by_support_or_neutral_padding": true
+      },
+      "owner_must_be_reachable_from_support_dag": true,
+      "owner_account_must_be_shared_or_same_account": true,
+      "value_must_equal_current_owner_field": true,
+      "separate_from_future_trigger_logic": true,
+      "compiler_may_infer_missing_current_basis": false
+    },
     "directions": ["up", "down", "flat"],
     "dominant_legs": ["up", "down", "range"],
     "trendline_statuses": ["intact", "broken", "ambiguous"],
@@ -120,13 +982,95 @@
     "triad_directions": ["bullish", "bearish", "neutral", "mixed"],
     "funding_effects": ["strengthen", "weaken", "neutral"],
     "cross_check_results": ["confirm", "weaken", "contradict"],
+    "fedwatch_outcome_key_pattern": "^(?:hold|other_unlisted|(?:cut|hike)_(?:gt_25|[1-9][0-9]*)bp)$",
+    "fedwatch_outcome_step_bp": 25,
     "price_relations": ["confirm", "weaken", "neutral"],
+    "etf_price_relation_truth_table": {
+      "up": {
+        "inflow": "confirm",
+        "outflow": "weaken",
+        "flat": "neutral"
+      },
+      "down": {
+        "inflow": "weaken",
+        "outflow": "confirm",
+        "flat": "neutral"
+      },
+      "flat": {
+        "inflow": "neutral",
+        "outflow": "neutral",
+        "flat": "neutral"
+      }
+    },
     "fundamental_realization_states": ["realized", "partially_realized", "not_realized", "conflicted"],
+    "fundamental_event_assessment_policy": {
+      "schema_version": "fundamental-event-assessment-v1",
+      "methodology_field": "fundamental_event_assessments",
+      "required_item_fields": [
+        "selected_event_sha256",
+        "impact_channel",
+        "expected_effect",
+        "realization_claim_id",
+        "counter_claim_ids",
+        "boundary_code"
+      ],
+      "unknown_item_fields_forbidden": true,
+      "impact_channels": ["liquidity", "regulation", "risk_appetite"],
+      "expected_effects": [
+        "supportive_for_risk_assets",
+        "adverse_for_risk_assets",
+        "two_sided_or_conditional",
+        "no_material_effect"
+      ],
+      "boundary_codes": ["no_standalone_direction_requires_cross_source_realization"],
+      "selected_event_hash_source": "sealed BlockBeats artifact top3 selected_event_sha256",
+      "selected_event_hashes_must_match_exactly_once": true,
+      "event_fact_projection_source": "sealed_blockbeats_artifact_only",
+      "model_may_rewrite_event_fact": false,
+      "event_realization_claim_type": "fundamental_event_realization",
+      "event_realization_claim_account": "shared",
+      "event_realization_required_typed_fields": ["selected_event_sha256", "realization_state"],
+      "event_realization_states": ["realized", "partially_realized", "not_realized", "conflicted"],
+      "event_realization_cardinality": "exactly_one_per_selected_event_sha256",
+      "event_realization_support_claim_types": ["fundamental_context", "chart_interpretation"],
+      "event_realization_support_claim_types_required_all": true,
+      "assessment_hash_must_equal_event_realization_hash": true,
+      "aggregate_realization_claim_type": "fundamental_price_realization",
+      "aggregate_realization_claim_account": "shared",
+      "aggregate_realization_cardinality": "exactly_one",
+      "aggregate_must_reach_all_event_realization_claims": true,
+      "allowed_counter_claim_types": [
+        "orderflow_interpretation",
+        "chart_interpretation",
+        "etf_confirmation",
+        "liquidation_confirmation"
+      ],
+      "counter_claim_account": "shared",
+      "minimum_counter_claim_ids": 1,
+      "compiler_projects_event_fact_from_sealed_artifact": true,
+      "compiler_projects_assessment_only_from_typed_fields": true,
+      "load_bearing_allowed": false,
+      "observation_only_reason_code": "event_price_attribution_unavailable",
+      "forbidden_load_bearing_uses": [
+        "winrate_adjustment",
+        "account_current_basis",
+        "account_trigger_logic"
+      ],
+      "price_attribution_basis_required_to_reenable": true
+    },
     "timeframes": ["1d", "4h", "1h", "15m"],
     "liquidation_map_role": "auxiliary_only",
     "liquidation_map_source": "coinglass",
     "liquidation_map_threshold": 0.85,
     "liquidation_confirmation_results": ["confirm", "weaken", "contradict", "neutral"],
+    "liquidation_confirmation_ownership": {
+      "raw_liquidation_map_owner": "Coinglass observation",
+      "confirmation_result_owner": "liquidation_confirmation claim",
+      "required_direct_observation_sources": ["Coinglass"],
+      "required_direct_claim_types": ["chart_interpretation"],
+      "raw_tradingview_observation_bypass_forbidden": true,
+      "insufficient_manual_profile_result": "neutral"
+    },
     "liquidation_capture_windows": {
       "weekday": ["48h", "24h"],
       "weekend": ["3d"]
@@ -136,6 +1080,7 @@
         "role": "fundamental_event_tier",
         "judgment_standard": "先按事件是否改变流动性、监管或风险偏好分层，再由价格与盘面验证是否已实现；新闻本身不等于方向。",
         "required_value_paths": ["tier", "event_window_hours", "selected_event_count"],
+        "vnext_observation_metric_fields": ["tier", "event_window_hours", "selected_event_count", "selected_event_sha256"],
         "evaluation_sequence": ["classify_event_tier", "bind_event_window", "cross_check_price_realization"],
         "conflict_rule": "事件方向与价格实现冲突时保留冲突，不把新闻方向覆盖到盘面。",
         "missing_data_rule": "无法确认事件层级或时间窗时只记录不可用，不生成方向性结论。",
@@ -164,26 +1109,26 @@
         "conflict_rule": "资金流与价格背离时记录背离，不用单日ETF流量覆盖盘面和盘口。",
         "missing_data_rule": "最新交易日未完整或总计不可确认时不得沿用前值冒充当期。",
         "forbidden_inference": ["standalone_trade_direction", "orderflow_score", "chart_score"],
-        "direct_claim_types": ["fundamental_context"],
+        "direct_claim_types": ["fundamental_context", "etf_confirmation"],
         "score_bucket": "none",
         "single_variable_direction_flip": false
       },
       "coinglass": {
         "role": "same_pivot_orderflow_primary_and_liquidation_auxiliary",
-        "judgment_standard": "四面板先选主腿并检查回调是否形成新锚点，只在同一1小时pivot内联合解释价格、CVD、OI和资金费率；清算热力图是独立辅助通道，只用固定周期和0.85阈值印证TradingView VRVP猎杀概率。",
+        "judgment_standard": "四面板先选主腿并检查回调是否形成新锚点，只在同一1小时pivot内联合解释价格、CVD、OI和资金费率；清算热力图是独立辅助通道，只用固定周期和0.85阈值确认或削弱用户手绘成交量分布区域的猎杀概率。",
         "required_value_paths": ["pivot", "price_direction", "cvd_direction", "oi_direction", "funding_direction", "funding_sign", "combination_id", "effect_divergence", "price_break_status", "oi_price_context", "main_triad_direction", "main_triad_rationale", "funding_effect", "final_direction", "funding_single_variable_flip", "liquidation_map"],
-        "evaluation_sequence": ["select_dominant_leg", "check_anchor_reset", "derive_c01_c81_combination", "test_effect_divergence", "classify_oi_price_context", "derive_main_triad_direction", "apply_funding_as_modifier_only", "read_liquidation_map_separately", "confirm_or_weaken_vrvp_liquidity_probability"],
-        "conflict_rule": "四维不一致时降低盘口结论强度并保留最强反证；清算图与VRVP冲突时只降低流动性猎杀置信度，禁止任一通道拆取单变量翻向。",
+        "evaluation_sequence": ["select_dominant_leg", "check_anchor_reset", "derive_c01_c81_combination", "test_effect_divergence", "classify_oi_price_context", "derive_main_triad_direction", "apply_funding_as_modifier_only", "read_liquidation_map_separately", "confirm_or_weaken_user_drawn_profile_liquidity_probability"],
+        "conflict_rule": "四维不一致时降低盘口结论强度并保留最强反证；清算图与用户手绘成交量分布区域冲突时只降低流动性猎杀置信度，禁止任一通道拆取单变量翻向。手绘区域证据不足时清算图保持中性，不得补位。",
         "missing_data_rule": "任一核心四维、pivot锚点或规定周期清算图缺失时推理合同不可认证；不得沿用旧图或把TradingView图冒充清算图。",
         "forbidden_inference": ["single_variable_direction_flip", "liquidation_map_standalone_direction", "liquidation_map_orderflow_score", "liquidation_map_chart_points", "chart_score", "fundamental_context"],
-        "direct_claim_types": ["orderflow_interpretation"],
+        "direct_claim_types": ["orderflow_interpretation", "liquidation_confirmation", "etf_confirmation"],
         "score_bucket": "orderflow_70",
         "single_variable_direction_flip": false
       },
       "exocharts": {
         "role": "footprint_confirmation_strength_and_conflict",
         "judgment_standard": "用同一时段OHLC、POC、Delta、CVD和成交量复核Coinglass主判断，只能确认、削弱或反驳，不能单独重建方向。",
-        "required_value_paths": ["ohlc", "poc", "delta", "cvd", "volume"],
+        "required_value_paths": ["ohlc", "poc", "delta", "cvd", "volume", "cross_check_result"],
         "evaluation_sequence": ["align_time_window", "read_footprint_values", "classify_confirm_weaken_contradict"],
         "conflict_rule": "与Coinglass冲突时显式进入反证路径，不把足迹图静默解释成确认。",
         "missing_data_rule": "时间窗或任一足迹核心值缺失时不得宣称完成足迹确认。",
@@ -193,13 +1138,15 @@
         "single_variable_direction_flip": false
       },
       "tradingview": {
-        "role": "multi_timeframe_structure_and_opportunity_quality",
-        "judgment_standard": "按日线、4小时、1小时、15分钟逐级判断结构转场，再用SMA20、支撑阻力、量价、趋势工具和VRVP评价方向中立的机会质量；VRVP是流动性猎杀概率主判。",
+        "role": "multi_timeframe_structure_and_user_drawn_profile_opportunity_quality",
+        "judgment_standard": "按日线、4小时、1小时、15分钟逐级判断结构转场，再用SMA20、支撑阻力、量价、趋势工具和用户手工绘制的成交量分布区域评价方向中立的机会质量；平台内置VRVP必须隐藏且永不作为证据。",
         "required_value_paths": ["timeframes", "volume_profile"],
-        "evaluation_sequence": ["read_1d_to_15m_transition", "evaluate_chart_components", "use_vrvp_as_liquidity_primary"],
-        "conflict_rule": "多周期冲突时保留周期分歧并降低机会质量，不强行合并成单一趋势。",
-        "missing_data_rule": "日线、4小时、1小时的价格、SMA20与结构，以及15分钟的价格与结构任一不完整时不可认证；15分钟SMA20不是交易系统必需输入。",
-        "forbidden_inference": ["attribute_coinglass_liquidation_map_to_tradingview", "orderflow_score", "fundamental_context"],
+        "chart_scoring_timeframes": ["1d", "4h", "1h"],
+        "entry_only_timeframes": ["15m"],
+        "evaluation_sequence": ["read_1d_to_15m_transition", "evaluate_chart_components", "read_user_drawn_profile_zones_or_mark_insufficient"],
+        "conflict_rule": "多周期冲突时保留周期分歧并降低机会质量，不强行合并成单一趋势；手绘成交量分布不可读时只把该维度记为证据不足。",
+        "missing_data_rule": "日线、4小时、1小时的价格、SMA20与结构，以及15分钟的价格与结构任一不完整时不可认证；15分钟SMA20不是交易系统必需输入。手绘成交量分布不可读、平台指标仍可见或状态未知时，四周期结构仍可认证，但volume_profile必须为insufficient、zones为空且流动性猎杀分为0。",
+        "forbidden_inference": ["platform_vrvp_values", "automated_volume_profile_values", "coinglass_as_profile_substitute", "profile_location_when_insufficient", "attribute_coinglass_liquidation_map_to_tradingview", "orderflow_score", "fundamental_context"],
         "direct_claim_types": ["chart_interpretation"],
         "score_bucket": "chart_30",
         "single_variable_direction_flip": false
@@ -208,12 +1155,14 @@
     "required_direct_source_groups": {
       "fundamental_context": ["blockbeats", "fedwatch", "farside_btc_etf"],
       "orderflow_interpretation": ["coinglass", "exocharts"],
-      "chart_interpretation": ["tradingview"]
+      "chart_interpretation": ["tradingview"],
+      "etf_confirmation": ["coinglass", "farside_btc_etf"]
     },
     "minimum_independent_sources_by_claim_type": {
       "market_regime": 2,
       "orderflow_interpretation": 2,
       "chart_interpretation": 1,
+      "fundamental_event_realization": 2,
       "main_account_thesis": 2,
       "maker_thesis": 2,
       "strongest_counterevidence": 1,

@@ -1,0 +1,142 @@
+{
+  "schema_version": "vnext-semantic-replays-v3",
+  "cases": [
+    {
+      "case_id": "a5-fresh-01-short-below-market",
+      "source_run_id": "run-20260718-midday-a5-fresh-01",
+      "source_decision_sha256": "2942ad1d2674591f5dd43b2da9a1900cef5aac569eca25718798611e9ca811fd",
+      "source_reasoning_sha256": "66a24ef976d1aec86c844375a5be2ab3cf541b64dcc548e538f24d71b40057f8",
+      "source_decision_relpath": "runtime_state_vnext/2026-07-18/midday/run-20260718-midday-a5-fresh-01/decision/attempt-001/decision.json",
+      "source_reasoning_relpath": "runtime_state_vnext/2026-07-18/midday/run-20260718-midday-a5-fresh-01/reasoning/attempt-001/reasoning.json",
+      "direction": "short",
+      "reference_price": "63981.99",
+      "entries": ["62800", "62850", "62900"],
+      "cancel_before_fill": "62500",
+      "zone_role": "support",
+      "cannot_do_code": "追空",
+      "source_extractions": [
+        {"fixture_path": "direction", "artifact": "decision", "json_path": "maker.direction", "comparison": "exact"},
+        {"fixture_path": "reference_price", "artifact": "decision", "json_path": "maker.execution_probability_basis.reference_price", "comparison": "decimal"},
+        {"fixture_path": "entries", "artifact": "decision", "json_path": "maker.risk_plan.entries", "comparison": "decimal_list"},
+        {"fixture_path": "cancel_before_fill", "artifact": "decision", "json_path": "maker.risk_plan.cancel_before_fill", "comparison": "decimal"},
+        {"fixture_path": "cannot_do_code", "artifact": "decision", "json_path": "maker.cannot_do_code", "comparison": "exact"},
+        {"fixture_path": "zone_role", "artifact": "reasoning", "json_path": "observations[5].metrics.chart_basis.structure_zones[0].role", "comparison": "exact"}
+      ],
+      "expected_lifecycle_state": "entry_before_cancel",
+      "expected_failures": [
+        "entry_zone_role_invalid",
+        "maker_order_marketable",
+        "entry_semantics_invalid",
+        "cannot_do_conflict",
+        "order_lifecycle_invalid"
+      ]
+    },
+    {
+      "case_id": "a5-r1i-long-cancel-preempts-fill",
+      "source_run_id": "run-20260722-evening-a5-r1i-fresh-01",
+      "source_decision_sha256": "b80ae939633c5a63d9b4756723e9d6a18673233f1176955ee4871d50325f1e78",
+      "source_reasoning_sha256": "b17dc02cac8d2e529e71f9d330bfebf62d08891012fe5c8534b9391a696aea07",
+      "source_decision_relpath": "runtime_state_vnext/2026-07-22/evening/run-20260722-evening-a5-r1i-fresh-01/decision/attempt-001/decision.json",
+      "source_reasoning_relpath": "runtime_state_vnext/2026-07-22/evening/run-20260722-evening-a5-r1i-fresh-01/reasoning/attempt-001/reasoning.json",
+      "direction": "long",
+      "reference_price": "66034.1",
+      "entries": ["65600", "65500"],
+      "cancel_before_fill": "65850",
+      "cannot_do_code": "追多",
+      "expected_lifecycle_state": "cancel_blocks_all_entries",
+      "strongest_counter_source_values": ["bearish", "bullish"],
+      "strongest_counter_evidence_directions": ["short", "long"],
+      "expected_counter_effects": ["counter", "support"],
+      "structural_noise": {
+        "price_distance": "180",
+        "anchor_price": null,
+        "noise_outer_boundary": null,
+        "expected_certified": false
+      },
+      "source_extractions": [
+        {"fixture_path": "direction", "artifact": "decision", "json_path": "maker.direction", "comparison": "exact"},
+        {"fixture_path": "reference_price", "artifact": "decision", "json_path": "maker.execution_probability_basis.reference_price", "comparison": "decimal"},
+        {"fixture_path": "entries", "artifact": "decision", "json_path": "maker.risk_plan.entries", "comparison": "decimal_list"},
+        {"fixture_path": "cancel_before_fill", "artifact": "decision", "json_path": "maker.risk_plan.cancel_before_fill", "comparison": "decimal"},
+        {"fixture_path": "cannot_do_code", "artifact": "decision", "json_path": "maker.cannot_do_code", "comparison": "exact"},
+        {"fixture_path": "strongest_counter_source_values[0]", "artifact": "reasoning", "json_path": "claims[14].current_basis.clauses[0].value", "comparison": "exact"},
+        {"fixture_path": "strongest_counter_source_values[1]", "artifact": "reasoning", "json_path": "claims[14].current_basis.clauses[1].value", "comparison": "exact"},
+        {"fixture_path": "structural_noise.price_distance", "artifact": "reasoning", "json_path": "claims[15].structural_noise_buffer.price_distance", "comparison": "decimal"}
+      ],
+      "source_absences": [
+        {"artifact": "reasoning", "json_path": "claims[15].structural_noise_buffer.anchor_price"},
+        {"artifact": "reasoning", "json_path": "claims[15].structural_noise_buffer.noise_outer_boundary"}
+      ]
+    }
+  ],
+  "reasoning_gate_cases": [
+    {
+      "case_id": "a5-r2-replacement-01-rejected-reasoning",
+      "source_run_id": "run-20260722-evening-a5-r2-fresh-01-replacement-01",
+      "source_reasoning_sha256": "54501f7aa72a25f6b4ffb95526e34decec3220626516513cdab8c4eba629b6d8",
+      "source_reasoning_relpath": "runtime_state_vnext/2026-07-22/evening/run-20260722-evening-a5-r2-fresh-01-replacement-01/reasoning/attempt-001/rejected.json",
+      "source_evidence_sha256": "e240ffb4fc924175e9625baaaf4c90195cd4c5b702bbab51a0d0754bf570393b",
+      "source_evidence_relpath": "runtime_state_vnext/2026-07-22/evening/run-20260722-evening-a5-r2-fresh-01-replacement-01/evidence/attempt-001/evidence.json",
+      "orderflow": {
+        "claim_type": "orderflow_interpretation",
+        "direction": "long",
+        "conclusion": "同锚点盘口方向为多头，但上涨主要由空头回补驱动且日线足迹削弱确认，强度有限。"
+      },
+      "main_thesis_direction": "neutral",
+      "main_counter_trigger": {
+        "mode": "any",
+        "clauses": [
+          {
+            "owner_type": "observation",
+            "owner_id": "obs.tradingview",
+            "source": "TradingView",
+            "field": "timeframes.1h.structure",
+            "operator": "becomes",
+            "value": "bullish"
+          },
+          {
+            "owner_type": "claim",
+            "owner_id": "claim.fundamental_realization",
+            "owner_claim_type": "fundamental_price_realization",
+            "field": "realization_state",
+            "operator": "becomes",
+            "value": "realized"
+          }
+        ]
+      },
+      "main_counter_scenario": {
+        "condition": "日线和一小时多头结构重新形成一致。",
+        "claim_ids": ["claim.main.counter"]
+      },
+      "expected_direction_issue": null,
+      "expected_trigger_clause_directions": [["long"], ["neutral"]],
+      "expected_trigger_defect": "claim.trigger_any_clause_not_counter",
+      "expected_scenario_defect": "scenario.trigger_condition_second_truth",
+      "expected_gate_defects": [
+        {"code": "claim.trigger_any_clause_not_counter", "path": "claims.claim.main.counter.trigger_logic.clauses[1]"},
+        {"code": "scenario.trigger_condition_second_truth", "path": "scenario_tree[1].condition"},
+        {"code": "scenario.trigger_condition_second_truth", "path": "scenario_tree[2].condition"},
+        {"code": "scenario.trigger_condition_second_truth", "path": "scenario_tree[4].condition"},
+        {"code": "scenario.trigger_condition_second_truth", "path": "scenario_tree[5].condition"}
+      ],
+      "source_extractions": [
+        {"fixture_path": "orderflow.direction", "json_path": "claims[1].direction", "comparison": "exact"},
+        {"fixture_path": "orderflow.conclusion", "json_path": "claims[1].conclusion", "comparison": "exact"},
+        {"fixture_path": "main_thesis_direction", "json_path": "claims[14].direction", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.mode", "json_path": "claims[12].trigger_logic.mode", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[0].owner_type", "json_path": "claims[12].trigger_logic.clauses[0].owner_type", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[0].owner_id", "json_path": "claims[12].trigger_logic.clauses[0].owner_id", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[0].field", "json_path": "claims[12].trigger_logic.clauses[0].field", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[0].operator", "json_path": "claims[12].trigger_logic.clauses[0].operator", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[0].value", "json_path": "claims[12].trigger_logic.clauses[0].value", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[1].owner_type", "json_path": "claims[12].trigger_logic.clauses[1].owner_type", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[1].owner_id", "json_path": "claims[12].trigger_logic.clauses[1].owner_id", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[1].field", "json_path": "claims[12].trigger_logic.clauses[1].field", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[1].operator", "json_path": "claims[12].trigger_logic.clauses[1].operator", "comparison": "exact"},
+        {"fixture_path": "main_counter_trigger.clauses[1].value", "json_path": "claims[12].trigger_logic.clauses[1].value", "comparison": "exact"},
+        {"fixture_path": "main_counter_scenario.condition", "json_path": "scenario_tree[1].condition", "comparison": "exact"},
+        {"fixture_path": "main_counter_scenario.claim_ids", "json_path": "scenario_tree[1].claim_ids", "comparison": "exact"}
+      ]
+    }
+  ]
+}

@@ -8,6 +8,8 @@
 
 ## ⚠️ 双层架构说明（先读 · 2026-06）
 
+> **vNext 权威叠加**：vNext 业务与运行语义以 `governance/vnext_daily_workflow.md`、当前 run 密封的 methodology manifest 及其哈希制品为准。切换前 shadow 全链只使用本 run 六源证据，不读取 Notion、个人持仓、pretrade 或订单状态，也不发布 Notion；下述 legacy 实际运行说明不得反向覆盖 vNext。
+
 > 本仓库分两层：
 > - **参考设计层**：`agents/` + `state/` + `session_orchestrator`（链 A/B/C/D 自动机）—— **设计稿，当前未作为自动机运行**。
 > - **实际运行层（每天真跑）**：`/daily-report` skill + `sessions/日报SOP.md` + `runtime/` 三时段原始证据增量／分析全量重算层 + 项目 `memory/` 用户拍板决策 + Notion REST + `outputs/*.py`（出 .docx + 推 Notion 🌅🌇🌙 子页 + verifier/lint 三门）。晚间独立审查已退役，由外置准确性评估替代。
@@ -42,7 +44,7 @@ Trading-System/
 │   ├── execution_philosophy.md        ← 执行哲学
 │   ├── maker_principles.md            ← Maker 策略原则
 │   ├── review_principles.md           ← 复盘原则
-│   ├── cannot_do_mapping.md           ← 当天Maker"不能做"→可做方向（Maker内部，与中线无关）
+│   ├── cannot_do_mapping.md           ← 当天 Maker "不能做"终局限制与计划兼容校验（与中线无关）
 │   └── terminology.md                 ← 词汇标准库
 │
 ├── agents/                            ← 10 个 Agent
@@ -52,25 +54,26 @@ Trading-System/
 │   ├── data_collection_agent.md       ← 数据采集（A/B/C 通道）
 │   ├── news_agent.md                  ← BlockBeats 强制截图
 │   ├── footprint_agent.md             ← 盘口 C01–C81 + 综合方法论
-│   ├── scoring_agent.md               ← 70+30=总评分
+│   ├── scoring_agent.md               ← schema名义70+30；当前production有效60+30
 │   ├── risk_agent.md                  ← 7 Gate 守门
 │   ├── output_agent.md                ← 日报渲染
 │   ├── review_agent.md                ← 五问复盘
 │   └── penalty_agent.md               ← V001-V014 违规
 │
 ├── data_sources/                      ← 数据采集
-│   ├── required_sources.md            ← 4 个必抓数据源
+│   ├── required_sources.md            ← 6 个必抓数据源
 │   ├── source_rules.md                ← 采集规则
 │   ├── data_validation.md             ← 验证规则
 │   ├── freshness_rules.md             ← 数据时效（≤4h/6h）
 │   ├── blockbeats_rules.md            ← BlockBeats 专项
 │   ├── fedwatch.md                    ← FedWatch 专项
-│   ├── collectors/                    ← 5 个采集 SOP
+│   ├── collectors/                    ← 6 个采集 SOP
 │   │   ├── exocharts.md
 │   │   ├── coinglass.md
 │   │   ├── blockbeats.md
 │   │   ├── fedwatch.md
-│   │   └── tradingview.md
+│   │   ├── tradingview.md
+│   │   └── farside_btc_etf.md
 │   └── inbox/                         ← 每日采集投递盒
 │       └── YYYY-MM-DD/
 │           ├── _manifest.json         ← 采集清单
@@ -78,11 +81,12 @@ Trading-System/
 │           ├── coinglass_*.{png,json}
 │           ├── blockbeats_*.{png,txt}
 │           ├── fedwatch.{png,json}
+│           ├── farside_btc_etf.{png,json}
 │           └── tradingview_btc_*.{png,json}  ← 日/4H/1H/15m 四档
 │
 ├── scoring/                           ← 评分系统
-│   ├── scoring_system.md              ← 70+30 总框架
-│   ├── orderflow_scoring.md           ← 盘口 70（详见 footprint_agent）
+│   ├── scoring_system.md              ← schema名义70+30；当前production有效60+30
+│   ├── orderflow_scoring.md           ← 盘口当前0–60（70未来保留；详见 footprint_agent）
 │   ├── chart_scoring.md               ← 盘面 30（5 项）
 │   ├── score_thresholds.md            ← 分数阈值映射（开单双门槛）
 │   ├── winrate_methodology.md         ← 胜率自估 rubric（70/75/80·开单门槛②）
@@ -199,29 +203,33 @@ Trading-System/
 
 ---
 
-## 当前持仓快照（真相源：Notion 两库交易Check）
+## 当前持仓快照（仅 legacy actual runtime；真相源：Notion 两库交易Check）
 
 > ⚠️ 持仓为动态数据，**以 Notion（主）/（Maker）交易Check 最新行为准**，README 不再硬编码点位
 > （避免陈旧：5/29-30 曾因沿用过期 short@79150 失真）。开场由 `/notion-positions` 校准，详见 `sessions/日报SOP.md` §2。
+> vNext shadow 不读取、推断或复用这些持仓事实；vNext production 也只能在独立推理锁定后把它们用于执行连续性，不得回写计划、方向、评分、胜率、价格或风险。
 
 - 主账户：中线持仓 + 防守层状态 → 见 `state/main_account_state.json`（同样以 Notion 为准）
-- Maker：方向由**当天 Maker『不能做』**回填决定，**与主账户互不干扰**（2026-05-31 订正）
+- Maker：方向由同一 pivot 的 Coinglass 价格/CVD/OI 主链判定，资金费率只修饰、Exocharts 只确认/削弱/反驳；**当天 Maker『不能做』**只能在 Maker thesis、反证、失效和三类情景完成后作为最终限制输出，不得生成或翻转方向，且与主账户互不干扰。
 
 ---
 
 ## 评分系统（图谱三节）
 
 ```
-总评分 = 盘口评分（70）+ 盘面评分（30） = 满分 100
-开仓门槛 = 总评分 ≥ 65 分　且　胜率 ≥ 60%（双硬门槛·任一不满足即观望）
+评分schema名义容量 = 盘口70 + 盘面30 = 100；当前production有效值域 = 盘口0–60 + 盘面0–30，总分最高90
+threshold_eligible = 总评分 ≥ 65 分　且　胜率 ≥ 60%（只表示通过数值门槛）
+plan_constructible = Maker 逻辑闭环一致 + 当前 run TradingView 认证 entry_zone + 区间内 2–5 档合计 100% + 所有非空成交组合风险通过
+plan_state=qualified = threshold_eligible 与 plan_constructible 同时为真；否则结构化 observe 是合法业务结果
 执行概率 = ≥ 50%（软参考·非门槛·只定挂价可达性·不决定是否开仓）
 评分频率 = 每日两次（11:00 + 20:00）
 ```
 
-### 盘口 70 分（footprint_agent）
+### 盘口评分（footprint_agent；当前production 0–60）
 - 4 维：CVD / Price / OI / Funding
-- **极端候选**（C19/C22/C56/C59）只有在整体证据确认时为 70；接近极端为 60
-- **其余组合**最高 60，按同 pivot、效果背离、OI/价格语义、足迹印证与反证闭环给 0–60 精细整数分
+- **当前合法值域**：任意整数0–60；61–69非法，70是未来原生结构化真极端证明能力的保留值，当前不可用且不得通过配置单独启用
+- **未来70边界**：只有另行实现并批准原生结构化证明验证器后，C19/C22/C56/C59且同一pivot的极端组合、效果背离、OI/价格语义、资金费率仅修饰且不单变量翻向、Exocharts明确确认、反证/失效闭环全部成立，才可能使用70
+- **0–60 精细分**：按同 pivot 证据、底层语义、足迹印证、反证与失效闭环给任意整数；不得为模板或门槛补分
 
 ### 盘面 30 分（scoring_agent）
 | 项 | 分 |
@@ -254,14 +262,15 @@ Trading-System/
 
 ---
 
-## 5 个必抓数据源（图谱二节 · 缺一不可，2026-06-14 订正补回 TradingView）
+## 6 个必抓数据源（图谱二节 · 缺一不可）
 
 | 源 | URL | 记录方式 | 评分角色（2026-06-14 校准） |
 |---|---|---|---|
-| **Coinglass** | https://www.coinglass.com/tv/zh/Bybit_BTCUSDT | 文字 + 截图 | 🟥 **盘口(70)解读核心源**·四变量同屏(CVD/价格/OI/资金费率) |
+| **Coinglass** | https://www.coinglass.com/tv/zh/Bybit_BTCUSDT | 文字 + 截图 | 🟥 **盘口当前0–60解读核心源**·四变量同屏(CVD/价格/OI/资金费率) |
 | Exocharts | https://exocharts.com/web/ | 文字 + 截图 | 盘口**印证** + 更细颗粒度(footprint)参照·**非主源**·冲突以 Coinglass 为准 |
-| **BlockBeats** | https://www.theblockbeats.info/newsflash | **必须截图（硬规则）** | 基本面/行业新闻 |
+| **BlockBeats** | https://www.theblockbeats.info/newsflash | **必须截图（硬规则）** | 事件事实/Tier；价格兑现由BlockBeats+TradingView跨源claim负责 |
 | CME FedWatch | https://www.cmegroup.com/.../cme-fedwatch-tool.html | 文字 + 截图 | 宏观/利率预期 |
+| **Farside BTC ETF Flow** | https://farside.co.uk/btc/ | 文字 + 截图 | 最新完整日Total/flow；下游九格表只确认、削弱或中性，不单变量翻向 |
 | **TradingView** | BTCUSDT·Binance | **截图（日/4H/1H/15m 四档齐）** | 🟥 **盘面(30)解读核心源**·日线/小时→技术评分+趋势+支撑压力·15m→Maker入场把关 |
 
 ---
@@ -320,10 +329,13 @@ C:/Users/31702/Desktop/<today>_交易计划.txt
 
 | 约束 | 强度 | 来源 |
 |---|---|---|
-| 总评分 ≥ 65 且 胜率 ≥ 60% 才允许开仓（双硬门槛） | 硬规则 | scoring_system.md / maker_principles.md |
+| 总评分 ≥ 65 且胜率 ≥ 60% 只令 `threshold_eligible=true`；还必须 `plan_constructible=true` 才能 `qualified` | 硬规则 | score_thresholds.md / maker_principles.md |
 | 单笔止损 ≤ 3% | 硬规则 | risk_checklist.md |
-| 5 项状态门禁任一触发 → 禁交易 | 硬规则 | state_gate.md |
-| 当天 Maker"不能做"→Maker方向（与主账户无关，互不干扰） | 硬规则 | cannot_do_mapping.md |
+| legacy 状态门禁只定执行资格；vNext shadow 禁读个人状态，vNext production 也不得用它改写计划 | 硬规则 | state_gate.md / vnext_daily_workflow.md |
+| `cannot_do` 仅为 Maker 最终限制；不得依赖主账户、生成或翻转 Maker 方向 | 硬规则 | cannot_do_mapping.md |
+| 当前production盘口只允许0–60；61–69非法，70为未来原生结构化证明保留值且不可由配置启用 | 硬规则 | orderflow_methodology.md / scoring_contract.json |
+| Maker 必须使用当前 run TradingView 认证 `entry_zone`，区间内 2–5 档合计 100%；辅助源不得冒充区间 | 硬规则 | trading_constitution.md / score_thresholds.md |
+| 仅当前 epoch、`shadow_complete` 且 `evidence_provenance.mode=fresh_full_recollection` 的真实全量重采样本可计 clean（由本 run 的 `capture_mode=full_base/full_recollection` 映射）；replay/test/fixture 永远只算 observation，且这不是第五道生产门 | 切换规则 | vnext_daily_workflow.md |
 | BlockBeats 必须截图（非文字替代） | 硬规则 | source_rules.md |
 | Maker 不隔夜 | 硬规则 | maker_execution.md |
 | Maker 每日 ≤ 3 笔 | 硬规则 | maker_state.json |

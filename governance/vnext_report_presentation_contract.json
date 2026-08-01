@@ -1,0 +1,469 @@
+{
+  "schema_version": "vnext-report-presentation-contract-v11",
+  "purpose": "deterministic_human_readable_projection_of_certified_reasoning",
+  "human_surface_source_of_truth": {
+    "kind": "typed_canonical_projection",
+    "inputs": [
+      "observations",
+      "claims",
+      "decisions",
+      "continuity"
+    ],
+    "report_sections_role": "forbidden_in_reasoning_model_v5",
+    "free_text_second_truth_allowed": false,
+    "typed_account_control_is_sole_load_bearing_source": true,
+    "free_control_conclusion_or_invalidation_projection_allowed": false
+  },
+  "scenario_projection_contract": {
+    "schema_version": "scenario-projection-v1",
+    "ownership_schema_version": "scenario-ownership-v1",
+    "producer_free_prose_projectable": false,
+    "condition_owner_by_type": {
+      "base": "bound_owner_claim.typed_state",
+      "counter": "bound_owner_claim.trigger_logic",
+      "invalidation": "bound_owner_claim.trigger_logic"
+    },
+    "transition_code_by_type": {
+      "base": "retain_certified_assessment",
+      "counter": "reassess_on_typed_counter",
+      "invalidation": "invalidate_and_recollect_evidence"
+    },
+    "base_condition_by_account_direction": {
+      "main": {
+        "long": "主账户当前认证方向为偏多且绑定证据链有效",
+        "short": "主账户当前认证方向为偏空且绑定证据链有效",
+        "neutral": "主账户当前认证方向为中性且绑定证据链有效"
+      },
+      "maker": {
+        "long": "Maker当前认证方向为偏多且绑定证据链有效",
+        "short": "Maker当前认证方向为偏空且绑定证据链有效",
+        "observe": "Maker当前认证方向为观察且绑定证据链有效"
+      }
+    },
+    "projection_by_account_and_transition_code": {
+      "main": {
+        "retain_certified_assessment": {
+          "expected_path": "主账户继续保留当前认证判断",
+          "action": "主账户等待下一正式评分时点重新认证"
+        },
+        "reassess_on_typed_counter": {
+          "expected_path": "主账户当前认证判断进入重新评估",
+          "action": "主账户按触发后的类型化证据重新完成评估"
+        },
+        "invalidate_and_recollect_evidence": {
+          "expected_path": "主账户当前认证判断失效",
+          "action": "主账户重新采集证据并重建推理"
+        }
+      },
+      "maker": {
+        "retain_certified_assessment": {
+          "expected_path": "Maker继续保留当前认证判断",
+          "action": "Maker等待下一正式评分时点重新认证"
+        },
+        "reassess_on_typed_counter": {
+          "expected_path": "Maker当前认证判断进入重新评估",
+          "action": "Maker按触发后的类型化证据重新完成评估"
+        },
+        "invalidate_and_recollect_evidence": {
+          "expected_path": "Maker当前认证判断失效",
+          "action": "Maker重新采集证据并重建推理"
+        }
+      }
+    },
+    "canonical_audit_field_order": [
+      "id",
+      "account",
+      "scenario_type",
+      "owner_claim_id",
+      "transition_code",
+      "condition",
+      "expected_path",
+      "action"
+    ],
+    "execution_lifecycle_owner": "decision_and_continuity"
+  },
+  "human_visible_enum_domains": {
+    "tradingview.chart_basis.volume_price_state": {
+      "confirm": "确认",
+      "weaken": "削弱",
+      "neutral": "中性",
+      "conflicted": "存在冲突",
+      "not_available": "不可用"
+    },
+    "tradingview.chart_basis.trendline_status": {
+      "intact": "保持有效",
+      "broken": "已破坏",
+      "ambiguous": "不明确",
+      "not_available": "不可用"
+    },
+    "maker.entry_type": {
+      "left": "左侧",
+      "right": "右侧",
+      "not_applicable": "不适用"
+    }
+  },
+  "gold_reference": {
+    "period": "2026-06-22..2026-06-26",
+    "morning_samples": [
+      {
+        "file": "2026-06-22_morning_render.docx",
+        "sha256": "b9bc72db722afbc1345b15e7ef478968f4ea9aadf716cbe6d1ac7b48d6a126d4",
+        "pages": 6,
+        "paragraphs": 73
+      },
+      {
+        "file": "2026-06-23_morning_render.docx",
+        "sha256": "277a30b6bb26bc7886457b6653d272ce4d94c9a249e417dcea2459978b8020b0",
+        "pages": 7,
+        "paragraphs": 72
+      },
+      {
+        "file": "2026-06-25_morning_render.docx",
+        "sha256": "3cb8d16e924f9155dda8fe6e6d876a87e86e1665a3ba0e6d8f02309ac857ba7c",
+        "pages": 8,
+        "paragraphs": 72
+      },
+      {
+        "file": "2026-06-26_morning_render.docx",
+        "sha256": "0405261acfac71bd2b081b11eba85df590729110f635fbd20c8530e88139295d",
+        "pages": 8,
+        "paragraphs": 72
+      }
+    ],
+    "use_boundary": "layout_method_chain_and_reading_rhythm_only_no_historical_market_fact"
+  },
+  "document_tokens": {
+    "page_size": "US_Letter_portrait",
+    "margin_inches": {
+      "top": 1.0,
+      "right": 1.25,
+      "bottom": 1.0,
+      "left": 1.25
+    },
+    "font_family": "Microsoft YaHei",
+    "body_pt": 10.5,
+    "body_space_after_pt": 2,
+    "title_pt": 15,
+    "major_section_pt": 13,
+    "appendix_section_pt": 12,
+    "heading_color": "1F497D"
+  },
+  "content_order": [
+    "author_self_check",
+    "frontstage",
+    "cannot_do",
+    "maker",
+    "appendix_scoring",
+    "appendix_sources",
+    "appendix_reasoning_proof",
+    "appendix_risk_and_scenarios"
+  ],
+  "required_reasoning_proof_blocks": [
+    "orderflow_anchor",
+    "footprint_cross_check",
+    "multi_timeframe_structure",
+    "july_additions",
+    "fundamental_and_etf_realization",
+    "main_account_closure",
+    "maker_account_closure",
+    "account_separation",
+    "score_and_winrate",
+    "risk_and_scenarios"
+  ],
+  "appendix_semantic_ownership": {
+    "full_scenario_tree": "appendix_risk_and_scenarios_only",
+    "current_counterevidence": "typed_current_basis_only",
+    "current_invalidation_basis": "typed_current_basis_only",
+    "future_counter_trigger": "counter_scenario_condition_from_bound_trigger_logic_only",
+    "future_invalidation_trigger": "invalidation_scenario_condition_from_bound_trigger_logic_only",
+    "free_control_conclusion_or_invalidation": "upstream_audit_only_never_projectable"
+  },
+  "source_explanation_fields": [
+    "role",
+    "fact",
+    "decision_value",
+    "boundary"
+  ],
+  "required_frontstage_fields": [
+    "multi_timeframe",
+    "main_authorization",
+    "maker_execution",
+    "maker_authorization",
+    "maker_continuity"
+  ],
+  "maker_execution_fields": [
+    "direction",
+    "plan_state",
+    "execution_action",
+    "strategy_type",
+    "order_method",
+    "entry_type",
+    "exchange",
+    "instrument",
+    "position_notional_usdt",
+    "cannot_do_code",
+    "cannot_do_claim_id",
+    "threshold_eligible",
+    "plan_constructible",
+    "plan_constructibility",
+    "order_transition_action"
+  ],
+  "maker_decision_exact_fields": [
+    "claim_id",
+    "combination_id",
+    "direction",
+    "plan_state",
+    "threshold_eligible",
+    "plan_constructible",
+    "plan_constructibility",
+    "execution_action",
+    "order_transition_action",
+    "strategy_type",
+    "order_method",
+    "entry_type",
+    "exchange",
+    "instrument",
+    "position_notional_usdt",
+    "cannot_do_code",
+    "cannot_do_claim_id",
+    "orderflow_score",
+    "extreme_confirmed",
+    "orderflow_scorecard",
+    "chart_components",
+    "chart_scorecard",
+    "chart_score",
+    "total_score",
+    "win_rate",
+    "entry_reach_probability",
+    "entry_reach_probability_basis",
+    "order_lifecycle",
+    "winrate_rubric",
+    "risk_plan",
+    "defense_plan"
+  ],
+  "maker_second_truth_forbidden_fields": [
+    "plan_text",
+    "entry_price",
+    "free_prose_order_summary",
+    "representative_price"
+  ],
+  "maker_semantic_state_contract": {
+    "schema_version": "maker-semantic-state-v1",
+    "classification_owner": "deterministic_projection_of_certified_maker_decision",
+    "candidate_submission_owner": "maker.risk_plan_nonempty",
+    "exclusive_states": [
+      "qualified_candidate",
+      "rejected_submitted_candidate",
+      "directional_thesis_only",
+      "non_directional_observation"
+    ],
+    "qualified_candidate": {
+      "direction": [
+        "long",
+        "short"
+      ],
+      "plan_state": "qualified",
+      "plan_constructible": true,
+      "candidate_submitted": true,
+      "candidate_terms_allowed": true,
+      "rejected_candidate_audit_required": false
+    },
+    "rejected_submitted_candidate": {
+      "direction": [
+        "long",
+        "short"
+      ],
+      "plan_state": "observe",
+      "plan_constructible": [
+        true,
+        false
+      ],
+      "candidate_submitted": true,
+      "candidate_terms_allowed": "appendix_d_neutral_audit_only",
+      "rejected_candidate_audit_required": true
+    },
+    "directional_thesis_only": {
+      "direction": [
+        "long",
+        "short"
+      ],
+      "plan_state": "observe",
+      "candidate_submitted": false,
+      "candidate_or_rejected_candidate_label_allowed": false,
+      "explicit_absence_disclosure_required": true,
+      "rejected_candidate_audit_required": false
+    },
+    "non_directional_observation": {
+      "direction": "observe",
+      "plan_state": "observe",
+      "primary_reason_code": "non_directional_thesis",
+      "candidate_submitted": false,
+      "candidate_or_rejected_candidate_label_allowed": false,
+      "explicit_absence_disclosure_required": true,
+      "rejected_candidate_audit_required": false
+    },
+    "state_terms_must_not_be_interchanged": true,
+    "plan_numbers_require_candidate_submission": true
+  },
+  "fundamental_event_assessment_v1_projection": {
+    "role": "observation_only_no_event_aligned_price_attribution",
+    "load_bearing_allowed": false,
+    "observation_only_reason_code": "event_price_attribution_unavailable",
+    "forbidden_load_bearing_uses": [
+      "winrate_adjustment",
+      "account_current_basis",
+      "account_trigger_logic"
+    ],
+    "price_attribution_basis_required_to_reenable": true,
+    "secondary_signal": "fundamental_price_realization",
+    "required_disposition": "no_adjustment",
+    "required_no_adjustment_reason_code": "event_price_attribution_unavailable",
+    "compiler_disclosure_required": true
+  },
+  "continuity_semantics": {
+    "reconcile_filled": "prior_status_filled_ratio_exactly_100_percent_and_no_active_order_before_or_after",
+    "open_partial_allowed_actions": [
+      "keep",
+      "cancel",
+      "cancel_replace"
+    ],
+    "open_partial_reconcile_filled_allowed": false,
+    "executed_ledger_must_be_preserved": true
+  },
+  "timeframe_display_contract": {
+    "schema_version": "timeframe-display-v1",
+    "canonical_by_code": {
+      "1d": "1D",
+      "4h": "4H",
+      "1h": "1H",
+      "15m": "15m",
+      "3d": "3天",
+      "48h": "48H",
+      "24h": "24H"
+    },
+    "tradingview_projection_order": [
+      "1d",
+      "4h",
+      "1h",
+      "15m"
+    ]
+  },
+  "human_surface_forbidden": [
+    "raw_snake_case_metric_keys",
+    "raw_sha256_values",
+    "generic_supplementary_judgment_labels",
+    "one_heading_per_claim",
+    "machine_metric_dump"
+  ],
+  "score_display_contract": {
+    "orderflow_display_range": "0..60",
+    "orderflow_denominator": 60,
+    "legacy_orderflow_denominator_70_forbidden": true,
+    "chart_denominator": 30,
+    "orderflow_method_unchanged": true
+  },
+  "semantic_projection_contract": {
+    "tradingview_structure_zones_owner": "observations.TradingView.metrics.chart_basis.structure_zones",
+    "manual_profile_zones_owner": "observations.TradingView.metrics.volume_profile.zones",
+    "tradingview_platform_state_must_match_in_fact_and_decision_value": true,
+    "current_counterevidence_owner": "claims.strongest_counterevidence.current_basis",
+    "current_invalidation_basis_owner": "claims.invalidation_path.current_basis",
+    "future_counter_trigger_owner": "claims.strongest_counterevidence.trigger_logic",
+    "future_invalidation_trigger_owner": "claims.invalidation_path.trigger_logic",
+    "typed_account_control_is_sole_load_bearing_owner": true,
+    "free_control_conclusion_or_invalidation_role": "upstream_audit_only",
+    "free_control_conclusion_or_invalidation_projectable": false,
+    "free_control_conclusion_or_invalidation_allowed_in_reasoning_proof": false,
+    "free_control_conclusion_or_invalidation_allowed_in_scenario_condition": false,
+    "counter_invalidation_scenario_submitted_condition": "authority_sentinel_without_business_semantics",
+    "counter_invalidation_scenario_compiled_condition": "deterministic_projection_of_bound_control_claim_trigger_logic",
+    "future_trigger_full_text_visible_owner": "appendix_d_bound_counter_or_invalidation_scenario_only",
+    "blockbeats_per_event_fact_owner": "sealed_blockbeats_artifact.selected_rows_by_canonical_sha256",
+    "blockbeats_per_event_assessment_owner": "methodology.fundamental_event_assessments",
+    "blockbeats_per_event_realization_owner": "claims.fundamental_event_realization_by_id_and_selected_event_sha256",
+    "fundamental_event_assessment_v1_load_bearing_allowed": false,
+    "fundamental_event_assessment_v1_observation_only_reason_code": "event_price_attribution_unavailable",
+    "winrate_adjustment_owner": "maker.winrate_rubric.adjustments.reason_code",
+    "secondary_signal_disposition_owner": "maker.winrate_rubric.signal_dispositions",
+    "secondary_signal_disposition_reason_must_be_visible": true,
+    "liquidation_confirmation_owner": "claims.liquidation_confirmation.confirmation_result",
+    "coinglass_observation_may_own_liquidation_confirmation_result": false,
+    "entry_reach_probability_applicability_owner": "maker.entry_reach_probability_basis.applicability",
+    "order_lifecycle_owner": "maker.order_lifecycle",
+    "actual_fill_probability_must_remain_null": true,
+    "non_applicable_entry_reach_probability_must_render_as_na": true,
+    "numeric_zero_must_not_render_as_na_when_applicable": true,
+    "equals_at_trigger_projection": "触发时必须为",
+    "one_of_at_trigger_projection": "触发时必须属于",
+    "maker_constructibility_failure_owner": "maker.plan_constructibility.failure_codes",
+    "all_constructibility_failures_must_be_visible_in_authority_order": true,
+    "all_non_execution_reasons_must_be_visible": true,
+    "rejected_candidate_risk_scenarios_owner": "deterministic_recalculation_of_maker.risk_plan",
+    "rejected_candidate_risk_recalculation_state_owner": "audit.rejected_candidate_risk_recalculation",
+    "rejected_candidate_risk_values_must_be_visible_when_recalculable": true,
+    "rejected_candidate_unrecalculable_reason_must_be_visible": true,
+    "rejected_candidate_parameters_forbidden_in_maker_frontstage": true,
+    "rejected_candidate_audit_requires_non_executable_disclosure": true,
+    "maker_summary_and_execution_frontstage_owner": "audit.maker_execution",
+    "main_authorization_owner": "audit.main_plan.plan_state",
+    "scenario_condition_owner": "bound_owner_claim.typed_state_or_trigger_logic",
+    "scenario_transition_owner": "scenario_ownership.transition_code_by_type",
+    "free_scenario_prose_projectable": false,
+    "execution_lifecycle_owner": "decision_and_continuity"
+  },
+  "maker_defense_projection": {
+    "prefill_anchor_is_full_ladder_weighted_fill": true,
+    "prefill_anchor_is_actual_fill": false,
+    "prefill_anchor_is_single_entry": false,
+    "frontstage_requires_exact_l1_l2_final_prices": true,
+    "appendix_requires_raw_values_rounding_rule_and_final_prices": true,
+    "postfill_actual_weighted_fill_must_replace_prefill_projection": true,
+    "future_4h_moved_stop_price_must_not_be_prefilled": true,
+    "arabic_numeric_prices_required": true
+  },
+  "word_visual_qa": {
+    "existing_gate_only": true,
+    "new_gate_forbidden": true,
+    "six_source_subheadings_keep_with_next": true,
+    "critical_price_blocks_keep_together": true,
+    "rejected_candidate_audit_uses_neutral_styling": true,
+    "rejected_candidate_audit_unbounded_keep_chain_forbidden": true,
+    "strategy_and_defense_subblocks_keep_with_next": true,
+    "fixed_page_count_gate_forbidden": true,
+    "pixel_identity_gate_forbidden": true,
+    "required_review_checklist": [
+      "all_pages_inspected",
+      "no_clipping_overlap_or_missing_glyphs",
+      "no_orphan_semantic_headings",
+      "critical_price_blocks_not_split",
+      "six_source_sections_readable",
+      "arabic_price_digits_preserved"
+    ]
+  },
+  "density_limits": {
+    "maximum_heading_count": 18,
+    "maximum_h4_count": 0,
+    "maximum_bullet_ratio": 0.35
+  },
+  "retry_policy": {
+    "maximum_failed_attempts_before_manual_review_per_stage": 2,
+    "maximum_failed_attempts_before_manual_review_stage_overrides": {
+      "reasoning": 3
+    },
+    "automatic_full_run_restart": false,
+    "recapture_on_report_or_delivery_failure": false,
+    "complete_defect_set_required": true
+  },
+  "entry_reach_probability_basis_fields": {
+    "reference_source": "TradingView",
+    "reference_timeframe": "1h",
+    "required": [
+      "applicability",
+      "reference_price",
+      "reference_entry",
+      "entry_distance",
+      "reach_direction",
+      "claim_ids"
+    ]
+  }
+}

@@ -18,12 +18,31 @@ import {
   snapshotEvidence,
   writeImmutableJson,
 } from './capture_lock.js';
+import {
+  RATE_ARTIFACTS,
+  decideFullCaptureFallback,
+  providerSummaryFromProvenance,
+} from './rate_expectation_state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const PLAN_ONLY = process.argv.includes('--plan-only');
 const VALID_DELTA_SLOTS = new Set(['midday', 'evening']);
 const RUN_ID = crypto.randomUUID();
+const profilePolicy = JSON.parse(
+  fs.readFileSync(path.join(ROOT, 'scoring', 'scoring_contract.json'), 'utf8'),
+).tradingview_profile_policy;
+const rateExpectationProviderContract = JSON.parse(fs.readFileSync(
+  path.join(ROOT, 'data_sources', 'rate_expectation_provider_contract.json'),
+  'utf8',
+));
+const TRADINGVIEW_PROFILE_BINDING = Object.freeze({
+  schema_version: profilePolicy.state_sidecar_binding_schema_version,
+  capture_run_id: RUN_ID,
+  capture_nonce: crypto.randomUUID(),
+  sidecar_filename: profilePolicy.state_sidecar_filename,
+  sidecar_schema_version: profilePolicy.state_sidecar_schema_version,
+});
 
 function argValue(name) {
   const index = process.argv.indexOf(name);
@@ -95,7 +114,7 @@ const corePlan = [
   { script: 'capture_coinglass.js', reason: '1H orderflow is decision-dynamic' },
   { script: 'capture_exo.js', reason: 'orderflow confirmation is decision-dynamic' },
   {
-    script: 'capture_fedwatch.js',
+    script: 'capture_rate_expectation.js',
     reason: 'macro source must be refreshed for every report slot',
   },
   {
@@ -117,7 +136,8 @@ const plan = {
   captures: corePlan,
   auxiliary: ['capture_liqheatmap.js'],
   fallback: (
-    'capture_all.js once only for failed, missing, stale, or invalid core evidence'
+    'capture_all.js once only for eligible non-rate core evidence failure; '
+    + 'rate-provider failure or consumed Plan C hard-stops without full fallback'
   ),
 };
 
@@ -133,53 +153,131 @@ async function main() {
     await run('cleanup.js');
     const results = {};
     for (const item of corePlan) {
-      results[item.script] = await run(item.script);
+      const captureEnv = {};
+      if (item.script === 'capture_tv.js') {
+        Object.assign(captureEnv, {
+          TRADINGVIEW_CAPTURE_RUN_ID: TRADINGVIEW_PROFILE_BINDING.capture_run_id,
+          TRADINGVIEW_CAPTURE_NONCE: TRADINGVIEW_PROFILE_BINDING.capture_nonce,
+        });
+      }
+      if (item.script === 'capture_rate_expectation.js') {
+        Object.assign(captureEnv, {
+          RATE_EXPECTATION_CAPTURE_RUN_ID: RUN_ID,
+        });
+      }
+      results[item.script] = await run(item.script, [], captureEnv);
+    }
+    let rateExpectationProvider = null;
+    if (results['capture_rate_expectation.js'] === 0) {
+      try {
+        const provenance = JSON.parse(fs.readFileSync(
+          path.join(
+            ROOT,
+            'data_sources',
+            'inbox',
+            date,
+            RATE_ARTIFACTS.provenance,
+          ),
+          'utf8',
+        ));
+        rateExpectationProvider = providerSummaryFromProvenance(
+          provenance,
+          RUN_ID,
+          rateExpectationProviderContract,
+        );
+      } catch {
+        results['capture_rate_expectation.js'] = 2;
+      }
     }
     const auxiliaryCode = await run('capture_liqheatmap.js');
     const failed = Object.entries(results)
       .filter(([, code]) => code !== 0)
       .map(([script]) => script);
+    if (auxiliaryCode !== 0) failed.push('capture_liqheatmap.js');
 
     let fullFallbackUsed = false;
+    let fullFallbackSuppressedReasonCode = null;
     let fallbackCode = null;
     let fallbackManifest = null;
+    let fallbackPayload = null;
     if (failed.length) {
       console.error(`delta capture failed: ${failed.join(', ')}`);
-      console.error('running one bounded full capture fallback');
-      fullFallbackUsed = true;
-      const fallbackRunId = crypto.randomUUID();
-      const fallbackPath = immutableManifestPath(
-        ROOT,
-        date,
-        SLOT,
-        'full_recollection',
-        fallbackRunId,
+      const fallbackDecision = decideFullCaptureFallback(
+        failed,
+        rateExpectationProvider,
       );
-      fallbackCode = await run(
-        'capture_all.js',
-        [
-          '--slot', SLOT,
-          '--lease-token', LEASE_TOKEN,
-          '--run-id', fallbackRunId,
-        ],
-        { TRADING_CAPTURE_LOCK_TOKEN: lock.token },
-      );
-      if (fallbackCode === 0) {
-        if (!fs.existsSync(fallbackPath)) {
-          throw new Error('full fallback succeeded without an immutable manifest');
+      fullFallbackSuppressedReasonCode = fallbackDecision.suppressed_reason_code;
+      if (fallbackDecision.run_full_fallback) {
+        console.error('running one bounded full capture fallback');
+        fullFallbackUsed = true;
+        const fallbackRunId = crypto.randomUUID();
+        const fallbackPath = immutableManifestPath(
+          ROOT,
+          date,
+          SLOT,
+          'full_recollection',
+          fallbackRunId,
+        );
+        fallbackCode = await run(
+          'capture_all.js',
+          [
+            '--slot', SLOT,
+            '--lease-token', LEASE_TOKEN,
+            '--run-id', fallbackRunId,
+          ],
+          { TRADING_CAPTURE_LOCK_TOKEN: lock.token },
+        );
+        if (fallbackCode === 0) {
+          if (!fs.existsSync(fallbackPath)) {
+            throw new Error('full fallback succeeded without an immutable manifest');
+          }
+          fallbackPayload = JSON.parse(fs.readFileSync(fallbackPath, 'utf8'));
+          if (
+            fallbackPayload.success !== true
+            || !fallbackPayload.evidence_snapshot
+            || !fallbackPayload.tradingview_profile_binding
+            || !fallbackPayload.rate_expectation_provider
+          ) {
+            throw new Error('full fallback manifest is missing bound evidence identity');
+          }
+          fallbackManifest = {
+            path: path.relative(path.join(ROOT, 'runtime_state', date), fallbackPath)
+              .replaceAll('\\', '/'),
+            sha256: fileSha256(fallbackPath),
+          };
         }
-        fallbackManifest = {
-          path: path.relative(path.join(ROOT, 'runtime_state', date), fallbackPath)
-            .replaceAll('\\', '/'),
-          sha256: fileSha256(fallbackPath),
-        };
       }
     }
 
-    const evidenceSnapshot = snapshotEvidence(ROOT, date, SLOT, RUN_ID);
+    const success = failed.length === 0 || fallbackCode === 0;
+    const fallbackSucceeded = fullFallbackUsed && fallbackCode === 0;
+    const evidenceCaptureRunId = fallbackSucceeded
+      ? fallbackPayload.evidence_capture_run_id
+      : RUN_ID;
+    const tradingviewProfileBinding = fallbackSucceeded
+      ? fallbackPayload.tradingview_profile_binding
+      : TRADINGVIEW_PROFILE_BINDING;
+    const effectiveRateExpectationProvider = fallbackSucceeded
+      ? fallbackPayload.rate_expectation_provider
+      : rateExpectationProvider;
+    let evidenceSnapshot = null;
+    if (success && fallbackSucceeded) {
+      evidenceSnapshot = fallbackPayload.evidence_snapshot;
+    } else if (success) {
+      evidenceSnapshot = snapshotEvidence(
+        ROOT,
+        date,
+        SLOT,
+        RUN_ID,
+        startedAt,
+        { tradingviewProfileBinding },
+      );
+    }
     const manifest = {
       ...plan,
       run_id: RUN_ID,
+      evidence_capture_run_id: evidenceCaptureRunId,
+      tradingview_profile_binding: tradingviewProfileBinding,
       workflow_lease_id: lease.lease_id,
       started_at: startedAt,
       completed_at: new Date().toISOString(),
@@ -187,13 +285,15 @@ async function main() {
       results,
       auxiliary_code: auxiliaryCode,
       full_fallback_used: fullFallbackUsed,
+      full_fallback_suppressed_reason_code: fullFallbackSuppressedReasonCode,
+      rate_expectation_provider: effectiveRateExpectationProvider,
       fallback_code: fallbackCode,
       fallback_manifest: fallbackManifest,
       fallback_reasons: failed.length
         ? [`core capture failed or invalid: ${failed.join(', ')}`]
         : [],
       evidence_snapshot: evidenceSnapshot,
-      success: failed.length === 0 || fallbackCode === 0,
+      success,
     };
     const manifestPath = immutableManifestPath(
       ROOT,
