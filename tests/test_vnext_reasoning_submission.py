@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import hashlib
 import json
@@ -9,6 +10,9 @@ from unittest.mock import patch
 
 import runtime.golden_methodology as golden_methodology
 import runtime_vnext.reasoning_submission as reasoning_submission
+from runtime_vnext.domain_ir.registry import (
+    ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION,
+)
 from runtime_vnext.errors import FailureClass, WorkflowFailure
 from runtime_vnext.gates import _execution_parameter_leak, evaluate_reasoning
 from runtime_vnext.methodology import (
@@ -898,6 +902,60 @@ class ReasoningSubmissionContractTests(unittest.TestCase):
             self.contract,
             full_policy=policy,
         )
+        self.assertIn(
+            (
+                "reasoning_contract.server_projection_policy",
+                "server_projection",
+            ),
+            {(item.code, item.path) for item in issues},
+        )
+
+    def test_orderflow_direction_policy_is_registry_consumed_without_local_mirror(
+        self,
+    ) -> None:
+        source = Path(reasoning_submission.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        mirror_lines: list[int] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            try:
+                value = ast.literal_eval(node)
+            except (TypeError, ValueError):
+                continue
+            if value == ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION:
+                mirror_lines.append(node.lineno)
+        self.assertEqual(mirror_lines, [])
+
+        policy_path = self.contract["server_projection"][
+            "orderflow_direction_policy_path"
+        ]
+        policy_value = self.policy
+        for part in policy_path.split("."):
+            policy_value = policy_value[part]
+        self.assertEqual(
+            policy_value,
+            ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION,
+        )
+        self.assertEqual(
+            validate_contract_runtime_compatibility(
+                self.contract,
+                full_policy=self.policy,
+            ),
+            [],
+        )
+
+        altered_owner = dict(ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION)
+        altered_owner["bullish"] = "short"
+        with patch.object(
+            reasoning_submission,
+            "ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION",
+            altered_owner,
+        ):
+            issues = validate_contract_runtime_compatibility(
+                self.contract,
+                full_policy=self.policy,
+            )
         self.assertIn(
             (
                 "reasoning_contract.server_projection_policy",

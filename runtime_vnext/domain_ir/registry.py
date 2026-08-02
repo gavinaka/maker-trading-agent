@@ -498,6 +498,45 @@ ORDER_LIFECYCLE_APPLICABILITY = {
         "not_applicable_no_candidate_geometry"
     ),
 }
+ORDER_LIFECYCLE_PATH_FLAGS = {
+    OrderLifecycleState.FILLABLE.value: {
+        "legal_fill_path_exists": True,
+        "legal_cancel_path_exists": True,
+    },
+    OrderLifecycleState.CANCEL_BLOCKS_ALL_ENTRIES.value: {
+        "legal_fill_path_exists": False,
+        "legal_cancel_path_exists": True,
+    },
+    OrderLifecycleState.ENTRY_BEFORE_CANCEL.value: {
+        "legal_fill_path_exists": True,
+        "legal_cancel_path_exists": False,
+    },
+    OrderLifecycleState.INVALID_GEOMETRY.value: {
+        "legal_fill_path_exists": False,
+        "legal_cancel_path_exists": False,
+    },
+    OrderLifecycleState.NOT_APPLICABLE_NO_CANDIDATE_GEOMETRY.value: {
+        "legal_fill_path_exists": False,
+        "legal_cancel_path_exists": False,
+    },
+}
+ORDER_LIFECYCLE_DISPLAY_BY_STATE = {
+    OrderLifecycleState.FILLABLE.value: (
+        "存在合法入场路径；撤单位于反方向分支。实际成交概率未估计"
+    ),
+    OrderLifecycleState.CANCEL_BLOCKS_ALL_ENTRIES.value: (
+        "撤单价会先于所有入场档触发，订单没有可成交路径"
+    ),
+    OrderLifecycleState.ENTRY_BEFORE_CANCEL.value: (
+        "至少一档会先成交后才触及撤单价，不属于成交前撤单"
+    ),
+    OrderLifecycleState.INVALID_GEOMETRY.value: (
+        "价格几何冲突，无法形成合法订单生命周期"
+    ),
+    OrderLifecycleState.NOT_APPLICABLE_NO_CANDIDATE_GEOMETRY.value: (
+        "无完整候选价格几何，订单生命周期不适用"
+    ),
+}
 MAKER_ORDER_LIFECYCLE_FIELD_ORDER = (
     "schema_version",
     "state",
@@ -612,6 +651,88 @@ EXECUTION_AUTHORIZATION_FIELDS = frozenset(
 )
 SCENARIO_OWNERSHIP_SCHEMA_VERSION = "scenario-ownership-v1"
 SCENARIO_PROJECTION_SCHEMA_VERSION = "scenario-projection-v1"
+SCENARIO_CONDITION_OWNER_BY_TYPE = {
+    ScenarioType.BASE.value: "bound_owner_claim.typed_state",
+    ScenarioType.COUNTER.value: "bound_owner_claim.trigger_logic",
+    ScenarioType.INVALIDATION.value: "bound_owner_claim.trigger_logic",
+}
+SCENARIO_TRANSITION_OWNER = "scenario_ownership.transition_code_by_type"
+SCENARIO_FREE_PROSE_PROJECTABLE = False
+
+
+def scenario_condition_owner_summary() -> str:
+    """Derive the compact presentation owner from the per-type registry owner."""
+
+    ordered_owners = tuple(
+        dict.fromkeys(
+            SCENARIO_CONDITION_OWNER_BY_TYPE[scenario_type]
+            for scenario_type in SCENARIO_TYPE_ORDER
+        )
+    )
+    namespaces_and_leaves = tuple(owner.rsplit(".", 1) for owner in ordered_owners)
+    if not namespaces_and_leaves or any(
+        len(parts) != 2 or not all(parts) for parts in namespaces_and_leaves
+    ):
+        raise ValueError("scenario condition owners must be non-empty dotted paths")
+    namespaces = {parts[0] for parts in namespaces_and_leaves}
+    if len(namespaces) != 1:
+        raise ValueError("scenario condition owners must share one namespace")
+    namespace = namespaces_and_leaves[0][0]
+    leaves = "_or_".join(parts[1] for parts in namespaces_and_leaves)
+    return f"{namespace}.{leaves}"
+SCENARIO_CANONICAL_AUDIT_FIELD_ORDER = (
+    "id",
+    "account",
+    "scenario_type",
+    "owner_claim_id",
+    "transition_code",
+    "condition",
+    "expected_path",
+    "action",
+)
+SCENARIO_BASE_CONDITION_BY_ACCOUNT_DIRECTION = {
+    Account.MAIN.value: {
+        Direction.LONG.value: "主账户当前认证方向为偏多且绑定证据链有效",
+        Direction.SHORT.value: "主账户当前认证方向为偏空且绑定证据链有效",
+        Direction.NEUTRAL.value: "主账户当前认证方向为中性且绑定证据链有效",
+    },
+    Account.MAKER.value: {
+        Direction.LONG.value: "Maker当前认证方向为偏多且绑定证据链有效",
+        Direction.SHORT.value: "Maker当前认证方向为偏空且绑定证据链有效",
+        Direction.OBSERVE.value: "Maker当前认证方向为观察且绑定证据链有效",
+    },
+}
+SCENARIO_VISIBLE_PROJECTION_BY_ACCOUNT_AND_TRANSITION_CODE = {
+    Account.MAIN.value: {
+        SCENARIO_TRANSITION_CODES[ScenarioType.BASE.value]: {
+            "expected_path": "主账户继续保留当前认证判断",
+            "action": "主账户等待下一正式评分时点重新认证",
+        },
+        SCENARIO_TRANSITION_CODES[ScenarioType.COUNTER.value]: {
+            "expected_path": "主账户当前认证判断进入重新评估",
+            "action": "主账户按触发后的类型化证据重新完成评估",
+        },
+        SCENARIO_TRANSITION_CODES[ScenarioType.INVALIDATION.value]: {
+            "expected_path": "主账户当前认证判断失效",
+            "action": "主账户重新采集证据并重建推理",
+        },
+    },
+    Account.MAKER.value: {
+        SCENARIO_TRANSITION_CODES[ScenarioType.BASE.value]: {
+            "expected_path": "Maker继续保留当前认证判断",
+            "action": "Maker等待下一正式评分时点重新认证",
+        },
+        SCENARIO_TRANSITION_CODES[ScenarioType.COUNTER.value]: {
+            "expected_path": "Maker当前认证判断进入重新评估",
+            "action": "Maker按触发后的类型化证据重新完成评估",
+        },
+        SCENARIO_TRANSITION_CODES[ScenarioType.INVALIDATION.value]: {
+            "expected_path": "Maker当前认证判断失效",
+            "action": "Maker重新采集证据并重建推理",
+        },
+    },
+}
+SCENARIO_EXECUTION_LIFECYCLE_OWNER = "decision_and_continuity"
 MAKER_SEMANTIC_STATE_SCHEMA_VERSION = "maker-semantic-state-v1"
 TIMEFRAME_DISPLAY_SCHEMA_VERSION = "timeframe-display-v1"
 
@@ -1039,6 +1160,8 @@ SEMANTIC_COMPONENT_NAMES = frozenset(
         "OBSERVATION_MECHANICAL_OWNERSHIP",
         "ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION",
         "ORDER_LIFECYCLE_APPLICABILITY",
+        "ORDER_LIFECYCLE_DISPLAY_BY_STATE",
+        "ORDER_LIFECYCLE_PATH_FLAGS",
         "PIPELINE_ACCOUNT_CONTROL_CLAIM_TYPES",
         "PIPELINE_ACCOUNT_STRATEGY_OWNER",
         "PIPELINE_SCHEMA_VERSION",
@@ -1062,12 +1185,19 @@ SEMANTIC_COMPONENT_NAMES = frozenset(
         "MAKER_SEMANTIC_STATE_SCHEMA_VERSION",
         "SCENARIO_TYPES",
         "SCENARIO_ACCOUNT_ORDER",
+        "SCENARIO_BASE_CONDITION_BY_ACCOUNT_DIRECTION",
+        "SCENARIO_CANONICAL_AUDIT_FIELD_ORDER",
+        "SCENARIO_CONDITION_OWNER_BY_TYPE",
+        "SCENARIO_EXECUTION_LIFECYCLE_OWNER",
         "SCENARIO_FIELD_ORDER",
+        "SCENARIO_FREE_PROSE_PROJECTABLE",
         "SCENARIO_OWNER_CLAIM_TYPE_BY_ACCOUNT",
         "SCENARIO_OWNERSHIP_SCHEMA_VERSION",
         "SCENARIO_PROJECTION_SCHEMA_VERSION",
         "SCENARIO_TRANSITION_CODES",
+        "SCENARIO_TRANSITION_OWNER",
         "SCENARIO_TYPE_ORDER",
+        "SCENARIO_VISIBLE_PROJECTION_BY_ACCOUNT_AND_TRANSITION_CODE",
         "SCAFFOLD_POLICY",
         "SECTION_REQUIRED_CLAIM_TYPES",
         "SHADOW_CONTINUITY_FIELDS",

@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import ast
 import unittest
 from decimal import Decimal
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import runtime_vnext.plan_semantics as plan_semantics
+from runtime_vnext.domain_ir.registry import REGISTRY
 
 from runtime_vnext.plan_semantics import (
     DIRECTIONAL_THESIS_ONLY,
@@ -21,6 +28,125 @@ from runtime_vnext.plan_semantics import (
 
 
 class MakerPlanSemanticFoundationTests(unittest.TestCase):
+    def test_schema_versions_are_registry_consumed_without_local_mirrors(self):
+        source = Path(plan_semantics.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        assigned_names: set[str] = set()
+        for node in ast.walk(tree):
+            targets = node.targets if isinstance(node, ast.Assign) else ()
+            if isinstance(node, ast.AnnAssign):
+                targets = (node.target,)
+            assigned_names.update(
+                target.id for target in targets if isinstance(target, ast.Name)
+            )
+        self.assertFalse(
+            assigned_names
+            & {
+                "ORDER_LIFECYCLE_SCHEMA_VERSION",
+                "EVIDENCE_POLARITY_SCHEMA_VERSION",
+            }
+        )
+        schema_literals = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        self.assertNotIn(REGISTRY.maker_order_lifecycle_schema_version, schema_literals)
+        self.assertNotIn(REGISTRY.evidence_polarity_schema_version, schema_literals)
+
+    def test_schema_serialization_is_unchanged_and_follows_the_registry(self):
+        lifecycle = assess_order_lifecycle(
+            reference_price=Decimal("97"),
+            cancel_price=Decimal("96"),
+            entries=(Decimal("99"), Decimal("100")),
+        )
+        polarity = classify_evidence_polarity(
+            subject_direction="short",
+            evidence_direction="long",
+        )
+        self.assertEqual(
+            lifecycle.as_dict(),
+            {
+                "schema_version": "maker-order-lifecycle-v1",
+                "state": "fillable",
+                "legal_fill_path_exists": True,
+                "legal_cancel_path_exists": True,
+                "fill_probability": None,
+                "fill_probability_applicability": (
+                    "not_estimated_lifecycle_only"
+                ),
+                "reason_code": "fillable",
+            },
+        )
+        self.assertEqual(
+            polarity.as_dict(),
+            {
+                "schema_version": "evidence-polarity-v1",
+                "subject_direction": "short",
+                "evidence_direction": "long",
+                "effect": "counter",
+                "effect_basis_code": (
+                    "typed_evidence_direction_opposes_subject"
+                ),
+            },
+        )
+
+        alternate_registry = SimpleNamespace(
+            maker_order_lifecycle_schema_version="test-lifecycle-vx",
+            evidence_polarity_schema_version="test-polarity-vx",
+        )
+        with patch.object(plan_semantics, "REGISTRY", alternate_registry):
+            self.assertEqual(
+                lifecycle.as_dict()["schema_version"],
+                "test-lifecycle-vx",
+            )
+            self.assertEqual(
+                polarity.as_dict()["schema_version"],
+                "test-polarity-vx",
+            )
+
+    def test_order_lifecycle_path_flags_follow_the_registry_owner(self):
+        altered_flags = {
+            state: dict(flags)
+            for state, flags in plan_semantics.ORDER_LIFECYCLE_PATH_FLAGS.items()
+        }
+        altered_flags["fillable"] = {
+            "legal_fill_path_exists": False,
+            "legal_cancel_path_exists": False,
+        }
+        with patch.object(
+            plan_semantics,
+            "ORDER_LIFECYCLE_PATH_FLAGS",
+            altered_flags,
+        ):
+            lifecycle = assess_order_lifecycle(
+                reference_price=Decimal("97"),
+                cancel_price=Decimal("96"),
+                entries=(Decimal("99"), Decimal("100")),
+            )
+        self.assertEqual(lifecycle.state, "fillable")
+        self.assertFalse(lifecycle.legal_fill_path_exists)
+        self.assertFalse(lifecycle.legal_cancel_path_exists)
+
+        malformed_flags = dict(altered_flags)
+        malformed_flags["fillable"] = {
+            "legal_fill_path_exists": "yes",
+            "legal_cancel_path_exists": False,
+        }
+        with (
+            patch.object(
+                plan_semantics,
+                "ORDER_LIFECYCLE_PATH_FLAGS",
+                malformed_flags,
+            ),
+            self.assertRaisesRegex(RuntimeError, "registry path flags"),
+        ):
+            assess_order_lifecycle(
+                reference_price=Decimal("97"),
+                cancel_price=Decimal("96"),
+                entries=(Decimal("99"), Decimal("100")),
+            )
+
     @staticmethod
     def semantic_state(**overrides):
         payload = {

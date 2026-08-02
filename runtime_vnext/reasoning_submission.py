@@ -24,6 +24,7 @@ from .domain_ir.projection import (
 from .domain_ir.registry import (
     CLAIM_TYPES,
     CONTRACT_SOURCES,
+    ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION,
     REGISTRY,
     TOP_LEVEL_FIELD_ORDER,
     TRIGGER_SCALAR_CLAUSE_FIELDS,
@@ -1451,12 +1452,7 @@ def validate_contract_runtime_compatibility(
         if _policy_value(
             full_policy,
             expected_projection["orderflow_direction_policy_path"],
-        ) != {
-            "bullish": "long",
-            "bearish": "short",
-            "neutral": "observe",
-            "mixed": "observe",
-        }:
+        ) != ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION:
             raise ValueError("orderflow direction projection policy is invalid")
         scenario_binding = _policy_value(
             full_policy,

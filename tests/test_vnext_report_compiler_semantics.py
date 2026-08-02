@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import runtime_vnext.report_compiler as compiler
+from runtime_vnext.validation import report_semantics
 import tests.test_vnext_workflow as workflow_fixtures
 from outputs import report_lint
 
@@ -1224,6 +1225,14 @@ class ReportCompilerSemanticProjectionTests(unittest.TestCase):
                     compiler._typed_entry_reach_probability_projection(poisoned)
 
     def test_report_separates_price_reach_from_fill_viability(self) -> None:
+        self.assertIs(
+            compiler._typed_order_lifecycle,
+            report_semantics.certify_order_lifecycle,
+        )
+        self.assertIs(
+            compiler._order_lifecycle_display,
+            report_semantics.order_lifecycle_display,
+        )
         maker = {
             "order_lifecycle": {
                 "schema_version": "maker-order-lifecycle-v1",
@@ -1775,6 +1784,14 @@ class ReportCompilerV5ClosedProjectionTests(unittest.TestCase):
                 self.assertNotIn("### BTC（被拒候选审计）", rendered)
 
     def test_no_candidate_scenarios_are_exact_typed_projections(self) -> None:
+        self.assertIs(
+            compiler._scenario_audit,
+            report_semantics.project_scenario_audit,
+        )
+        self.assertIs(
+            compiler._validate_scenario_projection,
+            report_semantics.validate_scenario_projection,
+        )
         contract = compiler.load_presentation_contract(self.fixture.root)
         projection = contract["scenario_projection_contract"]
         canonical_fields = set(projection["canonical_audit_field_order"])

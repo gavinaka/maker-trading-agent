@@ -12,6 +12,14 @@ from .common import (
     LegacyDelegate,
     SemanticIssueLike,
 )
+from .report_semantics import (
+    certify_maker_semantic_state,
+    certify_order_lifecycle,
+    order_lifecycle_display,
+    project_scenario_audit,
+    scenario_projection_policy,
+    validate_scenario_projection,
+)
 
 __all__ = [
     "DefectLike",
@@ -19,4 +27,10 @@ __all__ = [
     "LegacyCoverage",
     "LegacyDelegate",
     "SemanticIssueLike",
+    "certify_maker_semantic_state",
+    "certify_order_lifecycle",
+    "order_lifecycle_display",
+    "project_scenario_audit",
+    "scenario_projection_policy",
+    "validate_scenario_projection",
 ]

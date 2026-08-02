@@ -10,12 +10,19 @@ from typing import Sequence
 from runtime.golden_methodology import get_methodology_runtime_inventory
 
 from ..methodology import load_scoring_policy
-from .legacy_v6_adapter import projected_scoring_contract, projected_v6_contract
+from .legacy_v6_adapter import (
+    projected_report_presentation_contract,
+    projected_scoring_contract,
+    projected_v6_contract,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
 REASONING_CONTRACT_PATH = Path("scoring/reasoning_submission_contract.json")
 SCORING_CONTRACT_PATH = Path("scoring/scoring_contract.json")
+REPORT_PRESENTATION_CONTRACT_PATH = Path(
+    "governance/vnext_report_presentation_contract.json"
+)
 
 
 def materialized_reasoning_contract(*, root: Path = ROOT) -> dict[str, object]:
@@ -33,19 +40,34 @@ def materialized_reasoning_contract(*, root: Path = ROOT) -> dict[str, object]:
     )
 
 
+def materialized_report_presentation_contract(
+    *, root: Path = ROOT
+) -> dict[str, object]:
+    root = root.resolve()
+    path = root / REPORT_PRESENTATION_CONTRACT_PATH
+    current = json.loads(path.read_text(encoding="utf-8"))
+    return projected_report_presentation_contract(current)
+
+
 def contract_is_current(*, root: Path = ROOT) -> bool:
     root = root.resolve()
     current = json.loads(
         (root / REASONING_CONTRACT_PATH).read_text(encoding="utf-8")
     )
     scoring = json.loads((root / SCORING_CONTRACT_PATH).read_text(encoding="utf-8"))
+    presentation = json.loads(
+        (root / REPORT_PRESENTATION_CONTRACT_PATH).read_text(encoding="utf-8")
+    )
     return (
         current == materialized_reasoning_contract(root=root)
         and scoring == projected_scoring_contract(scoring)
+        and presentation == materialized_report_presentation_contract(root=root)
     )
 
 
-def write_materialized_contracts(*, root: Path = ROOT) -> tuple[Path, Path]:
+def write_materialized_contracts(
+    *, root: Path = ROOT
+) -> tuple[Path, Path, Path]:
     root = root.resolve()
     path = root / REASONING_CONTRACT_PATH
     payload = materialized_reasoning_contract(root=root)
@@ -66,12 +88,23 @@ def write_materialized_contracts(*, root: Path = ROOT) -> tuple[Path, Path]:
         encoding="utf-8",
         newline="\n",
     )
-    return path, scoring_path
+    presentation_path = root / REPORT_PRESENTATION_CONTRACT_PATH
+    presentation_path.write_text(
+        json.dumps(
+            materialized_report_presentation_contract(root=root),
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return path, scoring_path, presentation_path
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="verify or materialize the vNext registry-owned JSON view"
+        description="verify or materialize the vNext registry-owned JSON views"
     )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--check", action="store_true")

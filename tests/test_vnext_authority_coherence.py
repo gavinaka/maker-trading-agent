@@ -14,6 +14,10 @@ import runtime_vnext.gates as vnext_gates
 import runtime_vnext.report_compiler as vnext_report_compiler
 from runtime_vnext.golden_samples import semantic_invariants
 from runtime_vnext.delivery_renderer import WORD_QA_REVIEW_CHECKLIST_KEYS
+from runtime_vnext.domain_ir.projection import (
+    report_presentation_contract_registry_views,
+    scenario_control_binding_projection,
+)
 from runtime_vnext.domain_ir.registry import DomainRegistry
 from runtime_vnext.methodology import (
     CONTROL_PLANE_FILES,
@@ -298,19 +302,17 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
             semantic["main_authorization_owner"],
             "audit.main_plan.plan_state",
         )
-        self.assertEqual(
-            semantic["scenario_condition_owner"],
-            "bound_owner_claim.typed_state_or_trigger_logic",
-        )
-        self.assertEqual(
-            semantic["scenario_transition_owner"],
-            "scenario_ownership.transition_code_by_type",
-        )
-        self.assertFalse(semantic["free_scenario_prose_projectable"])
-        self.assertEqual(
-            semantic["execution_lifecycle_owner"],
-            "decision_and_continuity",
-        )
+        registry_views = report_presentation_contract_registry_views()
+        for field in (
+            "scenario_condition_owner",
+            "scenario_transition_owner",
+            "free_scenario_prose_projectable",
+            "execution_lifecycle_owner",
+        ):
+            self.assertEqual(
+                semantic[field],
+                registry_views[("semantic_projection_contract", field)],
+            )
         self.assertEqual(
             set(contract["maker_execution_fields"]),
             {
@@ -598,7 +600,10 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
         )
 
         for case_name, tamper in tamper_cases:
-            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(case=case_name),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 inputs = set(CONTROL_PLANE_FILES) | {
                     relative
@@ -625,6 +630,91 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     ValueError,
                     "reasoning submission contract deterministic views differ",
+                ):
+                    build_methodology_manifest(root=root)
+
+    def test_production_manifest_rejects_generated_report_presentation_drift(
+        self,
+    ):
+        tamper_cases = (
+            (
+                "transition_code",
+                lambda payload: payload["scenario_projection_contract"][
+                    "transition_code_by_type"
+                ].__setitem__("base", "changed_transition"),
+            ),
+            (
+                "canonical_field_order",
+                lambda payload: payload["scenario_projection_contract"][
+                    "canonical_audit_field_order"
+                ].reverse(),
+            ),
+            (
+                "base_condition_text",
+                lambda payload: payload["scenario_projection_contract"][
+                    "base_condition_by_account_direction"
+                ]["main"].__setitem__("long", "changed condition"),
+            ),
+            (
+                "semantic_condition_owner",
+                lambda payload: payload["semantic_projection_contract"].__setitem__(
+                    "scenario_condition_owner",
+                    "changed owner",
+                ),
+            ),
+            (
+                "semantic_transition_owner",
+                lambda payload: payload["semantic_projection_contract"].__setitem__(
+                    "scenario_transition_owner",
+                    "changed owner",
+                ),
+            ),
+            (
+                "semantic_free_prose_policy",
+                lambda payload: payload["semantic_projection_contract"].__setitem__(
+                    "free_scenario_prose_projectable",
+                    True,
+                ),
+            ),
+            (
+                "execution_lifecycle_owner",
+                lambda payload: payload["semantic_projection_contract"].__setitem__(
+                    "execution_lifecycle_owner",
+                    "changed owner",
+                ),
+            ),
+        )
+
+        for case_name, tamper in tamper_cases:
+            with self.subTest(case=case_name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inputs = set(CONTROL_PLANE_FILES) | {
+                    relative
+                    for relatives in PHASE_FILES.values()
+                    for relative in relatives
+                }
+                for relative in inputs:
+                    source = ROOT / relative
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, target)
+
+                contract_path = (
+                    root
+                    / "governance"
+                    / "vnext_report_presentation_contract.json"
+                )
+                contract = json.loads(contract_path.read_text(encoding="utf-8"))
+                tamper(contract)
+                contract_path.write_text(
+                    json.dumps(contract, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                    newline="\n",
+                )
+
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "report presentation contract deterministic views differ",
                 ):
                     build_methodology_manifest(root=root)
 
@@ -1221,31 +1311,7 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
             trigger,
         )
         scenario_control = trigger["scenario_control_binding"]
-        self.assertEqual(
-            scenario_control["schema_version"],
-            "scenario-control-binding-v2",
-        )
-        self.assertEqual(
-            scenario_control["ownership_contract_schema_version"],
-            "scenario-ownership-v1",
-        )
-        self.assertEqual(
-            scenario_control["compiler_condition_source_by_type"],
-            {
-                "base": "bound_owner_claim.typed_state",
-                "counter": "bound_owner_claim.trigger_logic",
-                "invalidation": "bound_owner_claim.trigger_logic",
-            },
-        )
-        self.assertEqual(
-            scenario_control["compiler_transition_source"],
-            "scenario_ownership.transition_code_by_type",
-        )
-        self.assertFalse(scenario_control["producer_free_prose_allowed"])
-        self.assertEqual(
-            scenario_control["execution_lifecycle_owner"],
-            "decision_and_continuity",
-        )
+        self.assertEqual(scenario_control, scenario_control_binding_projection())
 
         noise = risk["structural_noise_buffer_judgment"]
         self.assertEqual(noise["schema_version"], "structural-noise-buffer-v2")

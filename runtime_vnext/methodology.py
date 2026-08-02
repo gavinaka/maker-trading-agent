@@ -14,6 +14,7 @@ from runtime.golden_methodology import get_methodology_runtime_inventory
 from .domain_ir.canonical import canonical_json_bytes
 from .domain_ir.legacy_v6_adapter import (
     deterministic_projection_drift,
+    report_presentation_projection_drift,
     scoring_projection_drift,
 )
 from .domain_ir.registry import REGISTRY, DomainRegistry
@@ -24,6 +25,9 @@ from .reasoning_submission import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+REPORT_PRESENTATION_CONTRACT_PATH = Path(
+    "governance/vnext_report_presentation_contract.json"
+)
 
 PHASE_FILES: dict[str, tuple[str, ...]] = {
     "evidence": (
@@ -294,6 +298,14 @@ def build_methodology_manifest(
     ):
         raise ValueError(
             "reasoning submission contract deterministic views differ from "
+            "the domain registry"
+        )
+    report_presentation_contract = json.loads(
+        (root / REPORT_PRESENTATION_CONTRACT_PATH).read_text(encoding="utf-8")
+    )
+    if report_presentation_projection_drift(report_presentation_contract):
+        raise ValueError(
+            "report presentation contract deterministic views differ from "
             "the domain registry"
         )
     contract_issues = validate_contract_runtime_compatibility(
@@ -768,7 +780,8 @@ def load_scoring_policy(*, root: Path = ROOT) -> dict[str, Any]:
         raise ValueError("scoring contract Maker execution policy is invalid")
     lifecycle_policy = risk.get("maker_order_lifecycle") or {}
     if (
-        lifecycle_policy.get("schema_version") != "maker-order-lifecycle-v1"
+        lifecycle_policy.get("schema_version")
+        != REGISTRY.maker_order_lifecycle_schema_version
         or lifecycle_policy.get("gate_derives_exact_object") is not True
         or lifecycle_policy.get("actual_fill_probability_is_not_estimated") is not True
         or lifecycle_policy.get("compiler_may_infer_or_rewrite") is not False

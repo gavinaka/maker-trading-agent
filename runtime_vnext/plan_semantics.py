@@ -25,6 +25,8 @@ from .domain_ir.registry import (
     MAKER_PLAN_STATES,
     MAKER_SEMANTIC_STATES,
     ORDER_LIFECYCLE_APPLICABILITY,
+    ORDER_LIFECYCLE_PATH_FLAGS,
+    REGISTRY,
 )
 from .domain_ir.types import (
     Direction,
@@ -37,8 +39,6 @@ from .domain_ir.types import (
 )
 
 FAILURE_ORDER = MAKER_FAILURE_ORDER
-ORDER_LIFECYCLE_SCHEMA_VERSION = "maker-order-lifecycle-v1"
-EVIDENCE_POLARITY_SCHEMA_VERSION = "evidence-polarity-v1"
 QUALIFIED_CANDIDATE = MakerSemanticState.QUALIFIED_CANDIDATE.value
 REJECTED_SUBMITTED_CANDIDATE = (
     MakerSemanticState.REJECTED_SUBMITTED_CANDIDATE.value
@@ -85,7 +85,7 @@ class MakerOrderLifecycle:
 
     def as_dict(self) -> dict[str, object]:
         return {
-            "schema_version": ORDER_LIFECYCLE_SCHEMA_VERSION,
+            "schema_version": REGISTRY.maker_order_lifecycle_schema_version,
             "state": self.state,
             "legal_fill_path_exists": self.legal_fill_path_exists,
             "legal_cancel_path_exists": self.legal_cancel_path_exists,
@@ -93,6 +93,28 @@ class MakerOrderLifecycle:
             "fill_probability_applicability": self.fill_probability_applicability,
             "reason_code": self.reason_code,
         }
+
+
+def _order_lifecycle_for_state(
+    state: OrderLifecycleState,
+) -> MakerOrderLifecycle:
+    """Build one lifecycle result from the registry-owned path flags."""
+
+    flags = ORDER_LIFECYCLE_PATH_FLAGS[state.value]
+    if (
+        set(flags) != {
+            "legal_fill_path_exists",
+            "legal_cancel_path_exists",
+        }
+        or type(flags["legal_fill_path_exists"]) is not bool
+        or type(flags["legal_cancel_path_exists"]) is not bool
+    ):
+        raise RuntimeError("order lifecycle registry path flags are invalid")
+    return MakerOrderLifecycle(
+        state=state.value,
+        legal_fill_path_exists=flags["legal_fill_path_exists"],
+        legal_cancel_path_exists=flags["legal_cancel_path_exists"],
+    )
 
 
 @dataclass(frozen=True)
@@ -106,7 +128,7 @@ class EvidencePolarity:
 
     def as_dict(self) -> dict[str, str]:
         return {
-            "schema_version": EVIDENCE_POLARITY_SCHEMA_VERSION,
+            "schema_version": REGISTRY.evidence_polarity_schema_version,
             "subject_direction": self.subject_direction,
             "evidence_direction": self.evidence_direction,
             "effect": self.effect,
@@ -332,51 +354,39 @@ def assess_order_lifecycle(
         or cancel_price is None
         or not values
     ):
-        return MakerOrderLifecycle(
-            OrderLifecycleState.NOT_APPLICABLE_NO_CANDIDATE_GEOMETRY.value,
-            False,
-            False,
+        return _order_lifecycle_for_state(
+            OrderLifecycleState.NOT_APPLICABLE_NO_CANDIDATE_GEOMETRY
         )
     if (
         reference_price <= 0
         or cancel_price <= 0
         or any(value is not None and value <= 0 for value in values)
     ):
-        return MakerOrderLifecycle(
-            OrderLifecycleState.INVALID_GEOMETRY.value, False, False
-        )
+        return _order_lifecycle_for_state(OrderLifecycleState.INVALID_GEOMETRY)
     if (
         cancel_price == reference_price
         or any(value is None or value == reference_price for value in values)
     ):
-        return MakerOrderLifecycle(
-            OrderLifecycleState.INVALID_GEOMETRY.value, False, False
-        )
+        return _order_lifecycle_for_state(OrderLifecycleState.INVALID_GEOMETRY)
     clean = tuple(value for value in values if value is not None)
     if cancel_price in clean:
-        return MakerOrderLifecycle(
-            OrderLifecycleState.INVALID_GEOMETRY.value, False, False
-        )
+        return _order_lifecycle_for_state(OrderLifecycleState.INVALID_GEOMETRY)
     entry_sides = {
         "above" if value > reference_price else "below" for value in clean
     }
     if len(entry_sides) != 1:
-        return MakerOrderLifecycle(
-            OrderLifecycleState.INVALID_GEOMETRY.value, False, False
-        )
+        return _order_lifecycle_for_state(OrderLifecycleState.INVALID_GEOMETRY)
     entry_side = next(iter(entry_sides))
     cancel_side = "above" if cancel_price > reference_price else "below"
     if cancel_side != entry_side:
-        return MakerOrderLifecycle(OrderLifecycleState.FILLABLE.value, True, True)
+        return _order_lifecycle_for_state(OrderLifecycleState.FILLABLE)
     cancel_distance = abs(cancel_price - reference_price)
     nearest_entry_distance = min(abs(value - reference_price) for value in clean)
     if cancel_distance < nearest_entry_distance:
-        return MakerOrderLifecycle(
-            OrderLifecycleState.CANCEL_BLOCKS_ALL_ENTRIES.value, False, True
+        return _order_lifecycle_for_state(
+            OrderLifecycleState.CANCEL_BLOCKS_ALL_ENTRIES
         )
-    return MakerOrderLifecycle(
-        OrderLifecycleState.ENTRY_BEFORE_CANCEL.value, True, False
-    )
+    return _order_lifecycle_for_state(OrderLifecycleState.ENTRY_BEFORE_CANCEL)
 
 
 def cancel_precedes_any_fill(

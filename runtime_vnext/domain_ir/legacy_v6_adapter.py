@@ -12,6 +12,7 @@ from typing import Any
 
 from .projection import (
     deterministic_contract_sections,
+    report_presentation_contract_registry_views,
     scoring_contract_registry_views,
 )
 
@@ -82,3 +83,23 @@ def projected_scoring_contract(contract: dict[str, Any]) -> dict[str, Any]:
 
 def scoring_projection_drift(contract: dict[str, Any]) -> bool:
     return contract != projected_scoring_contract(contract)
+
+
+def projected_report_presentation_contract(
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    projected = copy.deepcopy(contract)
+    for path, value in report_presentation_contract_registry_views().items():
+        target = projected
+        for key in path[:-1]:
+            child = target.get(key)
+            if not isinstance(child, dict):
+                child = {}
+                target[key] = child
+            target = child
+        target[path[-1]] = copy.deepcopy(value)
+    return projected
+
+
+def report_presentation_projection_drift(contract: dict[str, Any]) -> bool:
+    return contract != projected_report_presentation_contract(contract)

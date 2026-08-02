@@ -18,7 +18,11 @@ from outputs.report_structure_gate import assert_combined_structure, expected_ti
 from .domain_ir.registry import (
     EXECUTION_AUTHORIZATION_FIELDS,
     REGISTRY,
+    SCENARIO_EXECUTION_LIFECYCLE_OWNER,
+    SCENARIO_FREE_PROSE_PROJECTABLE,
+    SCENARIO_TRANSITION_OWNER,
     SHADOW_CONTINUITY_FIELDS,
+    scenario_condition_owner_summary,
 )
 from .gates import (
     REQUIRED_SOURCES,
@@ -34,9 +38,16 @@ from .plan_semantics import (
     NON_DIRECTIONAL_OBSERVATION,
     QUALIFIED_CANDIDATE,
     REJECTED_SUBMITTED_CANDIDATE,
-    classify_maker_semantic_state,
 )
 from .reasoning_submission import load_reasoning_submission_contract
+from .validation.report_semantics import (
+    certify_maker_semantic_state as _maker_semantic_state,
+    certify_order_lifecycle as _typed_order_lifecycle,
+    order_lifecycle_display as _order_lifecycle_display,
+    project_scenario_audit as _scenario_audit,
+    scenario_projection_policy as _scenario_projection_policy,
+    validate_scenario_projection as _validate_scenario_projection,
+)
 
 
 DIRECTION_CN = {
@@ -627,47 +638,6 @@ def _contains_exact_timeframe_label(text: str, label: str) -> bool:
         rf"(?<![A-Za-z0-9]){re.escape(label)}(?![A-Za-z0-9])",
         text,
     ) is not None
-
-
-def _maker_semantic_state(maker: dict[str, Any]) -> str:
-    sealed_state = maker.get("semantic_state")
-    if sealed_state is not None:
-        if sealed_state not in {
-            QUALIFIED_CANDIDATE,
-            REJECTED_SUBMITTED_CANDIDATE,
-            DIRECTIONAL_THESIS_ONLY,
-            NON_DIRECTIONAL_OBSERVATION,
-        }:
-            raise ValueError("Maker semantic_state is outside the closed vocabulary")
-        return str(sealed_state)
-    constructibility = (
-        maker.get("plan_constructibility")
-        if isinstance(maker.get("plan_constructibility"), dict)
-        else {}
-    )
-    lifecycle = (
-        maker.get("order_lifecycle")
-        if isinstance(maker.get("order_lifecycle"), dict)
-        else {}
-    )
-    reach_basis = (
-        maker.get("entry_reach_probability_basis")
-        if isinstance(maker.get("entry_reach_probability_basis"), dict)
-        else {}
-    )
-    return classify_maker_semantic_state(
-        plan_state=maker.get("plan_state"),
-        direction=maker.get("direction"),
-        plan_constructible=maker.get("plan_constructible"),
-        threshold_eligible=maker.get("threshold_eligible"),
-        risk_plan=maker.get("risk_plan"),
-        defense_plan=maker.get("defense_plan"),
-        position_notional_usdt=maker.get("position_notional_usdt"),
-        entry_type=maker.get("entry_type"),
-        order_lifecycle_state=lifecycle.get("state"),
-        entry_reach_probability_applicability=reach_basis.get("applicability"),
-        constructibility_reason=constructibility.get("primary_reason_code"),
-    )
 
 
 def _maker_plan_is_qualified(maker: dict[str, Any]) -> bool:
@@ -1774,83 +1744,6 @@ def _entry_reach_probability_display(projection: dict[str, Any]) -> str:
     raise ValueError("entry reach probability projection is internally inconsistent")
 
 
-def _typed_order_lifecycle(maker: dict[str, Any]) -> dict[str, Any]:
-    lifecycle = (
-        maker.get("order_lifecycle")
-        if isinstance(maker.get("order_lifecycle"), dict)
-        else {}
-    )
-    required_fields = {
-        "schema_version",
-        "state",
-        "legal_fill_path_exists",
-        "legal_cancel_path_exists",
-        "fill_probability",
-        "fill_probability_applicability",
-        "reason_code",
-    }
-    if set(lifecycle) != required_fields:
-        raise ValueError("order lifecycle differs from the closed typed schema")
-    if lifecycle.get("schema_version") != "maker-order-lifecycle-v1":
-        raise ValueError("order lifecycle schema version is unsupported")
-    if lifecycle.get("fill_probability") is not None:
-        raise ValueError("order lifecycle may not fabricate an actual fill probability")
-    expected = {
-        "fillable": (True, True, "not_estimated_lifecycle_only"),
-        "cancel_blocks_all_entries": (
-            False,
-            True,
-            "not_applicable_no_legal_fill_path",
-        ),
-        "entry_before_cancel": (
-            True,
-            False,
-            "not_applicable_invalid_prefill_cancel",
-        ),
-        "invalid_geometry": (False, False, "not_applicable_invalid_geometry"),
-        "not_applicable_no_candidate_geometry": (
-            False,
-            False,
-            "not_applicable_no_candidate_geometry",
-        ),
-    }
-    state = str(lifecycle.get("state") or "")
-    if state not in expected:
-        raise ValueError("order lifecycle state is outside the closed vocabulary")
-    fill_path, cancel_path, probability_applicability = expected[state]
-    if (
-        lifecycle.get("legal_fill_path_exists") is not fill_path
-        or lifecycle.get("legal_cancel_path_exists") is not cancel_path
-        or lifecycle.get("fill_probability_applicability")
-        != probability_applicability
-        or lifecycle.get("reason_code") != state
-    ):
-        raise ValueError("order lifecycle projection is internally inconsistent")
-    return copy.deepcopy(lifecycle)
-
-
-def _order_lifecycle_display(lifecycle: dict[str, Any]) -> str:
-    lifecycle = _typed_order_lifecycle({"order_lifecycle": lifecycle})
-    state = str(lifecycle.get("state") or "")
-    expected = {
-        "fillable": (True, True, "存在合法入场路径；撤单位于反方向分支。实际成交概率未估计"),
-        "cancel_blocks_all_entries": (False, True, "撤单价会先于所有入场档触发，订单没有可成交路径"),
-        "entry_before_cancel": (True, False, "至少一档会先成交后才触及撤单价，不属于成交前撤单"),
-        "invalid_geometry": (False, False, "价格几何冲突，无法形成合法订单生命周期"),
-        "not_applicable_no_candidate_geometry": (False, False, "无完整候选价格几何，订单生命周期不适用"),
-    }
-    if state not in expected:
-        raise ValueError("order lifecycle state is outside the closed vocabulary")
-    fill_path, cancel_path, text = expected[state]
-    if (
-        lifecycle.get("legal_fill_path_exists") is not fill_path
-        or lifecycle.get("legal_cancel_path_exists") is not cancel_path
-        or lifecycle.get("reason_code") != state
-    ):
-        raise ValueError("order lifecycle projection is internally inconsistent")
-    return text
-
-
 def _typed_risk_plan(
     maker: dict[str, Any],
     *,
@@ -2065,297 +1958,6 @@ def _claim_audit(reasoning: dict[str, Any]) -> list[dict[str, Any]]:
         )
         projected.append(item)
     return projected
-
-
-def _scenario_audit(
-    reasoning: dict[str, Any],
-    *,
-    account_controls: dict[str, dict[str, Any]],
-    scenario_ownership: dict[str, Any],
-    presentation_contract: dict[str, Any],
-) -> list[dict[str, Any]]:
-    """Project all visible scenario language from typed owners and closed codes."""
-
-    projection = _scenario_projection_policy(presentation_contract)
-    if (
-        scenario_ownership.get("schema_version")
-        != REGISTRY.scenario_ownership_schema_version
-        or scenario_ownership.get("producer_free_prose_allowed") is not False
-        or scenario_ownership.get("execution_lifecycle_owner")
-        != "decision_and_continuity"
-        or scenario_ownership.get("transition_code_by_type")
-        != projection["transition_code_by_type"]
-    ):
-        raise ValueError("scenario ownership policy is invalid")
-    expected_items = {
-        (str(item["account"]), str(item["scenario_type"])): item
-        for item in scenario_ownership.get("items", [])
-        if isinstance(item, dict)
-    }
-    claims = {
-        str(item.get("id")): item
-        for item in reasoning.get("claims", [])
-        if isinstance(item, dict) and str(item.get("id") or "")
-    }
-    methodology = reasoning.get("methodology")
-    methodology_scenarios = (
-        methodology.get("scenario_tree")
-        if isinstance(methodology, dict)
-        and isinstance(methodology.get("scenario_tree"), list)
-        else []
-    )
-    methodology_by_key = {
-        (str(item.get("account")), str(item.get("kind"))): item
-        for item in methodology_scenarios
-        if isinstance(item, dict)
-    }
-    projected: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for raw in reasoning.get("scenario_tree", []):
-        if not isinstance(raw, dict) or set(raw) != {
-            "id",
-            "account",
-            "scenario_type",
-            "owner_claim_id",
-        }:
-            raise ValueError("scenario does not use the exact typed ownership fields")
-        if not all(_canonical_closed_string(value) for value in raw.values()):
-            raise ValueError("scenario ownership identifiers are not canonical")
-        account = str(raw["account"])
-        scenario_type = str(raw["scenario_type"])
-        owner_claim_id = str(raw["owner_claim_id"])
-        key = (account, scenario_type)
-        expected = expected_items.get(key)
-        owner_claim = claims.get(owner_claim_id)
-        if (
-            expected is None
-            or key in seen
-            or raw["id"] != expected.get("id")
-            or not isinstance(owner_claim, dict)
-            or owner_claim.get("account") != account
-            or owner_claim.get("claim_type") != expected.get("owner_claim_type")
-        ):
-            raise ValueError("scenario typed owner does not match its exact matrix row")
-        seen.add(key)
-        transition_code = str(
-            projection["transition_code_by_type"].get(scenario_type) or ""
-        )
-        methodology_item = methodology_by_key.get(key)
-        if (
-            not isinstance(methodology_item, dict)
-            or methodology_item.get("claim_id") != owner_claim_id
-            or methodology_item.get("action") != transition_code
-        ):
-            raise ValueError(
-                "methodology scenario owner or transition code drifted from the top-level scenario"
-            )
-        if scenario_type == "base":
-            direction = str(owner_claim.get("direction") or "")
-            condition = str(
-                (
-                    projection["base_condition_by_account_direction"].get(
-                        account
-                    )
-                    or {}
-                ).get(direction)
-                or ""
-            )
-        else:
-            control = (account_controls.get(account) or {}).get(scenario_type)
-            if (
-                not isinstance(control, dict)
-                or control.get("claim_id") != owner_claim_id
-            ):
-                raise ValueError("scenario lacks its same-account typed control")
-            condition = str(control.get("condition") or "")
-        visible = (
-            projection["projection_by_account_and_transition_code"].get(account)
-            or {}
-        ).get(transition_code)
-        if (
-            not condition
-            or not isinstance(visible, dict)
-            or set(visible) != {"expected_path", "action"}
-        ):
-            raise ValueError("scenario deterministic presentation mapping is incomplete")
-        projected.append(
-            {
-                "id": raw["id"],
-                "account": account,
-                "scenario_type": scenario_type,
-                "owner_claim_id": owner_claim_id,
-                "transition_code": transition_code,
-                "condition": condition,
-                "expected_path": str(visible["expected_path"]),
-                "action": str(visible["action"]),
-            }
-        )
-    if seen != set(expected_items):
-        raise ValueError("scenario typed ownership matrix is incomplete")
-    _validate_scenario_projection(
-        projected,
-        claims=list(claims.values()),
-        account_controls=account_controls,
-        presentation_contract=presentation_contract,
-    )
-    return projected
-
-
-def _scenario_projection_policy(
-    presentation_contract: dict[str, Any],
-) -> dict[str, Any]:
-    projection = presentation_contract.get("scenario_projection_contract")
-    expected_fields = {
-        "schema_version",
-        "ownership_schema_version",
-        "producer_free_prose_projectable",
-        "condition_owner_by_type",
-        "transition_code_by_type",
-        "base_condition_by_account_direction",
-        "projection_by_account_and_transition_code",
-        "canonical_audit_field_order",
-        "execution_lifecycle_owner",
-    }
-    transition_codes = {
-        "base": "retain_certified_assessment",
-        "counter": "reassess_on_typed_counter",
-        "invalidation": "invalidate_and_recollect_evidence",
-    }
-    if (
-        not isinstance(projection, dict)
-        or set(projection) != expected_fields
-        or projection.get("schema_version")
-        != REGISTRY.scenario_projection_schema_version
-        or projection.get("ownership_schema_version")
-        != REGISTRY.scenario_ownership_schema_version
-        or projection.get("producer_free_prose_projectable") is not False
-        or projection.get("condition_owner_by_type")
-        != {
-            "base": "bound_owner_claim.typed_state",
-            "counter": "bound_owner_claim.trigger_logic",
-            "invalidation": "bound_owner_claim.trigger_logic",
-        }
-        or projection.get("transition_code_by_type") != transition_codes
-        or projection.get("canonical_audit_field_order")
-        != [
-            "id",
-            "account",
-            "scenario_type",
-            "owner_claim_id",
-            "transition_code",
-            "condition",
-            "expected_path",
-            "action",
-        ]
-        or projection.get("execution_lifecycle_owner")
-        != "decision_and_continuity"
-    ):
-        raise ValueError("scenario presentation contract is invalid")
-    base_conditions = projection.get("base_condition_by_account_direction")
-    if (
-        not isinstance(base_conditions, dict)
-        or set(base_conditions) != {"main", "maker"}
-        or set(base_conditions.get("main") or {}) != {"long", "short", "neutral"}
-        or set(base_conditions.get("maker") or {})
-        != {"long", "short", "observe"}
-        or not all(
-            isinstance(value, str) and bool(value)
-            for account in base_conditions.values()
-            for value in account.values()
-        )
-    ):
-        raise ValueError("scenario base-condition projection is invalid")
-    visible = projection.get("projection_by_account_and_transition_code")
-    if not isinstance(visible, dict) or set(visible) != {"main", "maker"}:
-        raise ValueError("scenario transition projection is invalid")
-    for account in ("main", "maker"):
-        rows = visible.get(account)
-        if (
-            not isinstance(rows, dict)
-            or set(rows) != set(transition_codes.values())
-            or any(
-                not isinstance(row, dict)
-                or set(row) != {"expected_path", "action"}
-                or not all(isinstance(value, str) and bool(value) for value in row.values())
-                for row in rows.values()
-            )
-        ):
-            raise ValueError("scenario transition projection is invalid")
-    return projection
-
-
-def _validate_scenario_projection(
-    scenarios: list[dict[str, Any]],
-    *,
-    claims: list[dict[str, Any]],
-    account_controls: dict[str, dict[str, Any]],
-    presentation_contract: dict[str, Any],
-) -> None:
-    """Validate canonical scenario output by exact structural reconstruction."""
-
-    projection = _scenario_projection_policy(presentation_contract)
-    fields = set(projection["canonical_audit_field_order"])
-    claim_index = {
-        str(item.get("id")): item
-        for item in claims
-        if isinstance(item, dict) and str(item.get("id") or "")
-    }
-    owner_type_by_key = {
-        ("main", "base"): "main_account_thesis",
-        ("main", "counter"): "strongest_counterevidence",
-        ("main", "invalidation"): "invalidation_path",
-        ("maker", "base"): "maker_thesis",
-        ("maker", "counter"): "strongest_counterevidence",
-        ("maker", "invalidation"): "invalidation_path",
-    }
-    seen: set[tuple[str, str]] = set()
-    for item in scenarios:
-        if not isinstance(item, dict) or set(item) != fields:
-            raise ValueError("canonical scenario field set is invalid")
-        account = str(item.get("account") or "")
-        scenario_type = str(item.get("scenario_type") or "")
-        key = (account, scenario_type)
-        owner = claim_index.get(str(item.get("owner_claim_id") or ""))
-        transition_code = projection["transition_code_by_type"].get(scenario_type)
-        if (
-            key not in owner_type_by_key
-            or key in seen
-            or item.get("id") != f"scenario_{account}_{scenario_type}"
-            or not isinstance(owner, dict)
-            or owner.get("account") != account
-            or owner.get("claim_type") != owner_type_by_key[key]
-            or item.get("transition_code") != transition_code
-        ):
-            raise ValueError("canonical scenario typed provenance is invalid")
-        seen.add(key)
-        if scenario_type == "base":
-            expected_condition = (
-                projection["base_condition_by_account_direction"]
-                .get(account, {})
-                .get(str(owner.get("direction") or ""))
-            )
-        else:
-            control = (account_controls.get(account) or {}).get(scenario_type)
-            if (
-                not isinstance(control, dict)
-                or control.get("claim_id") != item.get("owner_claim_id")
-            ):
-                raise ValueError("canonical scenario control owner is invalid")
-            expected_condition = control.get("condition")
-        visible = (
-            projection["projection_by_account_and_transition_code"]
-            .get(account, {})
-            .get(transition_code)
-        )
-        if (
-            not isinstance(visible, dict)
-            or item.get("condition") != expected_condition
-            or item.get("expected_path") != visible.get("expected_path")
-            or item.get("action") != visible.get("action")
-        ):
-            raise ValueError("canonical scenario projection drifted from typed owners")
-    if seen != set(owner_type_by_key):
-        raise ValueError("canonical scenario matrix is incomplete")
 
 
 def _claim_index(reasoning: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -5034,12 +4636,13 @@ def load_presentation_contract(root: Path) -> dict[str, Any]:
         or semantic_projection.get("main_authorization_owner")
         != "audit.main_plan.plan_state"
         or semantic_projection.get("scenario_condition_owner")
-        != "bound_owner_claim.typed_state_or_trigger_logic"
+        != scenario_condition_owner_summary()
         or semantic_projection.get("scenario_transition_owner")
-        != "scenario_ownership.transition_code_by_type"
-        or semantic_projection.get("free_scenario_prose_projectable") is not False
+        != SCENARIO_TRANSITION_OWNER
+        or semantic_projection.get("free_scenario_prose_projectable")
+        is not SCENARIO_FREE_PROSE_PROJECTABLE
         or semantic_projection.get("execution_lifecycle_owner")
-        != "decision_and_continuity"
+        != SCENARIO_EXECUTION_LIFECYCLE_OWNER
     ):
         raise ValueError("vNext report presentation contract is invalid")
     _validated_timeframe_display_contract(payload)

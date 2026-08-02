@@ -33,10 +33,17 @@ from .registry import (
     REGISTRY,
     SCAFFOLD_POLICY,
     SCENARIO_ACCOUNT_ORDER,
+    SCENARIO_BASE_CONDITION_BY_ACCOUNT_DIRECTION,
+    SCENARIO_CANONICAL_AUDIT_FIELD_ORDER,
+    SCENARIO_CONDITION_OWNER_BY_TYPE,
+    SCENARIO_EXECUTION_LIFECYCLE_OWNER,
     SCENARIO_FIELD_ORDER,
+    SCENARIO_FREE_PROSE_PROJECTABLE,
     SCENARIO_OWNER_CLAIM_TYPE_BY_ACCOUNT,
     SCENARIO_TRANSITION_CODES,
+    SCENARIO_TRANSITION_OWNER,
     SCENARIO_TYPE_ORDER,
+    SCENARIO_VISIBLE_PROJECTION_BY_ACCOUNT_AND_TRANSITION_CODE,
     TOP_LEVEL_CERTIFICATION_ONLY_FIELDS,
     TOP_LEVEL_CONTROLLER_REBOUND_FIELDS,
     TOP_LEVEL_FIELD_ORDER,
@@ -51,6 +58,7 @@ from .registry import (
     TRIGGER_SCALAR_CLAUSE_FIELD_ORDER,
     TYPED_NARRATIVE_OWNERSHIP,
     VISUAL_CITATION_POLICY,
+    scenario_condition_owner_summary,
 )
 
 
@@ -72,22 +80,18 @@ def scenario_control_binding_projection() -> dict[str, Any]:
         "ownership_contract_schema_version": (
             REGISTRY.scenario_ownership_schema_version
         ),
-        "compiler_condition_source_by_type": {
-            "base": "bound_owner_claim.typed_state",
-            "counter": "bound_owner_claim.trigger_logic",
-            "invalidation": "bound_owner_claim.trigger_logic",
-        },
-        "compiler_transition_source": (
-            "scenario_ownership.transition_code_by_type"
+        "compiler_condition_source_by_type": copy.deepcopy(
+            SCENARIO_CONDITION_OWNER_BY_TYPE
         ),
+        "compiler_transition_source": SCENARIO_TRANSITION_OWNER,
         "methodology_trigger_claim_ids_source": (
             "bound_owner_claim.direct_support_claim_ids"
         ),
         "methodology_trigger_order": "owner_support_order_first_occurrence",
         "methodology_trigger_observation_ids_excluded": True,
         "methodology_trigger_owner_self_reference_allowed": False,
-        "producer_free_prose_allowed": False,
-        "execution_lifecycle_owner": "decision_and_continuity",
+        "producer_free_prose_allowed": SCENARIO_FREE_PROSE_PROJECTABLE,
+        "execution_lifecycle_owner": SCENARIO_EXECUTION_LIFECYCLE_OWNER,
     }
 
 
@@ -153,7 +157,7 @@ def account_current_basis_projection() -> dict[str, Any]:
         "observation_fields": _json_view(TRIGGER_OBSERVATION_FIELDS),
         "claim_fields": claim_fields,
         "evidence_polarity": {
-            "schema_version": "evidence-polarity-v1",
+            "schema_version": REGISTRY.evidence_polarity_schema_version,
             "allowed_subject_directions": list(EVIDENCE_SUBJECT_DIRECTION_ORDER),
             "non_directional_subject_directions": list(
                 NON_DIRECTIONAL_SUBJECT_DIRECTION_ORDER
@@ -214,7 +218,7 @@ def maker_entry_semantics_projection() -> dict[str, Any]:
 
 def maker_order_lifecycle_projection() -> dict[str, Any]:
     return {
-        "schema_version": "maker-order-lifecycle-v1",
+        "schema_version": REGISTRY.maker_order_lifecycle_schema_version,
         "required_fields": list(MAKER_ORDER_LIFECYCLE_FIELD_ORDER),
         "states": list(ORDER_LIFECYCLE_APPLICABILITY),
         "gate_derives_exact_object": True,
@@ -268,8 +272,58 @@ def scenario_ownership_projection() -> dict[str, Any]:
         "schema_version": REGISTRY.scenario_ownership_schema_version,
         "items": items,
         "transition_code_by_type": dict(SCENARIO_TRANSITION_CODES),
-        "producer_free_prose_allowed": False,
-        "execution_lifecycle_owner": "decision_and_continuity",
+        "producer_free_prose_allowed": SCENARIO_FREE_PROSE_PROJECTABLE,
+        "execution_lifecycle_owner": SCENARIO_EXECUTION_LIFECYCLE_OWNER,
+    }
+
+
+def scenario_projection_contract_projection() -> dict[str, Any]:
+    """Return the exact registry-owned human scenario projection contract."""
+
+    return {
+        "schema_version": REGISTRY.scenario_projection_schema_version,
+        "ownership_schema_version": REGISTRY.scenario_ownership_schema_version,
+        "producer_free_prose_projectable": SCENARIO_FREE_PROSE_PROJECTABLE,
+        "condition_owner_by_type": copy.deepcopy(
+            SCENARIO_CONDITION_OWNER_BY_TYPE
+        ),
+        "transition_code_by_type": dict(SCENARIO_TRANSITION_CODES),
+        "base_condition_by_account_direction": copy.deepcopy(
+            SCENARIO_BASE_CONDITION_BY_ACCOUNT_DIRECTION
+        ),
+        "projection_by_account_and_transition_code": copy.deepcopy(
+            SCENARIO_VISIBLE_PROJECTION_BY_ACCOUNT_AND_TRANSITION_CODE
+        ),
+        "canonical_audit_field_order": list(
+            SCENARIO_CANONICAL_AUDIT_FIELD_ORDER
+        ),
+        "execution_lifecycle_owner": SCENARIO_EXECUTION_LIFECYCLE_OWNER,
+    }
+
+
+def report_presentation_contract_registry_views() -> dict[tuple[str, ...], Any]:
+    """Return registry-owned sections of the report presentation JSON view."""
+
+    return {
+        ("scenario_projection_contract",): (
+            scenario_projection_contract_projection()
+        ),
+        (
+            "semantic_projection_contract",
+            "scenario_condition_owner",
+        ): scenario_condition_owner_summary(),
+        (
+            "semantic_projection_contract",
+            "scenario_transition_owner",
+        ): SCENARIO_TRANSITION_OWNER,
+        (
+            "semantic_projection_contract",
+            "free_scenario_prose_projectable",
+        ): SCENARIO_FREE_PROSE_PROJECTABLE,
+        (
+            "semantic_projection_contract",
+            "execution_lifecycle_owner",
+        ): SCENARIO_EXECUTION_LIFECYCLE_OWNER,
     }
 
 
