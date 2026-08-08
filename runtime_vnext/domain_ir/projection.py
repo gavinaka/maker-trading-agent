@@ -58,8 +58,8 @@ from .registry import (
     TRIGGER_SCALAR_CLAUSE_FIELD_ORDER,
     TYPED_NARRATIVE_OWNERSHIP,
     VISUAL_CITATION_POLICY,
-    scenario_condition_owner_summary,
 )
+from .types import CertifiedReportProjectionInput, canonical_sha256, to_plain
 
 
 def _json_view(value: Any) -> Any:
@@ -76,7 +76,7 @@ def _json_view(value: Any) -> Any:
 
 def scenario_control_binding_projection() -> dict[str, Any]:
     return {
-        "schema_version": "scenario-control-binding-v2",
+        "schema_version": REGISTRY.scenario_control_binding_schema_version,
         "ownership_contract_schema_version": (
             REGISTRY.scenario_ownership_schema_version
         ),
@@ -97,7 +97,7 @@ def scenario_control_binding_projection() -> dict[str, Any]:
 
 def account_trigger_logic_projection() -> dict[str, Any]:
     return {
-        "schema_version": "account-trigger-logic-v5",
+        "schema_version": REGISTRY.account_trigger_logic_schema_version,
         "claim_effects": dict(TRIGGER_EFFECT_BY_CLAIM_TYPE),
         "allowed_modes": list(TRIGGER_LOGIC_MODES),
         "invalidation_mode": TRIGGER_LOGIC_MODES[0],
@@ -147,7 +147,7 @@ def account_current_basis_projection() -> dict[str, Any]:
         "price_relation": ["confirm", "weaken", "neutral"]
     }
     return {
-        "schema_version": "account-current-basis-v2",
+        "schema_version": REGISTRY.account_current_basis_schema_version,
         "required_claim_types": list(TRIGGER_CONTROL_CLAIM_TYPE_ORDER),
         "required_fields": ["mode", "clauses"],
         "allowed_modes": list(TRIGGER_LOGIC_MODES),
@@ -194,7 +194,7 @@ def account_current_basis_projection() -> dict[str, Any]:
 
 def maker_entry_semantics_projection() -> dict[str, Any]:
     return {
-        "schema_version": "maker-entry-semantics-v1",
+        "schema_version": REGISTRY.maker_entry_semantics_schema_version,
         "resting_order_relation": {
             "short": "all_entries_strictly_above_current_price",
             "long": "all_entries_strictly_below_current_price",
@@ -301,29 +301,44 @@ def scenario_projection_contract_projection() -> dict[str, Any]:
     }
 
 
-def report_presentation_contract_registry_views() -> dict[tuple[str, ...], Any]:
-    """Return registry-owned sections of the report presentation JSON view."""
+def timeframe_display_contract_projection() -> dict[str, Any]:
+    """Return the code-owned visible timeframe labels and display order."""
 
     return {
+        "schema_version": REGISTRY.timeframe_display_schema_version,
+        "canonical_by_code": {
+            "1d": "1D",
+            "4h": "4H",
+            "1h": "1H",
+            "15m": "15m",
+            "3d": "3天",
+            "48h": "48H",
+            "24h": "24H",
+        },
+        "tradingview_projection_order": ["1d", "4h", "1h", "15m"],
+    }
+
+
+def trigger_operator_display_projection() -> dict[str, str]:
+    """Return presentation labels only; operator semantics remain registry-owned."""
+
+    return {
+        "becomes": "转为",
+        "equals_at_trigger": "触发时必须为",
+        "one_of_at_trigger": "触发时必须属于",
+    }
+
+
+def report_presentation_contract_registry_views() -> dict[tuple[str, ...], Any]:
+    """Return code-owned deterministic report-presentation JSON views."""
+
+    return {
+        ("schema_version",): REGISTRY.report_presentation_contract_schema_version,
         ("scenario_projection_contract",): (
             scenario_projection_contract_projection()
         ),
-        (
-            "semantic_projection_contract",
-            "scenario_condition_owner",
-        ): scenario_condition_owner_summary(),
-        (
-            "semantic_projection_contract",
-            "scenario_transition_owner",
-        ): SCENARIO_TRANSITION_OWNER,
-        (
-            "semantic_projection_contract",
-            "free_scenario_prose_projectable",
-        ): SCENARIO_FREE_PROSE_PROJECTABLE,
-        (
-            "semantic_projection_contract",
-            "execution_lifecycle_owner",
-        ): SCENARIO_EXECUTION_LIFECYCLE_OWNER,
+        ("timeframe_display_contract",): timeframe_display_contract_projection(),
+        ("trigger_operator_display",): trigger_operator_display_projection(),
     }
 
 
@@ -347,7 +362,7 @@ def server_projection(
 
     leaf_ownership = copy.deepcopy(methodology_leaf_ownership)
     return {
-        "schema_version": "reasoning-server-projection-v4",
+        "schema_version": REGISTRY.reasoning_server_projection_schema_version,
         "server_owned_paths": [
             "schema_version",
             "trading_date",
@@ -410,8 +425,8 @@ def deterministic_contract_sections(
     """Return every deterministic section projected into the v6 JSON contract."""
 
     return {
-        "schema_version": "reasoning-submission-contract-v6",
-        "certified_schema_version": "reasoning-model-v5",
+        "schema_version": REGISTRY.reasoning_submission_schema_version,
+        "certified_schema_version": REGISTRY.reasoning_model_schema_version,
         "additional_fields_allowed": False,
         "top_level": {
             "field_order": list(TOP_LEVEL_FIELD_ORDER),
@@ -445,4 +460,208 @@ def deterministic_contract_sections(
         "scenario_transition_codes": list(SCENARIO_TRANSITION_CODES.values()),
         "pipeline_unit_fields": list(PIPELINE_UNIT_FIELD_ORDER),
         "pipeline_unit_order": list(PIPELINE_UNIT_ORDER),
+    }
+
+
+def projected_v6_contract(
+    contract: dict[str, Any],
+    *,
+    methodology_leaf_ownership: dict[str, Any],
+) -> dict[str, Any]:
+    """Project registry-owned sections into the legacy v6 transport shape."""
+
+    projected = copy.deepcopy(contract)
+    sections = deterministic_contract_sections(
+        methodology_leaf_ownership=methodology_leaf_ownership
+    )
+    for key in (
+        "schema_version",
+        "certified_schema_version",
+        "additional_fields_allowed",
+        "top_level",
+        "claim_topology",
+        "typed_narrative_ownership",
+        "server_projection",
+        "visual_citation_policy",
+        "observation_fields_by_source",
+        "claim_fields_by_type",
+        "scaffold_policy",
+        "scenario_ownership",
+        "scenario_fields",
+        "pipeline_unit_fields",
+        "pipeline_unit_order",
+    ):
+        projected[key] = copy.deepcopy(sections[key])
+    scenario_enums = projected["methodology"]["arrays"]["scenario_tree"][
+        "item"
+    ]["enum_fields"]
+    scenario_enums["account"]["values"] = sections["scenario_accounts"]
+    scenario_enums["kind"]["values"] = sections["scenario_types"]
+    scenario_enums["action"]["values"] = sections[
+        "scenario_transition_codes"
+    ]
+    return projected
+
+
+def deterministic_projection_drift(
+    contract: dict[str, Any],
+    *,
+    methodology_leaf_ownership: dict[str, Any],
+) -> bool:
+    return contract != projected_v6_contract(
+        contract,
+        methodology_leaf_ownership=methodology_leaf_ownership,
+    )
+
+
+def _project_registry_views(
+    contract: dict[str, Any],
+    views: dict[tuple[str, ...], Any],
+) -> dict[str, Any]:
+    projected = copy.deepcopy(contract)
+    for path, value in views.items():
+        target = projected
+        for key in path[:-1]:
+            child = target.get(key)
+            if not isinstance(child, dict):
+                child = {}
+                target[key] = child
+            target = child
+        target[path[-1]] = copy.deepcopy(value)
+    return projected
+
+
+def projected_scoring_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    return _project_registry_views(contract, scoring_contract_registry_views())
+
+
+def scoring_projection_drift(contract: dict[str, Any]) -> bool:
+    return contract != projected_scoring_contract(contract)
+
+
+def projected_report_presentation_contract(
+    contract: dict[str, Any],
+) -> dict[str, Any]:
+    manual_keys = frozenset(
+        {
+            "purpose",
+            "human_surface_source_of_truth",
+            "human_visible_enum_domains",
+            "gold_reference",
+            "document_tokens",
+            "content_order",
+            "required_reasoning_proof_blocks",
+            "source_explanation_fields",
+            "required_frontstage_fields",
+            "maker_execution_fields",
+            "maker_second_truth_forbidden_fields",
+            "human_surface_forbidden",
+            "word_visual_qa",
+            "density_limits",
+        }
+    )
+    generated_keys = frozenset(
+        {
+            "schema_version",
+            "scenario_projection_contract",
+            "timeframe_display_contract",
+            "trigger_operator_display",
+        }
+    )
+    missing = sorted(manual_keys - set(contract))
+    if missing:
+        raise ValueError(
+            "report presentation contract is missing manual presentation keys: "
+            + ", ".join(missing)
+        )
+    projected = {
+        key: copy.deepcopy(contract[key])
+        for key in contract
+        if key in manual_keys | generated_keys
+    }
+    source_of_truth = projected.get("human_surface_source_of_truth")
+    if not isinstance(source_of_truth, dict):
+        raise ValueError("report presentation source-of-truth view must be an object")
+    source_view_fields = (
+        "kind",
+        "inputs",
+        "report_sections_role",
+        "free_text_second_truth_allowed",
+    )
+    if any(field not in source_of_truth for field in source_view_fields):
+        raise ValueError(
+            "report presentation source-of-truth view is missing presentation fields"
+        )
+    projected["human_surface_source_of_truth"] = {
+        field: copy.deepcopy(source_of_truth[field])
+        for field in source_view_fields
+    }
+    return _project_registry_views(
+        projected,
+        report_presentation_contract_registry_views(),
+    )
+
+
+def report_presentation_projection_drift(contract: dict[str, Any]) -> bool:
+    return contract != projected_report_presentation_contract(contract)
+
+
+def project_report_bindings(
+    source: CertifiedReportProjectionInput,
+) -> dict[str, Any]:
+    """Project the exact typed traceability contract as its own artifact."""
+
+    bindings = source.bindings
+    if bindings.schema_version != REGISTRY.report_bindings_schema_version:
+        raise ValueError("report bindings schema differs from the domain registry")
+    projected = to_plain(bindings)
+    if not isinstance(projected, dict):
+        raise RuntimeError("typed report bindings did not project to an object")
+    return projected
+
+
+def project_canonical_report_model(
+    source: CertifiedReportProjectionInput,
+) -> dict[str, Any]:
+    metadata = source.metadata
+    values: dict[str, Any] = {
+        "schema_version": metadata.schema_version,
+        "presentation_contract_version": metadata.presentation_contract_version,
+        "presentation_contract_sha256": metadata.presentation_contract_sha256,
+        "run_id": metadata.run_id,
+        "run_sha256": metadata.run_sha256,
+        "run_mode": metadata.run_mode,
+        "execution_authorization": to_plain(metadata.execution_authorization),
+        "trading_date": metadata.trading_date,
+        "slot": metadata.slot,
+        "methodology_sha256": metadata.methodology_sha256,
+        "report_contract_sha256": metadata.report_contract_sha256,
+        "evidence_snapshot_sha256": metadata.evidence_snapshot_sha256,
+        "reasoning_sha256": metadata.reasoning_sha256,
+        "decision_sha256": metadata.decision_sha256,
+        "blockbeats_cards": to_plain(source.blockbeats_cards),
+        "frontstage": to_plain(source.frontstage),
+        "maker_summary": to_plain(source.maker_summary),
+        "main_summary": to_plain(source.main_summary),
+        "audit": to_plain(source.audit),
+    }
+    expected_fields = tuple(
+        field for field in REGISTRY.report_model_field_order if field != "model_sha256"
+    )
+    if set(values) != set(expected_fields):
+        raise RuntimeError("report registry field order differs from projector values")
+    model = {field: values[field] for field in expected_fields}
+    model["model_sha256"] = canonical_sha256(model)
+    return model
+
+
+def project_blockbeats_cards_spec(
+    source: CertifiedReportProjectionInput,
+) -> dict[str, Any]:
+    return {
+        "schema_version": REGISTRY.blockbeats_cards_schema_version,
+        "trading_date": source.metadata.trading_date,
+        "slot": source.metadata.slot,
+        "evidence_snapshot_sha256": source.metadata.evidence_snapshot_sha256,
+        "cards": to_plain(source.blockbeats_cards),
     }

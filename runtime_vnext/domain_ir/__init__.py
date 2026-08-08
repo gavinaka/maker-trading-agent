@@ -7,12 +7,43 @@ edge selection or Chinese narrative depth; those remain model-owned inputs
 that the validators certify.
 """
 
-from .canonical import canonical_json_bytes, canonical_sha256
 from .registry import REGISTRY, DomainRegistry
+from .projection import (
+    project_blockbeats_cards_spec,
+    project_canonical_report_model,
+    project_report_bindings,
+)
+from .types import (
+    CertifiedReportProjectionInput,
+    ProjectedReport,
+    ReportBindings,
+    ReportField,
+    ReportMetadata,
+    ReportRecord,
+    ReportScalar,
+    ReportSectionBinding,
+    ReportValue,
+    canonical_json_bytes,
+    canonical_sha256,
+    to_plain,
+)
 
 __all__ = [
     "DomainRegistry",
+    "CertifiedReportProjectionInput",
+    "ProjectedReport",
     "REGISTRY",
+    "ReportBindings",
+    "ReportField",
+    "ReportMetadata",
+    "ReportRecord",
+    "ReportScalar",
+    "ReportSectionBinding",
+    "ReportValue",
     "canonical_json_bytes",
     "canonical_sha256",
+    "project_blockbeats_cards_spec",
+    "project_canonical_report_model",
+    "project_report_bindings",
+    "to_plain",
 ]

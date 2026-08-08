@@ -7,7 +7,7 @@ from dataclasses import FrozenInstanceError
 from decimal import Decimal
 from pathlib import Path
 
-from runtime_vnext.domain_ir.report_types import (
+from runtime_vnext.domain_ir import (
     CertifiedReportProjectionInput,
     ProjectedReport,
     ReportBindings,
@@ -15,24 +15,22 @@ from runtime_vnext.domain_ir.report_types import (
     ReportMetadata,
     ReportRecord,
     ReportSectionBinding,
-    to_plain,
-)
-from runtime_vnext.domain_ir.report_projection import (
+    canonical_sha256,
     project_blockbeats_cards_spec,
     project_canonical_report_model,
     project_report_bindings,
+    to_plain,
 )
-from runtime_vnext.domain_ir.canonical import canonical_sha256
 from runtime_vnext.domain_ir.registry import REGISTRY
-from runtime_vnext.validation.report_projection import (
+from runtime_vnext.validation.report import (
     build_report_bindings,
     certify_canonical_report_model,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "runtime_vnext" / "domain_ir" / "report_types.py"
-PROJECTION_PATH = ROOT / "runtime_vnext" / "domain_ir" / "report_projection.py"
+MODULE_PATH = ROOT / "runtime_vnext" / "domain_ir" / "types.py"
+PROJECTION_PATH = ROOT / "runtime_vnext" / "domain_ir" / "projection.py"
 
 
 def record(*items: tuple[str, object]) -> ReportRecord:
@@ -120,7 +118,6 @@ class VNextReportProjectionBoundaryTests(unittest.TestCase):
                     imported.add(node.module)
 
         banned_imports = {
-            "json",
             "os",
             "pathlib",
             "subprocess",
@@ -163,7 +160,6 @@ class VNextReportProjectionBoundaryTests(unittest.TestCase):
                 "load",
                 "loads",
                 "dump",
-                "dumps",
                 "run",
                 "Popen",
                 "request",

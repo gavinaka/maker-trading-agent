@@ -11,21 +11,20 @@ from unittest.mock import patch
 from runtime.golden_methodology import get_methodology_runtime_inventory
 from runtime_vnext import gates, plan_semantics, reasoning_pipeline
 import runtime_vnext.domain_ir.registry as domain_registry_module
-from runtime_vnext.domain_ir.canonical import canonical_sha256
 from runtime_vnext.domain_ir.contract_codegen import (
     contract_is_current,
     write_materialized_contracts,
 )
-from runtime_vnext.domain_ir.legacy_v6_adapter import (
+from runtime_vnext.domain_ir.projection import (
+    deterministic_contract_sections,
     deterministic_projection_drift,
     projected_report_presentation_contract,
     projected_v6_contract,
-    report_presentation_projection_drift,
-)
-from runtime_vnext.domain_ir.projection import (
-    deterministic_contract_sections,
     reference_trigger_operator,
+    report_presentation_projection_drift,
     scenario_projection_contract_projection,
+    timeframe_display_contract_projection,
+    trigger_operator_display_projection,
 )
 from runtime_vnext.domain_ir.registry import (
     CLAIM_ACCOUNT_SCOPES,
@@ -34,14 +33,15 @@ from runtime_vnext.domain_ir.registry import (
     EVIDENCE_SOURCE_ORDER,
     MAKER_FAILURE_ORDER,
     MAKER_SEMANTIC_STATES,
+    METADATA_COMPONENT_NAMES,
     MODEL_OWNED_SEMANTIC_SURFACES,
     PIPELINE_SOURCE_UNIT_BY_NAME,
+    PRESENTATION_COMPONENT_NAMES,
     REGISTRY,
     REASONING_OBSERVATION_SOURCE_ORDER,
     SEMANTIC_COMPONENT_NAMES,
-    SEMANTIC_IDENTITY_METADATA_NAMES,
 )
-from runtime_vnext.domain_ir.types import Account, ClaimType
+from runtime_vnext.domain_ir.types import Account, ClaimType, canonical_sha256
 from runtime_vnext.methodology import load_scoring_policy
 from runtime_vnext.reasoning_submission import (
     load_reasoning_submission_contract,
@@ -104,6 +104,14 @@ class VNextDomainRegistryTests(unittest.TestCase):
         self.assertEqual(
             self.presentation_contract["scenario_projection_contract"],
             scenario_projection_contract_projection(),
+        )
+        self.assertEqual(
+            self.presentation_contract["timeframe_display_contract"],
+            timeframe_display_contract_projection(),
+        )
+        self.assertEqual(
+            self.presentation_contract["trigger_operator_display"],
+            trigger_operator_display_projection(),
         )
 
     def test_registry_closes_source_claim_account_and_scenario_identity(self) -> None:
@@ -302,31 +310,27 @@ class VNextDomainRegistryTests(unittest.TestCase):
                 ]["main"].__setitem__("long", "changed condition"),
             ),
             (
-                "semantic_condition_owner",
-                lambda payload: payload["semantic_projection_contract"].__setitem__(
-                    "scenario_condition_owner",
-                    "changed owner",
+                "timeframe_schema",
+                lambda payload: payload["timeframe_display_contract"].__setitem__(
+                    "schema_version", "timeframe-display-v0"
                 ),
             ),
             (
-                "semantic_transition_owner",
-                lambda payload: payload["semantic_projection_contract"].__setitem__(
-                    "scenario_transition_owner",
-                    "changed owner",
-                ),
+                "timeframe_label",
+                lambda payload: payload["timeframe_display_contract"][
+                    "canonical_by_code"
+                ].__setitem__("1d", "日线"),
             ),
             (
-                "semantic_free_prose_policy",
-                lambda payload: payload["semantic_projection_contract"].__setitem__(
-                    "free_scenario_prose_projectable",
-                    True,
-                ),
+                "timeframe_order",
+                lambda payload: payload["timeframe_display_contract"][
+                    "tradingview_projection_order"
+                ].reverse(),
             ),
             (
-                "execution_lifecycle_owner",
-                lambda payload: payload["semantic_projection_contract"].__setitem__(
-                    "execution_lifecycle_owner",
-                    "changed owner",
+                "operator_label",
+                lambda payload: payload["trigger_operator_display"].__setitem__(
+                    "equals_at_trigger", "changed label"
                 ),
             ),
         )
@@ -338,6 +342,34 @@ class VNextDomainRegistryTests(unittest.TestCase):
                     report_presentation_projection_drift(presentation)
                 )
                 self._assert_codegen_rejects_presentation(presentation)
+
+    def test_presentation_contract_has_no_business_owner_mirrors(self) -> None:
+        retired_keys = {
+            "appendix_semantic_ownership",
+            "maker_decision_exact_fields",
+            "maker_semantic_state_contract",
+            "fundamental_event_assessment_v1_projection",
+            "continuity_semantics",
+            "score_display_contract",
+            "semantic_projection_contract",
+            "maker_defense_projection",
+            "retry_policy",
+            "entry_reach_probability_basis_fields",
+        }
+        self.assertFalse(retired_keys & set(self.presentation_contract))
+        self.assertEqual(
+            set(self.presentation_contract["human_surface_source_of_truth"]),
+            {
+                "kind",
+                "inputs",
+                "report_sections_role",
+                "free_text_second_truth_allowed",
+            },
+        )
+        reintroduced = copy.deepcopy(self.presentation_contract)
+        reintroduced["maker_semantic_state_contract"] = {"owner": "json"}
+        self.assertTrue(report_presentation_projection_drift(reintroduced))
+        self._assert_codegen_rejects_presentation(reintroduced)
 
     def test_projection_and_semantic_validation_do_not_redeclare_registry_owners(
         self,
@@ -361,7 +393,12 @@ class VNextDomainRegistryTests(unittest.TestCase):
         assigned: set[str] = set()
         for relative in (
             "runtime_vnext/domain_ir/projection.py",
-            "runtime_vnext/semantic_validation.py",
+            "runtime_vnext/validation/common.py",
+            "runtime_vnext/validation/evidence.py",
+            "runtime_vnext/validation/reasoning.py",
+            "runtime_vnext/validation/decision.py",
+            "runtime_vnext/validation/report.py",
+            "runtime_vnext/validation/delivery.py",
         ):
             tree = ast.parse((ROOT / relative).read_text(encoding="utf-8"))
             for node in ast.walk(tree):
@@ -436,17 +473,146 @@ class VNextDomainRegistryTests(unittest.TestCase):
             }
         )
 
+    def test_schema_versions_follow_their_semantic_impact_class(
+        self,
+    ) -> None:
+        semantic_versions = REGISTRY.identity_payload()["contract_schema_versions"]
+        self.assertEqual(
+            set(semantic_versions),
+            {
+                "account_current_basis",
+                "account_trigger_logic",
+                "decision_model",
+                "evidence_polarity",
+                "maker_entry_semantics",
+                "maker_order_lifecycle",
+                "maker_semantic_state",
+                "reasoning_model",
+                "reasoning_server_projection",
+                "reasoning_submission",
+                "report_bindings",
+                "scenario_control_binding",
+                "scenario_ownership",
+                "shadow_continuity",
+            },
+        )
+        self.assertEqual(
+            set(REGISTRY.presentation_payload()["contract_schema_versions"]),
+            {
+                "blockbeats_cards",
+                "report_model",
+                "report_presentation_contract",
+                "scenario_projection",
+                "timeframe_display",
+            },
+        )
+        baseline = REGISTRY.semantic_contract_sha256
+        baseline_presentation = REGISTRY.presentation_payload()
+        semantic_change = domain_registry_module.DomainRegistry(
+            decision_model_schema_version="decision-model-semantic-test"
+        )
+        self.assertNotEqual(semantic_change.semantic_contract_sha256, baseline)
+        with patch.object(
+            domain_registry_module,
+            "REPORT_MODEL_SCHEMA_VERSION",
+            "canonical-report-model-presentation-test",
+        ):
+            self.assertEqual(REGISTRY.semantic_contract_sha256, baseline)
+            self.assertNotEqual(
+                REGISTRY.presentation_payload(),
+                baseline_presentation,
+            )
+        with patch.object(
+            domain_registry_module,
+            "SHADOW_CONTINUITY_SCHEMA_VERSION",
+            "shadow-continuity-semantic-test",
+        ):
+            self.assertNotEqual(REGISTRY.semantic_contract_sha256, baseline)
+        with patch.object(
+            domain_registry_module,
+            "REPORT_BINDINGS_SCHEMA_VERSION",
+            "report-section-bindings-semantic-test",
+        ):
+            self.assertNotEqual(REGISTRY.semantic_contract_sha256, baseline)
+            self.assertEqual(REGISTRY.presentation_payload(), baseline_presentation)
+
+    def test_registry_constant_owners_cannot_be_overridden_per_instance(self) -> None:
+        for field in (
+            "report_model_schema_version",
+            "report_bindings_schema_version",
+            "blockbeats_cards_schema_version",
+            "shadow_continuity_schema_version",
+            "scenario_ownership_schema_version",
+            "scenario_projection_schema_version",
+            "maker_semantic_state_schema_version",
+            "timeframe_display_schema_version",
+            "report_model_field_order",
+            "reasoning_model_field_order",
+            "decision_model_field_order",
+        ):
+            with self.subTest(field=field), self.assertRaises(TypeError):
+                domain_registry_module.DomainRegistry(**{field: "override"})
+
+    def test_runtime_field_order_properties_follow_their_single_registry_owner(
+        self,
+    ) -> None:
+        baseline_semantic = REGISTRY.semantic_contract_sha256
+        baseline_presentation = REGISTRY.presentation_payload()
+
+        changed_report = (*domain_registry_module.REPORT_MODEL_FIELD_ORDER, "probe")
+        with patch.object(
+            domain_registry_module,
+            "REPORT_MODEL_FIELD_ORDER",
+            changed_report,
+        ):
+            self.assertEqual(REGISTRY.report_model_field_order, changed_report)
+            self.assertEqual(REGISTRY.semantic_contract_sha256, baseline_semantic)
+            self.assertNotEqual(REGISTRY.presentation_payload(), baseline_presentation)
+
+        for constant_name, property_name in (
+            ("TOP_LEVEL_FIELD_ORDER", "reasoning_model_field_order"),
+            ("DECISION_MODEL_FIELD_ORDER", "decision_model_field_order"),
+        ):
+            original = getattr(domain_registry_module, constant_name)
+            changed = (*original, "probe")
+            with self.subTest(owner=constant_name), patch.object(
+                domain_registry_module,
+                constant_name,
+                changed,
+            ):
+                self.assertEqual(getattr(REGISTRY, property_name), changed)
+                self.assertNotEqual(REGISTRY.semantic_contract_sha256, baseline_semantic)
+
     def test_every_public_registry_owner_is_classified_and_identity_bound(self) -> None:
         public_constants = {
             name for name in vars(domain_registry_module) if name.isupper()
         }
-        classified = set(SEMANTIC_COMPONENT_NAMES) | set(
-            SEMANTIC_IDENTITY_METADATA_NAMES
+        classes = (
+            set(SEMANTIC_COMPONENT_NAMES),
+            set(PRESENTATION_COMPONENT_NAMES),
+            set(METADATA_COMPONENT_NAMES),
         )
+        self.assertFalse(classes[0] & classes[1])
+        self.assertFalse(classes[0] & classes[2])
+        self.assertFalse(classes[1] & classes[2])
+        classified = set().union(*classes)
         self.assertEqual(public_constants, classified)
         self.assertEqual(
             set(REGISTRY.identity_payload()["semantic_components"]),
             set(SEMANTIC_COMPONENT_NAMES),
+        )
+        self.assertEqual(
+            set(REGISTRY.presentation_payload()["presentation_components"]),
+            set(PRESENTATION_COMPONENT_NAMES),
+        )
+        self.assertEqual(
+            set(METADATA_COMPONENT_NAMES),
+            {
+                "REGISTRY",
+                "SEMANTIC_COMPONENT_NAMES",
+                "PRESENTATION_COMPONENT_NAMES",
+                "METADATA_COMPONENT_NAMES",
+            },
         )
         enum_vocabularies = REGISTRY.identity_payload()["semantic_components"][
             "DOMAIN_ENUM_VOCABULARIES"
@@ -456,7 +622,7 @@ class VNextDomainRegistryTests(unittest.TestCase):
             ["left", "right", "not_applicable"],
         )
 
-    def test_report_binding_topology_is_registry_owned_and_semantic_hash_bound(
+    def test_report_binding_topology_is_registry_owned_semantic_authority(
         self,
     ) -> None:
         expected = (
@@ -474,6 +640,7 @@ class VNextDomainRegistryTests(unittest.TestCase):
         )
 
         original_sha256 = REGISTRY.semantic_contract_sha256
+        original_presentation = REGISTRY.presentation_payload()
         changed = expected[:-1] + (("audit", ("audit", "changed")),)
         with patch.object(
             domain_registry_module,
@@ -488,24 +655,52 @@ class VNextDomainRegistryTests(unittest.TestCase):
                 REGISTRY.semantic_contract_sha256,
                 original_sha256,
             )
+            self.assertEqual(REGISTRY.presentation_payload(), original_presentation)
 
-    def test_lifecycle_and_scenario_projection_owners_are_semantic_hash_bound(
+    def test_report_traceability_and_safety_owners_are_semantic_hash_bound(
         self,
     ) -> None:
-        owner_names = (
+        semantic_components = REGISTRY.identity_payload()["semantic_components"]
+        original_sha256 = REGISTRY.semantic_contract_sha256
+        for name in (
+            "REPORT_SECTIONS",
+            "NON_ACTION_REPORT_SECTIONS",
+            "NON_TRACEABLE_REPORT_SECTIONS",
+            "SECTION_REQUIRED_CLAIM_TYPES",
+        ):
+            with self.subTest(owner=name):
+                value = getattr(domain_registry_module, name)
+                self.assertIn(name, semantic_components)
+                changed = copy.deepcopy(value)
+                if isinstance(changed, dict):
+                    changed["__identity_probe__"] = frozenset({"cannot_do"})
+                else:
+                    changed = frozenset({*changed, "__identity_probe__"})
+                with patch.object(domain_registry_module, name, changed):
+                    self.assertNotEqual(
+                        REGISTRY.semantic_contract_sha256,
+                        original_sha256,
+                    )
+
+    def test_lifecycle_and_scenario_owners_have_exact_identity_classes(
+        self,
+    ) -> None:
+        semantic_owner_names = (
             "ORDER_LIFECYCLE_PATH_FLAGS",
-            "ORDER_LIFECYCLE_DISPLAY_BY_STATE",
             "SCENARIO_CONDITION_OWNER_BY_TYPE",
-            "SCENARIO_CANONICAL_AUDIT_FIELD_ORDER",
-            "SCENARIO_BASE_CONDITION_BY_ACCOUNT_DIRECTION",
-            "SCENARIO_VISIBLE_PROJECTION_BY_ACCOUNT_AND_TRANSITION_CODE",
             "SCENARIO_EXECUTION_LIFECYCLE_OWNER",
             "SCENARIO_FREE_PROSE_PROJECTABLE",
             "SCENARIO_TRANSITION_OWNER",
         )
+        presentation_owner_names = (
+            "ORDER_LIFECYCLE_DISPLAY_BY_STATE",
+            "SCENARIO_CANONICAL_AUDIT_FIELD_ORDER",
+            "SCENARIO_BASE_CONDITION_BY_ACCOUNT_DIRECTION",
+            "SCENARIO_VISIBLE_PROJECTION_BY_ACCOUNT_AND_TRANSITION_CODE",
+        )
         semantic_components = REGISTRY.identity_payload()["semantic_components"]
         original_sha256 = REGISTRY.semantic_contract_sha256
-        for name in owner_names:
+        for name in semantic_owner_names:
             with self.subTest(owner=name):
                 value = getattr(domain_registry_module, name)
                 expected_json = json.loads(
@@ -524,8 +719,36 @@ class VNextDomainRegistryTests(unittest.TestCase):
                         REGISTRY.semantic_contract_sha256,
                         original_sha256,
                     )
+        presentation_components = REGISTRY.presentation_payload()[
+            "presentation_components"
+        ]
+        for name in presentation_owner_names:
+            with self.subTest(owner=name):
+                value = getattr(domain_registry_module, name)
+                expected_json = json.loads(
+                    json.dumps(value, ensure_ascii=False, sort_keys=True)
+                )
+                self.assertEqual(presentation_components[name], expected_json)
+                if isinstance(value, dict):
+                    changed = copy.deepcopy(value)
+                    changed["__identity_probe__"] = "展示变化"
+                elif isinstance(value, tuple):
+                    changed = (*value, "__identity_probe__")
+                else:
+                    changed = f"{value}__identity_probe__"
+                with patch.object(domain_registry_module, name, changed):
+                    self.assertEqual(
+                        REGISTRY.semantic_contract_sha256,
+                        original_sha256,
+                    )
+                    self.assertNotEqual(
+                        REGISTRY.presentation_payload()["presentation_components"][
+                            name
+                        ],
+                        expected_json,
+                    )
 
-    def test_scenario_condition_summary_is_derived_from_per_type_owner_map(
+    def test_scenario_condition_projection_is_derived_from_per_type_owner_map(
         self,
     ) -> None:
         changed = copy.deepcopy(
@@ -541,10 +764,10 @@ class VNextDomainRegistryTests(unittest.TestCase):
                 self.presentation_contract
             )
             self.assertEqual(
-                projected["semantic_projection_contract"][
-                    "scenario_condition_owner"
-                ],
-                "bound_owner_claim.revised_typed_state_or_trigger_logic",
+                projected["scenario_projection_contract"][
+                    "condition_owner_by_type"
+                ]["base"],
+                "bound_owner_claim.revised_typed_state",
             )
             self.assertTrue(
                 report_presentation_projection_drift(self.presentation_contract)

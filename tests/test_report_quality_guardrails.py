@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import mock_open, patch
 
 from outputs import report_lint
+from runtime_vnext.domain_ir.registry import REGISTRY
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +36,62 @@ class ReportQualityGuardrailTests(unittest.TestCase):
         return report_lint.load_timeframe_display_pattern(
             ROOT / "governance" / "vnext_report_presentation_contract.json"
         )
+
+    def test_linter_consumes_registry_presentation_version_owner(self):
+        contract = json.loads(
+            (ROOT / "governance" / "vnext_report_presentation_contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            contract["schema_version"],
+            REGISTRY.report_presentation_contract_schema_version,
+        )
+        source = (ROOT / "outputs" / "report_lint.py").read_text(encoding="utf-8")
+        self.assertNotIn("vnext-report-presentation-contract-v11", source)
+        self.assertNotIn("vnext-report-presentation-contract-v12", source)
+        self.assertIn("REGISTRY.report_presentation_contract_schema_version", source)
+
+    def test_in_memory_lint_keeps_non_structural_hard_checks(self):
+        result = report_lint.lint_report_text(
+            "Exit code: 0\n",
+            report_filename="report.md",
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["exit_code"], 1)
+        self.assertIn(
+            "report.lint.tool_wrapper",
+            {item["code"] for item in result["defects"]},
+        )
+        self.assertFalse(
+            any(item["code"].startswith("report.lint.structure") for item in result["defects"])
+        )
+
+    def test_cli_and_in_memory_api_share_the_complete_collector(self):
+        text = "Exit code: 0\n"
+        original_collector = report_lint._collect_lint_findings
+        with patch.object(
+            report_lint,
+            "_collect_lint_findings",
+            wraps=original_collector,
+        ) as collector:
+            api_result = report_lint.lint_report_text(
+                text,
+                report_filename="report.md",
+            )
+            with patch("builtins.open", mock_open(read_data=text)), patch.object(
+                report_lint.sys,
+                "stdout",
+                io.StringIO(),
+            ):
+                with self.assertRaisesRegex(SystemExit, "1"):
+                    report_lint.main(["report.md"])
+
+        self.assertFalse(api_result["passed"])
+        self.assertEqual(collector.call_count, 2)
+        for call in collector.call_args_list:
+            self.assertEqual(call.args[:2], (["Exit code: 0"], "report.md"))
 
     def test_vnext_liquidity_timeframe_matrix_accepts_only_canonical_labels(self):
         pattern = self.strict_timeframe_pattern()

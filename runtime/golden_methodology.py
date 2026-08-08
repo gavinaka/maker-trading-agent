@@ -211,37 +211,9 @@ def _validate_methodology_leaf_ownership(
         raise ValueError("methodology leaf ownership count is invalid")
 
 
-def get_methodology_runtime_inventory(
-    *,
-    policy: dict[str, Any],
-    profile: str = "vnext_submission",
-) -> dict[str, Any]:
-    """Return the golden evaluator's exact producer-input inventory.
+def _methodology_object_inventory() -> dict[str, Any]:
 
-    ``normalize_methodology`` remains the frozen legacy fail-fast entry point.
-    This inventory describes the narrower raw producer shape used by vNext,
-    including the explicit account overlay on methodology scenarios.  Derived
-    normalizer output fields are recorded separately and are never exposed as
-    model-writable input.
-    """
-
-    if profile != "vnext_submission":
-        raise ValueError(f"unsupported methodology inventory profile: {profile}")
-    event_policy = policy.get("fundamental_event_assessment_policy")
-    if not isinstance(event_policy, dict):
-        raise ValueError("fundamental_event_assessment_policy must be an object")
-    event_field = str(event_policy.get("methodology_field") or "")
-    event_fields = event_policy.get("required_item_fields")
-    if not event_field or not isinstance(event_fields, list) or not event_fields:
-        raise ValueError(
-            "fundamental event assessment runtime inventory is incomplete"
-        )
-    if len(event_fields) != len(set(str(item) for item in event_fields)):
-        raise ValueError(
-            "fundamental event assessment runtime inventory contains duplicate fields"
-        )
-
-    objects: dict[str, Any] = {
+    return {
         "independent_synthesis": {
             "field_order": [
                 "market_stage_claim_id",
@@ -405,7 +377,19 @@ def get_methodology_runtime_inventory(
             "string_array_fields": {"basis_claim_ids": {"min_items": 3}},
         },
     }
-    arrays: dict[str, Any] = {
+
+def _methodology_array_inventory(
+    *, event_field: str, event_fields: list[Any], event_policy: dict[str, Any]
+) -> dict[str, Any]:
+    from runtime_vnext.domain_ir.registry import (
+        METHODOLOGY_SCENARIO_FIELD_ORDER,
+        SCENARIO_ACCOUNT_ORDER,
+        SCENARIO_TRANSITION_CODES,
+        SCENARIO_TYPE_ORDER,
+    )
+
+    scenario_count = len(SCENARIO_ACCOUNT_ORDER) * len(SCENARIO_TYPE_ORDER)
+    return {
         event_field: {
             "min_items": 3,
             "max_items": 3,
@@ -445,51 +429,29 @@ def get_methodology_runtime_inventory(
             },
         },
         "scenario_tree": {
-            "min_items": 6,
-            "max_items": 6,
+            "min_items": scenario_count,
+            "max_items": scenario_count,
             "item": {
-                "field_order": [
-                    "account",
-                    "kind",
-                    "claim_id",
-                    "trigger_claim_ids",
-                    "action",
-                ],
+                "field_order": list(METHODOLOGY_SCENARIO_FIELD_ORDER),
                 "string_fields": ["claim_id"],
                 "string_array_fields": {
                     "trigger_claim_ids": {"min_items": 1}
                 },
                 "enum_fields": {
-                    "account": {"values": ["main", "maker"]},
-                    "kind": {
-                        "values": ["base", "counter", "invalidation"]
-                    },
-                    "action": {
-                        "values": [
-                            "retain_certified_assessment",
-                            "reassess_on_typed_counter",
-                            "invalidate_and_recollect_evidence",
-                        ]
-                    },
+                    "account": {"values": list(SCENARIO_ACCOUNT_ORDER)},
+                    "kind": {"values": list(SCENARIO_TYPE_ORDER)},
+                    "action": {"values": list(SCENARIO_TRANSITION_CODES.values())},
                 },
                 "exact_account_kind_matrix": True,
             },
         },
     }
-    field_order = [
-        "independent_synthesis",
-        "fundamental_price_realization",
-        event_field,
-        "same_pivot_orderflow",
-        "footprint_cross_check",
-        "multi_timeframe_transition",
-        "volume_profile_liquidity",
-        "etf_flow_relation",
-        "account_separation",
-        "scenario_tree",
-        "cannot_do_derivation",
-    ]
-    leaf_ownership = {
+
+def _methodology_leaf_ownership_inventory(
+    *, event_field: str, event_policy: dict[str, Any]
+) -> dict[str, Any]:
+
+    return {
         "schema_version": "methodology-leaf-ownership-v1",
         "server_owned_subtrees": [
             "methodology.account_separation",
@@ -665,6 +627,59 @@ def get_methodology_runtime_inventory(
         "unclassified_leaf_policy": "preflight_hard_stop",
         "leaf_count": 54,
     }
+
+def get_methodology_runtime_inventory(
+    *,
+    policy: dict[str, Any],
+    profile: str = "vnext_submission",
+) -> dict[str, Any]:
+    """Return the golden evaluator's exact producer-input inventory.
+
+    ``normalize_methodology`` remains the frozen legacy fail-fast entry point.
+    This inventory describes the narrower raw producer shape used by vNext,
+    including the explicit account overlay on methodology scenarios.  Derived
+    normalizer output fields are recorded separately and are never exposed as
+    model-writable input.
+    """
+
+    if profile != "vnext_submission":
+        raise ValueError(f"unsupported methodology inventory profile: {profile}")
+    event_policy = policy.get("fundamental_event_assessment_policy")
+    if not isinstance(event_policy, dict):
+        raise ValueError("fundamental_event_assessment_policy must be an object")
+    event_field = str(event_policy.get("methodology_field") or "")
+    event_fields = event_policy.get("required_item_fields")
+    if not event_field or not isinstance(event_fields, list) or not event_fields:
+        raise ValueError(
+            "fundamental event assessment runtime inventory is incomplete"
+        )
+    if len(event_fields) != len(set(str(item) for item in event_fields)):
+        raise ValueError(
+            "fundamental event assessment runtime inventory contains duplicate fields"
+        )
+    objects = _methodology_object_inventory()
+    arrays = _methodology_array_inventory(
+        event_field=event_field,
+        event_fields=event_fields,
+        event_policy=event_policy,
+    )
+    field_order = [
+        "independent_synthesis",
+        "fundamental_price_realization",
+        event_field,
+        "same_pivot_orderflow",
+        "footprint_cross_check",
+        "multi_timeframe_transition",
+        "volume_profile_liquidity",
+        "etf_flow_relation",
+        "account_separation",
+        "scenario_tree",
+        "cannot_do_derivation",
+    ]
+    leaf_ownership = _methodology_leaf_ownership_inventory(
+        event_field=event_field,
+        event_policy=event_policy,
+    )
     _validate_methodology_leaf_ownership(
         leaf_ownership,
         objects=objects,
@@ -727,7 +742,7 @@ def get_methodology_runtime_inventory(
             "legacy_minimum_scenario_count": int(
                 policy.get("minimum_scenario_count") or 0
             ),
-            "vnext_scenario_count": 6,
+            "vnext_scenario_count": arrays["scenario_tree"]["min_items"],
         },
     }
 
@@ -1259,13 +1274,11 @@ def _only_source_observation(
     return matches[0]
 
 
-def normalize_methodology(
+def _normalize_methodology_foundation(
     payload: Any,
     observations: dict[str, dict[str, Any]],
     claims: dict[str, dict[str, Any]],
     policy: dict[str, Any],
-    *,
-    profile_policy: dict[str, Any],
 ) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("methodology must be an object")
@@ -1598,6 +1611,38 @@ def normalize_methodology(
                 f"{item_path}.boundary_code",
             ),
         }
+    return {
+        "blockbeats_tier": blockbeats_tier,
+        "claim_ids": claim_ids,
+        "event_field": event_field,
+        "farside_date": farside_date,
+        "farside_direction": farside_direction,
+        "farside_total": farside_total,
+        "fed_as_of": fed_as_of,
+        "fed_changes": fed_changes,
+        "fed_current": fed_current,
+        "next_fomc_date": next_fomc_date,
+        "normalized_events_by_hash": normalized_events_by_hash,
+        "normalized_realization": normalized_realization,
+        "normalized_source_roles": normalized_source_roles,
+        "normalized_synthesis": normalized_synthesis,
+        "selected_event_hashes": selected_event_hashes,
+    }
+
+
+def _normalize_methodology_technical(
+    payload: Any,
+    observations: dict[str, dict[str, Any]],
+    claims: dict[str, dict[str, Any]],
+    policy: dict[str, Any],
+    *,
+    profile_policy: dict[str, Any],
+    foundation: dict[str, Any],
+) -> dict[str, Any]:
+    event_field = foundation["event_field"]
+    normalized_events_by_hash = foundation["normalized_events_by_hash"]
+    normalized_synthesis = foundation["normalized_synthesis"]
+    selected_event_hashes = foundation["selected_event_hashes"]
     if set(normalized_events_by_hash) != set(selected_event_hashes):
         raise ValueError(
             f"methodology.{event_field} must cover every sealed BlockBeats top3 hash exactly once"
@@ -1931,6 +1976,60 @@ def normalize_methodology(
                 f"liquidation level {index}.strength",
             ),
         })
+    return {
+        "clean_timeframes": clean_timeframes,
+        "current_price": current_price,
+        "levels": levels,
+        "liquidation_observation": liquidation_observation,
+        "liquidity": liquidity,
+        "normalized_event_assessments": normalized_event_assessments,
+        "normalized_footprint": normalized_footprint,
+        "normalized_levels": normalized_levels,
+        "normalized_multi": normalized_multi,
+        "normalized_pivot": normalized_pivot,
+        "normalized_profile": normalized_profile,
+        "price_direction": price_direction,
+        "threshold": threshold,
+        "tradingview": tradingview,
+    }
+
+
+def _normalize_methodology_closure(
+    payload: Any,
+    observations: dict[str, dict[str, Any]],
+    claims: dict[str, dict[str, Any]],
+    policy: dict[str, Any],
+    *,
+    foundation: dict[str, Any],
+    technical: dict[str, Any],
+) -> dict[str, Any]:
+    blockbeats_tier = foundation["blockbeats_tier"]
+    claim_ids = foundation["claim_ids"]
+    farside_date = foundation["farside_date"]
+    farside_direction = foundation["farside_direction"]
+    farside_total = foundation["farside_total"]
+    fed_as_of = foundation["fed_as_of"]
+    fed_changes = foundation["fed_changes"]
+    fed_current = foundation["fed_current"]
+    next_fomc_date = foundation["next_fomc_date"]
+    normalized_realization = foundation["normalized_realization"]
+    normalized_source_roles = foundation["normalized_source_roles"]
+    normalized_synthesis = foundation["normalized_synthesis"]
+    clean_timeframes = technical["clean_timeframes"]
+    current_price = technical["current_price"]
+    levels = technical["levels"]
+    liquidation_observation = technical["liquidation_observation"]
+    liquidity = technical["liquidity"]
+    normalized_event_assessments = technical["normalized_event_assessments"]
+    normalized_footprint = technical["normalized_footprint"]
+    normalized_levels = technical["normalized_levels"]
+    normalized_multi = technical["normalized_multi"]
+    normalized_pivot = technical["normalized_pivot"]
+    normalized_profile = technical["normalized_profile"]
+    price_direction = technical["price_direction"]
+    threshold = technical["threshold"]
+    tradingview = technical["tradingview"]
+
     if liquidity.get("user_drawn_profile_primary") is not True:
         raise ValueError("user-drawn manual profile must remain the primary liquidity-hunt method")
     if liquidity.get("liquidation_auxiliary") is not True:
@@ -2202,6 +2301,35 @@ def normalize_methodology(
         "scenario_tree": normalized_scenarios,
         "cannot_do_derivation": normalized_cannot,
     }
+
+
+def normalize_methodology(
+    payload: Any,
+    observations: dict[str, dict[str, Any]],
+    claims: dict[str, dict[str, Any]],
+    policy: dict[str, Any],
+    *,
+    profile_policy: dict[str, Any],
+) -> dict[str, Any]:
+    foundation = _normalize_methodology_foundation(
+        payload, observations, claims, policy
+    )
+    technical = _normalize_methodology_technical(
+        payload,
+        observations,
+        claims,
+        policy,
+        profile_policy=profile_policy,
+        foundation=foundation,
+    )
+    return _normalize_methodology_closure(
+        payload,
+        observations,
+        claims,
+        policy,
+        foundation=foundation,
+        technical=technical,
+    )
 
 
 def _methodology_issue_path(message: str, fallback: str) -> str:

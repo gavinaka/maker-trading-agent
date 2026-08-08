@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import copy
 import json
 import re
@@ -11,18 +12,28 @@ from pathlib import Path
 
 import runtime.reasoning_contract as legacy_reasoning_contract
 import runtime_vnext.gates as vnext_gates
+import runtime_vnext.validation.reasoning as reasoning_validation
 import runtime_vnext.report_compiler as vnext_report_compiler
 from runtime_vnext.golden_samples import semantic_invariants
 from runtime_vnext.delivery_renderer import WORD_QA_REVIEW_CHECKLIST_KEYS
 from runtime_vnext.domain_ir.projection import (
+    projected_report_presentation_contract,
+    report_presentation_projection_drift,
     report_presentation_contract_registry_views,
     scenario_control_binding_projection,
+    scenario_projection_contract_projection,
+    timeframe_display_contract_projection,
+    trigger_operator_display_projection,
 )
 from runtime_vnext.domain_ir.registry import DomainRegistry
 from runtime_vnext.methodology import (
     CONTROL_PLANE_FILES,
+    PHASE_AUTHORITY_CLASS,
     PHASE_FILES,
+    PHASE_SEMANTIC_FILES,
     SEMANTIC_CONTRACT_SCHEMA,
+    SEMANTIC_RUNTIME_FILES,
+    V3_RUN_AUTHORITY_FIELDS,
     build_methodology_manifest,
     canonical_sha256,
     discover_control_plane_files,
@@ -58,8 +69,123 @@ def _methodology_leaf_paths(contract: dict) -> set[str]:
     return paths
 
 
+def _rehash_semantic_contract(manifest: dict) -> None:
+    manifest["semantic_contract_sha256"] = canonical_sha256(
+        {
+            "schema_version": SEMANTIC_CONTRACT_SCHEMA,
+            "domain_registry_sha256": manifest["domain_registry_sha256"],
+            "phase_semantic_sha256": {
+                name: value["semantic_phase_sha256"]
+                for name, value in sorted(manifest["phases"].items())
+            },
+            "semantic_runtime_sha256": manifest["semantic_runtime"][
+                "semantic_runtime_sha256"
+            ],
+        }
+    )
+
+
 class VNextAuthorityCoherenceTests(unittest.TestCase):
     """Maintenance-time coherence checks, never an additional production gate."""
+
+    def test_convergence_architecture_budgets_are_frozen(self) -> None:
+        """Freeze maintainability budgets; these are not production business gates."""
+
+        validation_budgets = {
+            "common.py": 700,
+            "evidence.py": 2200,
+            "reasoning.py": 4600,
+            "decision.py": 4200,
+            "report.py": 2200,
+            "delivery.py": 800,
+        }
+        validation_paths = [
+            ROOT / "runtime_vnext" / "validation" / name
+            for name in validation_budgets
+        ]
+        domain_paths = sorted((ROOT / "runtime_vnext" / "domain_ir").glob("*.py"))
+        self.assertEqual(
+            [path.name for path in domain_paths],
+            ["__init__.py", "contract_codegen.py", "projection.py", "registry.py", "types.py"],
+        )
+
+        def line_count(path: Path) -> int:
+            return len(path.read_text(encoding="utf-8").splitlines())
+
+        gates_path = ROOT / "runtime_vnext" / "gates.py"
+        compiler_path = ROOT / "runtime_vnext" / "report_compiler.py"
+        submission_path = ROOT / "runtime_vnext" / "reasoning_submission.py"
+        self.assertLessEqual(line_count(gates_path), 300)
+        for path in validation_paths:
+            self.assertLessEqual(line_count(path), validation_budgets[path.name])
+        self.assertLessEqual(sum(map(line_count, validation_paths)), 12000)
+        self.assertLessEqual(sum(map(line_count, domain_paths)), 2700)
+        self.assertLessEqual(line_count(compiler_path), 1500)
+        self.assertLessEqual(line_count(submission_path), 1300)
+
+        scoped_paths = [
+            gates_path,
+            *validation_paths,
+            *domain_paths,
+            compiler_path,
+            submission_path,
+        ]
+        self.assertLessEqual(sum(map(line_count, scoped_paths)), 18000)
+        function_budget_paths = [
+            *scoped_paths,
+            ROOT / "runtime" / "golden_methodology.py",
+        ]
+        for path in function_budget_paths:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    self.assertLessEqual(
+                        int(node.end_lineno or node.lineno) - node.lineno + 1,
+                        400,
+                        f"{path.relative_to(ROOT)}:{node.lineno} {node.name}",
+                    )
+
+        forbidden_files = (
+            "runtime_vnext/semantic_validation.py",
+            "runtime_vnext/domain_ir/canonical.py",
+            "runtime_vnext/domain_ir/legacy_v6_adapter.py",
+            "runtime_vnext/domain_ir/report_projection.py",
+            "runtime_vnext/domain_ir/report_types.py",
+        )
+        for relative in forbidden_files:
+            self.assertFalse((ROOT / relative).exists(), relative)
+        forbidden_modules = {
+            "semantic_validation",
+            "runtime_vnext.semantic_validation",
+            "domain_ir.canonical",
+            "runtime_vnext.domain_ir.canonical",
+            "domain_ir.legacy_v6_adapter",
+            "runtime_vnext.domain_ir.legacy_v6_adapter",
+            "domain_ir.report_projection",
+            "runtime_vnext.domain_ir.report_projection",
+            "domain_ir.report_types",
+            "runtime_vnext.domain_ir.report_types",
+        }
+        for path in (ROOT / "runtime_vnext").rglob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            imported = {
+                alias.name
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Import)
+                for alias in node.names
+            }
+            imported.update(
+                str(node.module)
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.module
+            )
+            imported.update(
+                f"{node.module}.{alias.name}"
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.module
+                for alias in node.names
+            )
+            self.assertFalse(imported & forbidden_modules, str(path.relative_to(ROOT)))
 
     def test_domain_qualified_visible_enum_contract_keeps_legacy_boundary(
         self,
@@ -132,56 +258,16 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
         )
         self.assertEqual(
             contract["schema_version"],
-            "vnext-report-presentation-contract-v11",
+            "vnext-report-presentation-contract-v12",
         )
         self.assertEqual(
             tuple(contract["word_visual_qa"]["required_review_checklist"]),
             WORD_QA_REVIEW_CHECKLIST_KEYS,
         )
-        semantic = contract["semantic_projection_contract"]
-        for key in (
-            "secondary_signal_disposition_reason_must_be_visible",
-            "all_constructibility_failures_must_be_visible_in_authority_order",
-            "all_non_execution_reasons_must_be_visible",
-            "rejected_candidate_risk_values_must_be_visible_when_recalculable",
-            "rejected_candidate_unrecalculable_reason_must_be_visible",
-            "rejected_candidate_parameters_forbidden_in_maker_frontstage",
-            "rejected_candidate_audit_requires_non_executable_disclosure",
-            "non_applicable_entry_reach_probability_must_render_as_na",
-            "numeric_zero_must_not_render_as_na_when_applicable",
-            "actual_fill_probability_must_remain_null",
-        ):
-            self.assertIs(semantic[key], True)
-        self.assertFalse(
-            semantic[
-                "coinglass_observation_may_own_liquidation_confirmation_result"
-            ]
-        )
         self.assertEqual(
-            semantic["liquidation_confirmation_owner"],
-            "claims.liquidation_confirmation.confirmation_result",
+            contract["trigger_operator_display"],
+            trigger_operator_display_projection(),
         )
-        self.assertEqual(
-            semantic["equals_at_trigger_projection"], "触发时必须为"
-        )
-        self.assertEqual(
-            semantic["one_of_at_trigger_projection"], "触发时必须属于"
-        )
-        probability_fields = contract["entry_reach_probability_basis_fields"]
-        self.assertEqual(probability_fields["reference_source"], "TradingView")
-        self.assertEqual(probability_fields["reference_timeframe"], "1h")
-        self.assertEqual(
-            set(probability_fields["required"]),
-            {
-                "applicability",
-                "reference_price",
-                "reference_entry",
-                "entry_distance",
-                "reach_direction",
-                "claim_ids",
-            },
-        )
-        self.assertNotIn("rationale", probability_fields["required"])
         self.assertIs(
             contract["word_visual_qa"][
                 "rejected_candidate_audit_uses_neutral_styling"
@@ -199,9 +285,8 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
         contract = json.loads(
             _read("governance/vnext_report_presentation_contract.json")
         )
-        display = vnext_report_compiler._validated_timeframe_display_contract(
-            contract
-        )
+        display = contract["timeframe_display_contract"]
+        self.assertEqual(display, timeframe_display_contract_projection())
         policy = load_scoring_policy()
         gold = policy["gold_methodology"]
         tradingview_codes = set(gold["timeframes"])
@@ -266,53 +351,48 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
 
         for mutated in mutations:
             with self.subTest(mutated=mutated):
-                with self.assertRaises(ValueError):
-                    vnext_report_compiler._validated_timeframe_display_contract(
-                        mutated
-                    )
+                self.assertTrue(report_presentation_projection_drift(mutated))
 
-    def test_a5r2c_projection_authority_closes_control_event_and_maker_state(self):
+    def test_presentation_contract_excludes_business_owners_and_keeps_views(self):
         contract = json.loads(
             _read("governance/vnext_report_presentation_contract.json")
         )
-        semantic = contract["semantic_projection_contract"]
-        self.assertTrue(semantic["typed_account_control_is_sole_load_bearing_owner"])
-        self.assertEqual(
-            semantic["free_control_conclusion_or_invalidation_role"],
-            "upstream_audit_only",
-        )
-        self.assertFalse(
-            semantic["free_control_conclusion_or_invalidation_projectable"]
-        )
-        self.assertFalse(
-            semantic[
-                "free_control_conclusion_or_invalidation_allowed_in_reasoning_proof"
-            ]
-        )
-        self.assertFalse(
-            semantic[
-                "free_control_conclusion_or_invalidation_allowed_in_scenario_condition"
-            ]
-        )
-        self.assertEqual(
-            semantic["maker_summary_and_execution_frontstage_owner"],
-            "audit.maker_execution",
-        )
-        self.assertEqual(
-            semantic["main_authorization_owner"],
-            "audit.main_plan.plan_state",
-        )
+        self.assertEqual(projected_report_presentation_contract(contract), contract)
+        retired = {
+            "appendix_semantic_ownership",
+            "maker_decision_exact_fields",
+            "maker_semantic_state_contract",
+            "fundamental_event_assessment_v1_projection",
+            "continuity_semantics",
+            "score_display_contract",
+            "semantic_projection_contract",
+            "maker_defense_projection",
+            "retry_policy",
+            "entry_reach_probability_basis_fields",
+        }
+        self.assertFalse(retired & set(contract))
         registry_views = report_presentation_contract_registry_views()
-        for field in (
-            "scenario_condition_owner",
-            "scenario_transition_owner",
-            "free_scenario_prose_projectable",
-            "execution_lifecycle_owner",
-        ):
-            self.assertEqual(
-                semantic[field],
-                registry_views[("semantic_projection_contract", field)],
-            )
+        self.assertEqual(
+            set(registry_views),
+            {
+                ("schema_version",),
+                ("scenario_projection_contract",),
+                ("timeframe_display_contract",),
+                ("trigger_operator_display",),
+            },
+        )
+        self.assertEqual(
+            contract["scenario_projection_contract"],
+            scenario_projection_contract_projection(),
+        )
+        self.assertEqual(
+            contract["timeframe_display_contract"],
+            timeframe_display_contract_projection(),
+        )
+        self.assertEqual(
+            contract["trigger_operator_display"],
+            trigger_operator_display_projection(),
+        )
         self.assertEqual(
             set(contract["maker_execution_fields"]),
             {
@@ -334,59 +414,6 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
             },
         )
 
-        maker_state = contract["maker_semantic_state_contract"]
-        self.assertEqual(maker_state["schema_version"], "maker-semantic-state-v1")
-        self.assertEqual(
-            maker_state["candidate_submission_owner"],
-            "maker.risk_plan_nonempty",
-        )
-        self.assertEqual(
-            maker_state["exclusive_states"],
-            [
-                "qualified_candidate",
-                "rejected_submitted_candidate",
-                "directional_thesis_only",
-                "non_directional_observation",
-            ],
-        )
-        self.assertEqual(
-            maker_state["rejected_submitted_candidate"]["plan_constructible"],
-            [True, False],
-        )
-        for state in ("directional_thesis_only", "non_directional_observation"):
-            self.assertFalse(
-                maker_state[state]["candidate_or_rejected_candidate_label_allowed"]
-            )
-            self.assertTrue(
-                maker_state[state]["explicit_absence_disclosure_required"]
-            )
-
-        event_v1 = contract["fundamental_event_assessment_v1_projection"]
-        self.assertEqual(
-            event_v1["role"],
-            "observation_only_no_event_aligned_price_attribution",
-        )
-        self.assertFalse(event_v1["load_bearing_allowed"])
-        self.assertEqual(
-            event_v1["observation_only_reason_code"],
-            "event_price_attribution_unavailable",
-        )
-        self.assertEqual(
-            event_v1["forbidden_load_bearing_uses"],
-            [
-                "winrate_adjustment",
-                "account_current_basis",
-                "account_trigger_logic",
-            ],
-        )
-        self.assertTrue(event_v1["price_attribution_basis_required_to_reenable"])
-        self.assertEqual(event_v1["secondary_signal"], "fundamental_price_realization")
-        self.assertEqual(event_v1["required_disposition"], "no_adjustment")
-        self.assertEqual(
-            event_v1["required_no_adjustment_reason_code"],
-            "event_price_attribution_unavailable",
-        )
-
         authority_docs = (
             "governance/vnext_daily_workflow.md",
             "governance/vnext_report_language_contract.md",
@@ -406,7 +433,11 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
         policy["gold_methodology"]["account_current_basis"][
             "claim_source_requirements"
         ] = {}
-        with patch.object(vnext_gates, "load_scoring_policy", return_value=policy):
+        with patch.object(
+            reasoning_validation,
+            "load_scoring_policy",
+            return_value=policy,
+        ):
             with self.assertRaisesRegex(
                 ValueError, "account_current_basis policy has an invalid field set"
             ):
@@ -496,7 +527,65 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
             "governance/vnext_report_presentation_contract.json",
             PHASE_FILES["reasoning"],
         )
+        self.assertEqual(
+            PHASE_AUTHORITY_CLASS,
+            {
+                "evidence": "semantic",
+                "reasoning": "semantic",
+                "report": "mixed",
+            },
+        )
         manifest = build_methodology_manifest(root=ROOT)
+        for phase in ("evidence", "reasoning", "report"):
+            self.assertEqual(
+                [item["path"] for item in manifest["phases"][phase]["semantic_files"]],
+                list(PHASE_SEMANTIC_FILES[phase]),
+            )
+        self.assertEqual(
+            PHASE_SEMANTIC_FILES["report"],
+            (
+                "governance/vnext_golden_sample_contract.json",
+                "governance/vnext_report_language_contract.md",
+            ),
+        )
+        self.assertNotIn(
+            "governance/vnext_report_presentation_contract.json",
+            PHASE_SEMANTIC_FILES["report"],
+        )
+        semantic_runtime_paths = tuple(
+            item["path"] for item in manifest["semantic_runtime"]["files"]
+        )
+        self.assertEqual(semantic_runtime_paths, SEMANTIC_RUNTIME_FILES)
+        self.assertTrue(set(semantic_runtime_paths).issubset(control_files))
+        self.assertNotIn("runtime_vnext/report_compiler.py", semantic_runtime_paths)
+        for required_dependency in (
+            "outputs/report_lint.py",
+            "outputs/report_structure_gate.py",
+            "runtime/golden_methodology.py",
+            "runtime_vnext/domain_ir/__init__.py",
+            "runtime_vnext/gates.py",
+            "runtime_vnext/methodology.py",
+        ):
+            self.assertIn(required_dependency, semantic_runtime_paths)
+        for required in (
+            "runtime_vnext/reasoning_submission.py",
+            "runtime_vnext/validation/decision.py",
+            "runtime_vnext/validation/reasoning.py",
+            "runtime_vnext/validation/report.py",
+        ):
+            self.assertIn(required, semantic_runtime_paths)
+        self.assertRegex(
+            manifest["semantic_runtime"]["semantic_runtime_sha256"],
+            r"^[0-9a-f]{64}$",
+        )
+        self.assertEqual(
+            V3_RUN_AUTHORITY_FIELDS,
+            (
+                "semantic_contract_sha256",
+                "release_sha256",
+                "methodology_manifest_sha256",
+            ),
+        )
         self.assertEqual(manifest["schema_version"], "methodology-manifest-v3")
         identity = validate_methodology_manifest(manifest)
         self.assertEqual(
@@ -539,6 +628,52 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
                 reformatted["manifest_sha256"], baseline["manifest_sha256"]
             )
 
+            report_language_path = (
+                root / "governance" / "vnext_report_language_contract.md"
+            )
+            report_language_path.write_text(
+                report_language_path.read_text(encoding="utf-8") + "\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            report_semantic_changed = build_methodology_manifest(root=root)
+            self.assertNotEqual(
+                report_semantic_changed["semantic_contract_sha256"],
+                reformatted["semantic_contract_sha256"],
+            )
+            self.assertNotEqual(
+                report_semantic_changed["release_sha256"],
+                reformatted["release_sha256"],
+            )
+            self.assertNotEqual(
+                report_semantic_changed["manifest_sha256"],
+                reformatted["manifest_sha256"],
+            )
+
+            presentation_path = (
+                root / "governance" / "vnext_report_presentation_contract.json"
+            )
+            presentation_payload = json.loads(
+                presentation_path.read_text(encoding="utf-8")
+            )
+            presentation_path.write_text(
+                json.dumps(
+                    presentation_payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            presentation_changed = build_methodology_manifest(root=root)
+            self.assertEqual(
+                presentation_changed["semantic_contract_sha256"],
+                report_semantic_changed["semantic_contract_sha256"],
+            )
+            self.assertNotEqual(
+                presentation_changed["release_sha256"],
+                report_semantic_changed["release_sha256"],
+            )
+
             added_module = root / "runtime_vnext" / "identity_inventory_probe.py"
             added_module.write_text("# release inventory probe\n", encoding="utf-8")
             code_changed = build_methodology_manifest(root=root)
@@ -551,13 +686,47 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
             )
             self.assertEqual(
                 code_changed["semantic_contract_sha256"],
-                reformatted["semantic_contract_sha256"],
+                presentation_changed["semantic_contract_sha256"],
             )
             self.assertNotEqual(
-                code_changed["release_sha256"], reformatted["release_sha256"]
+                code_changed["release_sha256"],
+                presentation_changed["release_sha256"],
             )
             self.assertNotEqual(
-                code_changed["manifest_sha256"], reformatted["manifest_sha256"]
+                code_changed["manifest_sha256"],
+                presentation_changed["manifest_sha256"],
+            )
+
+            compiler_path = root / "runtime_vnext" / "report_compiler.py"
+            compiler_path.write_text(
+                compiler_path.read_text(encoding="utf-8")
+                + "\n# pure presentation identity probe\n",
+                encoding="utf-8",
+            )
+            compiler_changed = build_methodology_manifest(root=root)
+            self.assertEqual(
+                compiler_changed["semantic_contract_sha256"],
+                code_changed["semantic_contract_sha256"],
+            )
+            self.assertNotEqual(
+                compiler_changed["release_sha256"],
+                code_changed["release_sha256"],
+            )
+
+            validator_path = root / "runtime_vnext" / "validation" / "report.py"
+            validator_path.write_text(
+                validator_path.read_text(encoding="utf-8")
+                + "\n# semantic runtime identity probe\n",
+                encoding="utf-8",
+            )
+            runtime_semantic_changed = build_methodology_manifest(root=root)
+            self.assertNotEqual(
+                runtime_semantic_changed["semantic_contract_sha256"],
+                compiler_changed["semantic_contract_sha256"],
+            )
+            self.assertNotEqual(
+                runtime_semantic_changed["release_sha256"],
+                compiler_changed["release_sha256"],
             )
 
             semantic_changed = build_methodology_manifest(
@@ -566,10 +735,11 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
             )
             self.assertNotEqual(
                 semantic_changed["semantic_contract_sha256"],
-                code_changed["semantic_contract_sha256"],
+                runtime_semantic_changed["semantic_contract_sha256"],
             )
             self.assertEqual(
-                semantic_changed["release_sha256"], code_changed["release_sha256"]
+                semantic_changed["release_sha256"],
+                runtime_semantic_changed["release_sha256"],
             )
             self.assertNotEqual(
                 semantic_changed["manifest_sha256"], code_changed["manifest_sha256"]
@@ -656,31 +826,39 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
                 ]["main"].__setitem__("long", "changed condition"),
             ),
             (
-                "semantic_condition_owner",
-                lambda payload: payload["semantic_projection_contract"].__setitem__(
-                    "scenario_condition_owner",
-                    "changed owner",
+                "timeframe_schema",
+                lambda payload: payload["timeframe_display_contract"].__setitem__(
+                    "schema_version",
+                    "timeframe-display-v0",
                 ),
             ),
             (
-                "semantic_transition_owner",
-                lambda payload: payload["semantic_projection_contract"].__setitem__(
-                    "scenario_transition_owner",
-                    "changed owner",
+                "timeframe_label",
+                lambda payload: payload["timeframe_display_contract"][
+                    "canonical_by_code"
+                ].__setitem__(
+                    "4h",
+                    "4 hours",
                 ),
             ),
             (
-                "semantic_free_prose_policy",
-                lambda payload: payload["semantic_projection_contract"].__setitem__(
-                    "free_scenario_prose_projectable",
-                    True,
+                "timeframe_order",
+                lambda payload: payload["timeframe_display_contract"][
+                    "tradingview_projection_order"
+                ].reverse(),
+            ),
+            (
+                "trigger_operator_label",
+                lambda payload: payload["trigger_operator_display"].__setitem__(
+                    "equals_at_trigger",
+                    "changed label",
                 ),
             ),
             (
-                "execution_lifecycle_owner",
-                lambda payload: payload["semantic_projection_contract"].__setitem__(
-                    "execution_lifecycle_owner",
-                    "changed owner",
+                "reintroduced_business_owner",
+                lambda payload: payload.__setitem__(
+                    "maker_semantic_state_contract",
+                    {"owner": "json"},
                 ),
             ),
         )
@@ -741,13 +919,36 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "release hash"):
             validate_methodology_manifest(tampered)
 
-    def test_current_manifest_rejects_self_consistent_phase_subset(self):
+    def test_methodology_manifest_rejects_presentation_file_as_semantic_owner(self):
+        tampered = copy.deepcopy(build_methodology_manifest(root=ROOT))
+        report = tampered["phases"]["report"]
+        exact = next(
+            item
+            for item in report["files"]
+            if item["path"] == "governance/vnext_report_presentation_contract.json"
+        )
+        report["semantic_files"].append(
+            {
+                "path": exact["path"],
+                "normalization": "canonical-json-v1",
+                "semantic_sha256": exact["sha256"],
+            }
+        )
+        report["semantic_phase_sha256"] = canonical_sha256(
+            {"files": report["semantic_files"]}
+        )
+        _rehash_semantic_contract(tampered)
+        tampered["manifest_sha256"] = canonical_sha256(tampered)
+        with self.assertRaisesRegex(ValueError, "semantic ownership differs: report"):
+            validate_methodology_manifest(tampered)
+
+    def test_methodology_manifest_rejects_self_consistent_phase_subset(self):
         manifest = build_methodology_manifest(root=ROOT)
         tampered = copy.deepcopy(manifest)
         phase_name = next(
             name
             for name, value in tampered["phases"].items()
-            if len(value["files"]) > 1
+            if len(value["semantic_files"]) > 1
         )
         phase = tampered["phases"][phase_name]
         removed = phase["files"].pop()
@@ -757,21 +958,23 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
         phase["semantic_phase_sha256"] = canonical_sha256(
             {"files": phase["semantic_files"]}
         )
-        tampered["semantic_contract_sha256"] = canonical_sha256(
-            {
-                "schema_version": SEMANTIC_CONTRACT_SCHEMA,
-                "domain_registry_sha256": tampered["domain_registry_sha256"],
-                "phase_semantic_sha256": {
-                    name: value["semantic_phase_sha256"]
-                    for name, value in sorted(tampered["phases"].items())
-                },
-            }
-        )
+        _rehash_semantic_contract(tampered)
         tampered["manifest_sha256"] = canonical_sha256(tampered)
 
-        validate_methodology_manifest(tampered)
-        with self.assertRaisesRegex(ValueError, "differs from the current release"):
-            validate_current_methodology_manifest(tampered, root=ROOT)
+        with self.assertRaisesRegex(ValueError, "semantic ownership differs"):
+            validate_methodology_manifest(tampered)
+
+    def test_methodology_manifest_rejects_self_consistent_semantic_runtime_subset(self):
+        tampered = copy.deepcopy(build_methodology_manifest(root=ROOT))
+        semantic_runtime = tampered["semantic_runtime"]
+        semantic_runtime["files"].pop()
+        semantic_runtime["semantic_runtime_sha256"] = canonical_sha256(
+            {"files": semantic_runtime["files"]}
+        )
+        _rehash_semantic_contract(tampered)
+        tampered["manifest_sha256"] = canonical_sha256(tampered)
+        with self.assertRaisesRegex(ValueError, "semantic runtime ownership differs"):
+            validate_methodology_manifest(tampered)
 
     def test_current_manifest_rejects_different_registry_identity(self):
         foreign_registry = DomainRegistry(
@@ -1106,7 +1309,7 @@ class VNextAuthorityCoherenceTests(unittest.TestCase):
                     active_text,
                 )
             ),
-            {"vnext-report-presentation-contract-v11"},
+            {"vnext-report-presentation-contract-v12"},
         )
 
     def test_active_authority_has_no_legacy_path_or_stale_market_anchor(self):

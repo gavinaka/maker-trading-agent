@@ -1,15 +1,8 @@
-"""Producer-visible reasoning submission contract and deterministic scaffold.
-
-The scaffold removes JSON-shape guesswork before a model is called.  It does
-not validate business semantics, create an attempt, or write runtime state.
-The formal reasoning gate still validates the complete submitted candidate
-inside the normal attempt budget.
-"""
+"""Producer-visible reasoning contract and deterministic, non-semantic scaffold."""
 
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +10,7 @@ from typing import Any
 
 from runtime.golden_methodology import get_methodology_runtime_inventory
 
+from .domain_ir import canonical_sha256
 from .domain_ir.projection import (
     deterministic_contract_sections,
     reference_trigger_operator,
@@ -48,15 +42,8 @@ class SubmissionShapeIssue:
     path: str
 
 
-def _canonical_sha256(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    ).hexdigest()
+def _issue(code: str, message: str, path: str) -> SubmissionShapeIssue:
+    return SubmissionShapeIssue(code, message, path)
 
 
 def load_reasoning_submission_contract(*, root: Path = ROOT) -> dict[str, Any]:
@@ -104,107 +91,82 @@ def _record_shape_issues(
     path: str,
     full_policy: dict[str, Any],
 ) -> list[SubmissionShapeIssue]:
-    issues: list[SubmissionShapeIssue] = []
     if not isinstance(value, dict):
-        return [
-            SubmissionShapeIssue(
-                "reasoning_shape.object_required",
-                "expected an object",
-                path,
-            )
-        ]
-
+        return [_issue("reasoning_shape.object_required", "expected an object", path)]
+    issues: list[SubmissionShapeIssue] = []
     field_order = spec.get("field_order")
     expected = set(field_order if isinstance(field_order, list) else [])
     actual = set(value)
     for field in sorted(expected - actual):
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_shape.field_missing",
-                f"required field is missing: {field}",
-                f"{path}.{field}",
-            )
-        )
+        issues.append(_issue(
+            "reasoning_shape.field_missing",
+            f"required field is missing: {field}",
+            f"{path}.{field}",
+        ))
     for field in sorted(actual - expected):
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_shape.field_unknown",
-                f"unknown field is forbidden: {field}",
-                f"{path}.{field}",
-            )
-        )
-
+        issues.append(_issue(
+            "reasoning_shape.field_unknown",
+            f"unknown field is forbidden: {field}",
+            f"{path}.{field}",
+        ))
     for field in spec.get("string_fields") or []:
         if field in value and (
             not isinstance(value[field], str) or not value[field].strip()
         ):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.string_required",
-                    "expected a non-empty string",
-                    f"{path}.{field}",
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.string_required",
+                "expected a non-empty string",
+                f"{path}.{field}",
+            ))
     for field, minimum in (spec.get("string_min_lengths") or {}).items():
         if (
             field in value
             and isinstance(value[field], str)
             and len(value[field].strip()) < int(minimum)
         ):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.string_too_short",
-                    f"string requires at least {int(minimum)} characters",
-                    f"{path}.{field}",
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.string_too_short",
+                f"string requires at least {int(minimum)} characters",
+                f"{path}.{field}",
+            ))
     for field in spec.get("boolean_fields") or []:
         if field in value and type(value[field]) is not bool:
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.boolean_required",
-                    "expected a JSON boolean",
-                    f"{path}.{field}",
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.boolean_required",
+                "expected a JSON boolean",
+                f"{path}.{field}",
+            ))
     for field, array_spec in (spec.get("string_array_fields") or {}).items():
         if field not in value:
             continue
         items = value[field]
         if not isinstance(items, list):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.array_required",
-                    "expected an array of non-empty strings",
-                    f"{path}.{field}",
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.array_required",
+                "expected an array of non-empty strings",
+                f"{path}.{field}",
+            ))
             continue
         minimum = int((array_spec or {}).get("min_items", 0))
         maximum = (array_spec or {}).get("max_items")
         if len(items) < minimum or (
             isinstance(maximum, int) and len(items) > maximum
         ):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.array_cardinality",
-                    (
-                        f"array requires at least {minimum} item(s)"
-                        if maximum is None
-                        else f"array requires {minimum}..{maximum} item(s)"
-                    ),
-                    f"{path}.{field}",
-                )
+            message = (
+                f"array requires at least {minimum} item(s)"
+                if maximum is None
+                else f"array requires {minimum}..{maximum} item(s)"
             )
+            issues.append(_issue(
+                "reasoning_shape.array_cardinality", message, f"{path}.{field}"
+            ))
         for index, item in enumerate(items):
             if not isinstance(item, str) or not item.strip():
-                issues.append(
-                    SubmissionShapeIssue(
-                        "reasoning_shape.string_required",
-                        "array item must be a non-empty string",
-                        f"{path}.{field}[{index}]",
-                    )
-                )
+                issues.append(_issue(
+                    "reasoning_shape.string_required",
+                    "array item must be a non-empty string",
+                    f"{path}.{field}[{index}]",
+                ))
     for field, enum_spec in (spec.get("enum_fields") or {}).items():
         if field not in value:
             continue
@@ -214,34 +176,28 @@ def _record_shape_issues(
         if not isinstance(allowed, list):
             raise ValueError(f"reasoning submission enum is invalid: {path}.{field}")
         if type(value[field]) not in {str, bool, int, float} or value[field] not in allowed:
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.enum_invalid",
-                    f"value must be one of {allowed}",
-                    f"{path}.{field}",
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.enum_invalid",
+                f"value must be one of {allowed}",
+                f"{path}.{field}",
+            ))
     for field, policy_path in (spec.get("exact_policy_values") or {}).items():
         if field in value and value[field] != _policy_value(full_policy, policy_path):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.policy_value_mismatch",
-                    f"value must exactly match authority policy {policy_path}",
-                    f"{path}.{field}",
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.policy_value_mismatch",
+                f"value must exactly match authority policy {policy_path}",
+                f"{path}.{field}",
+            ))
     for field, expected_value in (spec.get("exact_values") or {}).items():
         if field in value and (
             type(value[field]) is not type(expected_value)
             or value[field] != expected_value
         ):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.exact_value_mismatch",
-                    f"value must exactly equal {expected_value!r}",
-                    f"{path}.{field}",
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.exact_value_mismatch",
+                f"value must exactly equal {expected_value!r}",
+                f"{path}.{field}",
+            ))
     return issues
 
 
@@ -254,87 +210,65 @@ def validate_methodology_submission_shape(
     """Return every producer-shape defect in methodology, without fail-fast."""
 
     if not isinstance(methodology, dict):
-        return [
-            SubmissionShapeIssue(
-                "reasoning_shape.object_required",
-                "methodology must be an object",
-                "methodology",
-            )
-        ]
-
+        return [_issue(
+            "reasoning_shape.object_required",
+            "methodology must be an object",
+            "methodology",
+        )]
     methodology_contract = contract["methodology"]
-    field_order = methodology_contract["field_order"]
-    expected = set(field_order)
+    expected = set(methodology_contract["field_order"])
     actual = set(methodology)
     issues: list[SubmissionShapeIssue] = []
     for field in sorted(expected - actual):
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_shape.field_missing",
-                f"required methodology block is missing: {field}",
-                f"methodology.{field}",
-            )
-        )
+        issues.append(_issue(
+            "reasoning_shape.field_missing",
+            f"required methodology block is missing: {field}",
+            f"methodology.{field}",
+        ))
     for field in sorted(actual - expected):
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_shape.field_unknown",
-                f"unknown methodology block is forbidden: {field}",
-                f"methodology.{field}",
-            )
-        )
-
+        issues.append(_issue(
+            "reasoning_shape.field_unknown",
+            f"unknown methodology block is forbidden: {field}",
+            f"methodology.{field}",
+        ))
     for field, spec in methodology_contract["objects"].items():
         if field in methodology:
-            issues.extend(
-                _record_shape_issues(
-                    methodology[field],
-                    spec,
-                    path=f"methodology.{field}",
-                    full_policy=full_policy,
-                )
-            )
+            issues.extend(_record_shape_issues(
+                methodology[field],
+                spec,
+                path=f"methodology.{field}",
+                full_policy=full_policy,
+            ))
     for field, array_spec in methodology_contract["arrays"].items():
         if field not in methodology:
             continue
         values = methodology[field]
         path = f"methodology.{field}"
         if not isinstance(values, list):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.array_required",
-                    "expected an array",
-                    path,
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.array_required", "expected an array", path
+            ))
             continue
         minimum = int(array_spec.get("min_items", 0))
         maximum = array_spec.get("max_items")
         if len(values) < minimum or (
             isinstance(maximum, int) and len(values) > maximum
         ):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.array_cardinality",
-                    (
-                        f"array requires at least {minimum} item(s)"
-                        if maximum is None
-                        else f"array requires {minimum}..{maximum} item(s)"
-                    ),
-                    path,
-                )
+            message = (
+                f"array requires at least {minimum} item(s)"
+                if maximum is None
+                else f"array requires {minimum}..{maximum} item(s)"
             )
-        item_spec = array_spec.get("item")
+            issues.append(_issue(
+                "reasoning_shape.array_cardinality", message, path
+            ))
         for index, item in enumerate(values):
-            issues.extend(
-                _record_shape_issues(
-                    item,
-                    item_spec,
-                    path=f"{path}[{index}]",
-                    full_policy=full_policy,
-                )
-            )
-
+            issues.extend(_record_shape_issues(
+                item,
+                array_spec.get("item"),
+                path=f"{path}[{index}]",
+                full_policy=full_policy,
+            ))
     scenarios = methodology.get("scenario_tree")
     if isinstance(scenarios, list):
         matrix = {
@@ -343,18 +277,15 @@ def validate_methodology_submission_shape(
             if isinstance(item, dict)
         }
         expected_matrix = {
-            (account, kind)
-            for account in ("main", "maker")
-            for kind in ("base", "counter", "invalidation")
+            (item["account"], item["scenario_type"])
+            for item in contract["scenario_ownership"]["items"]
         }
         if matrix != expected_matrix or len(scenarios) != len(expected_matrix):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_shape.scenario_matrix",
-                    "methodology scenario_tree requires exactly one main/maker base/counter/invalidation item",
-                    "methodology.scenario_tree",
-                )
-            )
+            issues.append(_issue(
+                "reasoning_shape.scenario_matrix",
+                "methodology scenario_tree requires exactly one main/maker base/counter/invalidation item",
+                "methodology.scenario_tree",
+            ))
     return issues
 
 
@@ -447,7 +378,7 @@ def _visual_review_evidence_sha256(
             ):
                 continue
             cited_hashes.append(str(record["sha256"]))
-    return _canonical_sha256(
+    return canonical_sha256(
         {"artifact_sha256s": sorted(set(cited_hashes))}
     )
 
@@ -460,12 +391,7 @@ def project_observation_mechanical_fields(
     contract: dict[str, Any],
     pending_model_values: bool = False,
 ) -> dict[str, Any]:
-    """Project only sealed artifact inventory and deterministic hash bindings.
-
-    ``evidence_refs`` is the same-source sealed artifact inventory, not proof
-    that a visual artifact was read.  Visual proof remains model-owned through
-    citation selection, crop geometry and metric coverage.
-    """
+    """Project sealed inventory/hashes; visual proof remains model-owned."""
 
     projected = copy.deepcopy(observation)
     records = _source_artifact_records(evidence, source)
@@ -501,7 +427,7 @@ def project_observation_mechanical_fields(
                 "metrics_sha256": (
                     None
                     if pending_model_values
-                    else _canonical_sha256(metrics)
+                    else canonical_sha256(metrics)
                 ),
             }
 
@@ -520,7 +446,7 @@ def project_observation_mechanical_fields(
             review["metrics_sha256"] = (
                 None
                 if pending_model_values
-                else _canonical_sha256(metrics)
+                else canonical_sha256(metrics)
             )
             review["evidence_sha256"] = (
                 None
@@ -853,12 +779,7 @@ def _project_relative_trigger_operators(
     observations: list[Any],
     contract: dict[str, Any],
 ) -> None:
-    """Canonicalize only the operators of an explicit Exocharts reference pair.
-
-    The producer continues to own whether the pair exists, its target values,
-    clause order and all other trigger semantics.  Missing, ambiguous, any-mode
-    or malformed pairs are left untouched for the independent reasoning gate.
-    """
+    """Canonicalize operators only for an explicit Exocharts reference pair."""
 
     policy = contract["server_projection"][
         "relative_trigger_operator_projection"
@@ -922,7 +843,6 @@ def _project_relative_trigger_operators(
             or set(relatives[0]) != TRIGGER_SCALAR_CLAUSE_FIELDS
         ):
             continue
-
         references[0]["operator"] = reference_trigger_operator(
             current_reference,
             references[0]["value"],
@@ -938,37 +858,29 @@ def assemble_reasoning_submission(
     contract: dict[str, Any],
     full_policy: dict[str, Any],
 ) -> dict[str, Any]:
-    """Apply authority-owned structural projection inside one sealed attempt.
-
-    The projection never invents facts, visual judgments, claim conclusions,
-    current state, or future trigger values. It only closes authority-owned
-    identities, typed-owner mirrors, constants, and structural wrappers.
-    Missing or ambiguous model-owned inputs remain empty and are rejected by
-    the normal reasoning gate.
-    """
-
+    """Apply authority structure; never invent model-owned facts or judgments."""
     candidate = copy.deepcopy(payload)
-    candidate["schema_version"] = contract["certified_schema_version"]
-    candidate["trading_date"] = evidence.get("trading_date")
-    candidate["slot"] = evidence.get("slot")
-    candidate["evidence_snapshot_sha256"] = evidence.get("snapshot_sha256")
-    candidate["reasoning_authority_sha256"] = reasoning_authority_sha256
+    candidate.update({
+        "schema_version": contract["certified_schema_version"],
+        "trading_date": evidence.get("trading_date"),
+        "slot": evidence.get("slot"),
+        "evidence_snapshot_sha256": evidence.get("snapshot_sha256"),
+        "reasoning_authority_sha256": reasoning_authority_sha256,
+    })
     candidate["observations"] = _normalize_observations(
-        candidate.get("observations"),
-        evidence=evidence,
-        contract=contract,
+        candidate.get("observations"), evidence=evidence, contract=contract
     )
-
+    observations = (
+        candidate["observations"]
+        if isinstance(candidate["observations"], list)
+        else []
+    )
     claims = candidate.get("claims")
     claim_list = claims if isinstance(claims, list) else []
     projected_claims = copy.deepcopy(claim_list)
     coinglass_directions = [
-        ((item.get("metrics") or {}).get("final_direction"))
-        for item in (
-            candidate.get("observations")
-            if isinstance(candidate.get("observations"), list)
-            else []
-        )
+        (item.get("metrics") or {}).get("final_direction")
+        for item in observations
         if isinstance(item, dict)
         and item.get("source") == "Coinglass"
         and isinstance(item.get("metrics"), dict)
@@ -986,25 +898,16 @@ def assemble_reasoning_submission(
             contract["server_projection"]["orderflow_direction_policy_path"],
         )
         source_direction = coinglass_directions[0]
-        direction = (
+        projected_claims[orderflow_indexes[0]]["direction"] = (
             mapping.get(source_direction)
             if isinstance(mapping, dict)
             and isinstance(source_direction, str)
             else None
         )
-        projected_claims[orderflow_indexes[0]]["direction"] = direction
     candidate["claims"] = projected_claims if isinstance(claims, list) else claims
-
     _project_relative_trigger_operators(
-        projected_claims,
-        observations=(
-            candidate.get("observations")
-            if isinstance(candidate.get("observations"), list)
-            else []
-        ),
-        contract=contract,
+        projected_claims, observations=observations, contract=contract
     )
-
     claim_index = _unique_claim_index(projected_claims)
     projection = contract["server_projection"]
     claim_bindings = {
@@ -1029,17 +932,16 @@ def assemble_reasoning_submission(
         ),
         "forced_consensus": False,
     }
-
-    owner_by_key: dict[tuple[str, str], str | None] = {}
     top_level_scenarios: list[dict[str, Any]] = []
+    methodology_scenarios: list[dict[str, Any]] = []
     for item in contract["scenario_ownership"]["items"]:
+        account = str(item["account"])
+        kind = str(item["scenario_type"])
         owner_id = _unique_claim_id(
             projected_claims,
             claim_type=str(item["owner_claim_type"]),
-            account=str(item["account"]),
+            account=account,
         )
-        key = (str(item["account"]), str(item["scenario_type"]))
-        owner_by_key[key] = owner_id
         top_level_scenarios.append(
             {
                 "id": item["id"],
@@ -1048,23 +950,15 @@ def assemble_reasoning_submission(
                 "owner_claim_id": owner_id,
             }
         )
-    methodology_scenarios = [
-        {
+        methodology_scenarios.append({
             "account": account,
             "kind": kind,
-            "claim_id": owner_by_key[(account, kind)],
+            "claim_id": owner_id,
             "trigger_claim_ids": derive_methodology_trigger_claim_ids(
-                str(owner_by_key[(account, kind)] or ""),
-                claim_index,
+                str(owner_id or ""), claim_index
             ),
-            "action": contract["scenario_ownership"][
-                "transition_code_by_type"
-            ][kind],
-        }
-        for account in ("main", "maker")
-        for kind in ("base", "counter", "invalidation")
-    ]
-
+            "action": contract["scenario_ownership"]["transition_code_by_type"][kind],
+        })
     methodology = candidate.get("methodology")
     projected_methodology = (
         copy.deepcopy(methodology) if isinstance(methodology, dict) else {}
@@ -1073,11 +967,7 @@ def assemble_reasoning_submission(
     projected_methodology["scenario_tree"] = methodology_scenarios
     _project_methodology_server_bindings(
         projected_methodology,
-        observations=(
-            candidate.get("observations")
-            if isinstance(candidate.get("observations"), list)
-            else []
-        ),
+        observations=observations,
         claims=projected_claims,
         contract=contract,
         full_policy=full_policy,
@@ -1098,68 +988,40 @@ def _compare_runtime_inventory(
     path: str,
 ) -> list[SubmissionShapeIssue]:
     """Return stable, field-specific differences between runtime and contract."""
-
+    def mismatch(message: str, item_path: str = path) -> SubmissionShapeIssue:
+        return _issue("reasoning_contract.methodology_inventory", message, item_path)
     if type(expected) is not type(actual):
-        return [
-            SubmissionShapeIssue(
-                "reasoning_contract.methodology_inventory",
-                (
-                    "contract value type differs from the golden evaluator "
-                    f"inventory: expected {type(expected).__name__}, "
-                    f"received {type(actual).__name__}"
-                ),
-                path,
-            )
-        ]
+        return [mismatch(
+            "contract value type differs from the golden evaluator inventory: "
+            f"expected {type(expected).__name__}, received {type(actual).__name__}"
+        )]
     if isinstance(expected, dict):
-        issues: list[SubmissionShapeIssue] = []
         expected_keys = set(expected)
         actual_keys = set(actual)
-        for key in sorted(expected_keys - actual_keys):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_contract.methodology_inventory",
-                    "contract is missing a golden evaluator inventory field",
-                    f"{path}.{key}",
-                )
+        issues = [
+            mismatch(
+                "contract is missing a golden evaluator inventory field",
+                f"{path}.{key}",
             )
-        for key in sorted(actual_keys - expected_keys):
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_contract.methodology_inventory",
-                    "contract contains a field absent from the golden evaluator inventory",
-                    f"{path}.{key}",
-                )
+            for key in sorted(expected_keys - actual_keys)
+        ]
+        issues.extend(
+            mismatch(
+                "contract contains a field absent from the golden evaluator inventory",
+                f"{path}.{key}",
             )
+            for key in sorted(actual_keys - expected_keys)
+        )
         for key in expected:
-            if key not in actual:
-                continue
-            issues.extend(
-                _compare_runtime_inventory(
-                    expected[key],
-                    actual[key],
-                    path=f"{path}.{key}",
-                )
-            )
+            if key in actual:
+                issues.extend(_compare_runtime_inventory(
+                    expected[key], actual[key], path=f"{path}.{key}"
+                ))
         return issues
-    if isinstance(expected, list):
-        if expected == actual:
-            return []
-        return [
-            SubmissionShapeIssue(
-                "reasoning_contract.methodology_inventory",
-                "contract sequence differs from the golden evaluator inventory",
-                path,
-            )
-        ]
+    if isinstance(expected, list) and expected != actual:
+        return [mismatch("contract sequence differs from the golden evaluator inventory")]
     if expected != actual:
-        return [
-            SubmissionShapeIssue(
-                "reasoning_contract.methodology_inventory",
-                "contract value differs from the golden evaluator inventory",
-                path,
-            )
-        ]
+        return [mismatch("contract value differs from the golden evaluator inventory")]
     return []
 
 
@@ -1171,41 +1033,33 @@ def build_reasoning_submission_scaffold(
     full_policy: dict[str, Any],
 ) -> dict[str, Any]:
     """Build a run-bound structural template with no market judgment."""
-
     methodology_contract = contract["methodology"]
-    methodology: dict[str, Any] = {}
-    for field in methodology_contract["field_order"]:
-        if field in methodology_contract["objects"]:
-            methodology[field] = _blank_record(
-                methodology_contract["objects"][field],
-                full_policy=full_policy,
-            )
-        else:
-            array_spec = methodology_contract["arrays"][field]
-            item_spec = array_spec["item"]
-            count = int(array_spec.get("min_items", 0))
-            methodology[field] = [
-                _blank_record(item_spec, full_policy=full_policy)
-                for _ in range(count)
+    methodology: dict[str, Any] = {
+        field: (
+            _blank_record(methodology_contract["objects"][field], full_policy=full_policy)
+            if field in methodology_contract["objects"]
+            else [
+                _blank_record(
+                    methodology_contract["arrays"][field]["item"],
+                    full_policy=full_policy,
+                )
+                for _ in range(int(
+                    methodology_contract["arrays"][field].get("min_items", 0)
+                ))
             ]
-
-    methodology_scenarios = methodology["scenario_tree"]
-    transition_code_by_type = contract["scenario_ownership"][
-        "transition_code_by_type"
-    ]
-    for item, (account, kind) in zip(
-        methodology_scenarios,
-        (
-            (account, kind)
-            for account in ("main", "maker")
-            for kind in ("base", "counter", "invalidation")
-        ),
+        )
+        for field in methodology_contract["field_order"]
+    }
+    for item, scenario in zip(
+        methodology["scenario_tree"],
+        contract["scenario_ownership"]["items"],
         strict=True,
     ):
-        item["account"] = account
-        item["kind"] = kind
-        item["action"] = transition_code_by_type[kind]
-
+        item["account"] = scenario["account"]
+        item["kind"] = scenario["scenario_type"]
+        item["action"] = contract["scenario_ownership"][
+            "transition_code_by_type"
+        ][item["kind"]]
     top_level_scenarios = [
         {
             "id": item["id"],
@@ -1216,11 +1070,7 @@ def build_reasoning_submission_scaffold(
         for item in contract["scenario_ownership"]["items"]
     ]
     observations = [
-        _blank_observation(
-            source,
-            evidence=evidence,
-            contract=contract,
-        )
+        _blank_observation(source, evidence=evidence, contract=contract)
         for source in contract["server_projection"]["observation_source_order"]
     ]
     _project_methodology_server_bindings(
@@ -1230,24 +1080,18 @@ def build_reasoning_submission_scaffold(
         contract=contract,
         full_policy=full_policy,
     )
-
-    pipeline_units = [
-        {
-            field: (
-                spec.unit_id
-                if field == "unit_id"
-                else spec.sequence
-                if field == "sequence"
-                else spec.unit_type
-                if field == "unit_type"
-                else spec.account_scope
-                if field == "account_scope"
-                else []
-            )
-            for field in contract["pipeline_unit_fields"]
+    pipeline_units = []
+    for spec in UNIT_SPECS:
+        fixed = {
+            "unit_id": spec.unit_id,
+            "sequence": spec.sequence,
+            "unit_type": spec.unit_type,
+            "account_scope": spec.account_scope,
         }
-        for spec in UNIT_SPECS
-    ]
+        pipeline_units.append({
+            field: fixed[field] if field in fixed else []
+            for field in contract["pipeline_unit_fields"]
+        })
     submission = {
         "schema_version": contract["certified_schema_version"],
         "trading_date": evidence.get("trading_date"),
@@ -1262,7 +1106,7 @@ def build_reasoning_submission_scaffold(
     }
     return {
         "schema_version": contract["scaffold_policy"]["schema_version"],
-        "contract_sha256": _canonical_sha256(contract),
+        "contract_sha256": canonical_sha256(contract),
         "certified_schema_version": contract["certified_schema_version"],
         "business_semantics_checked": False,
         "model_called": False,
@@ -1273,12 +1117,8 @@ def build_reasoning_submission_scaffold(
         ),
         "server_projection": copy.deepcopy(contract["server_projection"]),
         "claim_topology": copy.deepcopy(contract["claim_topology"]),
-        "typed_narrative_ownership": copy.deepcopy(
-            contract["typed_narrative_ownership"]
-        ),
-        "visual_citation_policy": copy.deepcopy(
-            contract["visual_citation_policy"]
-        ),
+        "typed_narrative_ownership": copy.deepcopy(contract["typed_narrative_ownership"]),
+        "visual_citation_policy": copy.deepcopy(contract["visual_citation_policy"]),
         "submission_template": submission,
     }
 
@@ -1289,164 +1129,98 @@ def validate_contract_runtime_compatibility(
     full_policy: dict[str, Any],
 ) -> list[SubmissionShapeIssue]:
     """Verify static contract/handler compatibility before any model call."""
-
     issues: list[SubmissionShapeIssue] = []
+    def add(suffix: str, message: str, path: str) -> None:
+        issues.append(_issue(f"reasoning_contract.{suffix}", message, path))
+    def check(mismatch: bool, suffix: str, message: str, path: str) -> None:
+        if mismatch:
+            add(suffix, message, path)
     try:
         runtime_inventory = get_methodology_runtime_inventory(
-            policy=full_policy["gold_methodology"],
-            profile="vnext_submission",
+            policy=full_policy["gold_methodology"], profile="vnext_submission"
         )
     except (KeyError, TypeError, ValueError) as exc:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.methodology_runtime_inventory",
-                str(exc),
-                "methodology",
-            )
-        )
+        add("methodology_runtime_inventory", str(exc), "methodology")
         runtime_inventory = None
-    expected_sources = set(CONTRACT_SOURCES)
-    if set(contract["observation_fields_by_source"]) != expected_sources:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.observation_inventory",
-                "observation contract differs from the six-source handler inventory",
-                "observation_fields_by_source",
-            )
-        )
-    expected_claim_types = set(CLAIM_TYPES)
-    if set(contract["claim_fields_by_type"]) != expected_claim_types:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.claim_inventory",
-                "claim contract differs from the reasoning handler inventory",
-                "claim_fields_by_type",
-            )
-        )
-    expected_top_level = set(TOP_LEVEL_FIELD_ORDER)
-    if set(contract["top_level"]["field_order"]) != expected_top_level:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.top_level_inventory",
-                "top-level contract differs from the reasoning-model-v5 handler inventory",
-                "top_level.field_order",
-            )
-        )
+    for mismatch, suffix, message, path in (
+        (set(contract["observation_fields_by_source"]) != set(CONTRACT_SOURCES),
+            "observation_inventory",
+            "observation contract differs from the six-source handler inventory",
+            "observation_fields_by_source"),
+        (set(contract["claim_fields_by_type"]) != set(CLAIM_TYPES),
+            "claim_inventory",
+            "claim contract differs from the reasoning handler inventory",
+            "claim_fields_by_type"),
+        (set(contract["top_level"]["field_order"]) != set(TOP_LEVEL_FIELD_ORDER),
+            "top_level_inventory",
+            "top-level contract differs from the reasoning-model-v5 handler inventory",
+            "top_level.field_order"),
+    ):
+        check(mismatch, suffix, message, path)
     expected_leaf_ownership = (
         copy.deepcopy(runtime_inventory["leaf_ownership"])
         if isinstance(runtime_inventory, dict)
-        else {
-            "server_owned_subtrees": [],
-            "server_owned_bindings": {},
-        }
+        else {"server_owned_subtrees": [], "server_owned_bindings": {}}
     )
-    expected_contract_sections = deterministic_contract_sections(
+    expected_sections = deterministic_contract_sections(
         methodology_leaf_ownership=expected_leaf_ownership
     )
-    expected_projection = expected_contract_sections["server_projection"]
-    if contract.get("server_projection") != expected_projection:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.server_projection",
-                "server-owned reasoning projection differs from the runtime contract",
-                "server_projection",
-            )
-        )
+    expected_projection = expected_sections["server_projection"]
+    check(
+        contract.get("server_projection") != expected_projection,
+        "server_projection",
+        "server-owned reasoning projection differs from the runtime contract",
+        "server_projection",
+    )
     try:
-        submission_relative = contract["server_projection"][
-            "relative_trigger_operator_projection"
-        ]
-        scoring_relative = _policy_value(
+        submission = contract["server_projection"]["relative_trigger_operator_projection"]
+        scoring = _policy_value(
             full_policy,
-            (
-                "gold_methodology.account_trigger_logic."
-                "relative_direction_observation_fields."
-                "Exocharts.cross_check_result"
-            ),
+            "gold_methodology.account_trigger_logic."
+            "relative_direction_observation_fields.Exocharts.cross_check_result",
         )
-        submission_relative_view = {
-            "reference_source": submission_relative["reference_source"],
-            "reference_field": submission_relative["reference_field"],
-            "target_equals_current": submission_relative[
-                "reference_operator_when_target_equals_current"
-            ],
-            "target_differs_from_current": submission_relative[
-                "reference_operator_when_target_differs_current"
-            ],
-            "relative_operator": submission_relative["relative_operator"],
-        }
-        scoring_relative_view = {
-            "reference_source": scoring_relative["reference_source"],
-            "reference_field": scoring_relative["reference_field"],
-            "target_equals_current": scoring_relative[
-                "reference_operator_policy"
-            ]["target_equals_current"],
-            "target_differs_from_current": scoring_relative[
-                "reference_operator_policy"
-            ]["target_differs_from_current"],
-            "relative_operator": scoring_relative["relative_operator"],
-        }
-        if submission_relative_view != scoring_relative_view:
-            raise ValueError(
-                "relative trigger operator projection differs from scoring policy"
-            )
+        submission_view = (
+            submission["reference_source"], submission["reference_field"],
+            submission["reference_operator_when_target_equals_current"],
+            submission["reference_operator_when_target_differs_current"],
+            submission["relative_operator"],
+        )
+        scoring_view = (
+            scoring["reference_source"], scoring["reference_field"],
+            scoring["reference_operator_policy"]["target_equals_current"],
+            scoring["reference_operator_policy"]["target_differs_from_current"],
+            scoring["relative_operator"],
+        )
+        if submission_view != scoring_view:
+            raise ValueError("relative trigger operator projection differs from scoring policy")
     except (KeyError, TypeError, ValueError) as exc:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.relative_trigger_policy_drift",
-                str(exc),
-                "server_projection.relative_trigger_operator_projection",
-            )
+        add(
+            "relative_trigger_policy_drift", str(exc),
+            "server_projection.relative_trigger_operator_projection"
         )
-    expected_scaffold_policy = expected_contract_sections["scaffold_policy"]
-    if contract.get("scaffold_policy") != expected_scaffold_policy:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.scaffold_policy",
-                "reasoning scaffold policy differs from the runtime contract",
-                "scaffold_policy",
-            )
-        )
-    if (
-        contract.get("visual_citation_policy")
-        != expected_contract_sections["visual_citation_policy"]
+    for mismatch, suffix, message, path in (
+        (contract.get("scaffold_policy") != expected_sections["scaffold_policy"],
+            "scaffold_policy",
+            "reasoning scaffold policy differs from the runtime contract",
+            "scaffold_policy"),
+        (contract.get("visual_citation_policy") != expected_sections["visual_citation_policy"],
+            "visual_citation_policy",
+            "visual metric leaf semantics differ from the fail-closed runtime",
+            "visual_citation_policy"),
+        (contract.get("claim_topology") != expected_sections["claim_topology"],
+            "claim_topology",
+            "producer-visible claim topology differs from the runtime contract",
+            "claim_topology"),
+        (contract.get("typed_narrative_ownership") != expected_sections["typed_narrative_ownership"],
+            "typed_narrative_ownership",
+            "typed control and audit narrative ownership is inconsistent",
+            "typed_narrative_ownership"),
     ):
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.visual_citation_policy",
-                "visual metric leaf semantics differ from the fail-closed runtime",
-                "visual_citation_policy",
-            )
-        )
-    expected_claim_topology = expected_contract_sections["claim_topology"]
-    if contract.get("claim_topology") != expected_claim_topology:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.claim_topology",
-                "producer-visible claim topology differs from the runtime contract",
-                "claim_topology",
-            )
-        )
-    expected_typed_narrative_ownership = expected_contract_sections[
-        "typed_narrative_ownership"
-    ]
-    if (
-        contract.get("typed_narrative_ownership")
-        != expected_typed_narrative_ownership
-    ):
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.typed_narrative_ownership",
-                "typed control and audit narrative ownership is inconsistent",
-                "typed_narrative_ownership",
-            )
-        )
+        check(mismatch, suffix, message, path)
     try:
         if _policy_value(
             full_policy,
-            expected_projection[
-                "methodology_trigger_claim_ids_policy_path"
-            ],
+            expected_projection["methodology_trigger_claim_ids_policy_path"],
         ) != "bound_owner_claim.direct_support_claim_ids":
             raise ValueError("methodology trigger projection policy is invalid")
         if _policy_value(
@@ -1455,137 +1229,64 @@ def validate_contract_runtime_compatibility(
         ) != ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION:
             raise ValueError("orderflow direction projection policy is invalid")
         scenario_binding = _policy_value(
-            full_policy,
-            "gold_methodology.account_trigger_logic.scenario_control_binding",
+            full_policy, "gold_methodology.account_trigger_logic.scenario_control_binding"
         )
         if (
             scenario_binding.get("methodology_trigger_order")
             != "owner_support_order_first_occurrence"
-            or scenario_binding.get(
-                "methodology_trigger_observation_ids_excluded"
-            )
+            or scenario_binding.get("methodology_trigger_observation_ids_excluded")
             is not True
-            or scenario_binding.get(
-                "methodology_trigger_owner_self_reference_allowed"
-            )
-            is not False
+            or scenario_binding.get("methodology_trigger_owner_self_reference_allowed") is not False
         ):
             raise ValueError("methodology trigger projection closure is invalid")
     except (KeyError, TypeError, ValueError) as exc:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.server_projection_policy",
-                str(exc),
-                "server_projection",
-            )
-        )
-    scenario_ownership = contract.get("scenario_ownership")
-    expected_scenario_ownership = expected_contract_sections["scenario_ownership"]
-    expected_transition_codes = expected_scenario_ownership[
-        "transition_code_by_type"
-    ]
-    if (
-        scenario_ownership != expected_scenario_ownership
-        or contract.get("scenario_fields")
-        != expected_contract_sections["scenario_fields"]
-    ):
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.scenario_ownership",
-                "scenario ownership contract differs from the v5 runtime inventory",
-                "scenario_ownership",
-            )
-        )
-    methodology_scenario_spec = contract["methodology"]["arrays"][
-        "scenario_tree"
-    ]["item"]
-    if (
-        methodology_scenario_spec.get("enum_fields", {})
-        .get("action", {})
-        .get("values")
-        != list(expected_transition_codes.values())
-    ):
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.scenario_transition_codes",
-                "methodology scenario action must use the authority transition codes",
-                "methodology.arrays.scenario_tree.item.enum_fields.action.values",
-            )
-        )
-    if set(contract["pipeline_unit_fields"]) != PIPELINE_UNIT_FIELDS:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.pipeline_inventory",
-                "pipeline unit contract differs from the runtime handler inventory",
-                "pipeline_unit_fields",
-            )
-        )
-    expected_unit_order = [item.unit_id for item in UNIT_SPECS]
-    if contract.get("pipeline_unit_order") != expected_unit_order:
-        issues.append(
-            SubmissionShapeIssue(
-                "reasoning_contract.pipeline_order",
-                "pipeline order differs from the runtime micro-DAG inventory",
-                "pipeline_unit_order",
-            )
-        )
+        add("server_projection_policy", str(exc), "server_projection")
+    expected_scenarios = expected_sections["scenario_ownership"]
+    check(
+        contract.get("scenario_ownership") != expected_scenarios
+        or contract.get("scenario_fields") != expected_sections["scenario_fields"],
+        "scenario_ownership",
+        "scenario ownership contract differs from the v5 runtime inventory",
+        "scenario_ownership",
+    )
+    action_values = (
+        contract["methodology"]["arrays"]["scenario_tree"]["item"]
+        .get("enum_fields", {}).get("action", {}).get("values")
+    )
+    expected_codes = expected_scenarios["transition_code_by_type"]
+    check(action_values != list(expected_codes.values()), "scenario_transition_codes",
+          "methodology scenario action must use the authority transition codes",
+          "methodology.arrays.scenario_tree.item.enum_fields.action.values")
+    check(set(contract["pipeline_unit_fields"]) != PIPELINE_UNIT_FIELDS,
+          "pipeline_inventory", "pipeline unit contract differs from the runtime handler inventory",
+          "pipeline_unit_fields")
+    check(contract.get("pipeline_unit_order") != [item.unit_id for item in UNIT_SPECS],
+          "pipeline_order", "pipeline order differs from the runtime micro-DAG inventory",
+          "pipeline_unit_order")
     if runtime_inventory is not None:
         expected_methodology = {
-            "field_order": runtime_inventory["field_order"],
-            "objects": runtime_inventory["objects"],
-            "arrays": runtime_inventory["arrays"],
+            key: runtime_inventory[key] for key in ("field_order", "objects", "arrays")
         }
-        issues.extend(
-            _compare_runtime_inventory(
-                expected_methodology,
-                contract["methodology"],
-                path="methodology",
-            )
-        )
-        scenario_count = int(
-            runtime_inventory["policy_bindings"][
-                "legacy_minimum_scenario_count"
-            ]
-        )
-        vnext_count = int(
-            runtime_inventory["policy_bindings"]["vnext_scenario_count"]
-        )
-        if scenario_count <= 0 or scenario_count > vnext_count:
-            issues.append(
-                SubmissionShapeIssue(
-                    "reasoning_contract.methodology_inventory",
-                    (
-                        "legacy scenario minimum is incompatible with the "
-                        "vNext exact account-kind matrix"
-                    ),
-                    "methodology.arrays.scenario_tree.min_items",
-                )
-            )
+        issues.extend(_compare_runtime_inventory(
+            expected_methodology, contract["methodology"], path="methodology"
+        ))
+        bindings = runtime_inventory["policy_bindings"]
+        legacy_count = int(bindings["legacy_minimum_scenario_count"])
+        vnext_count = int(bindings["vnext_scenario_count"])
+        check(legacy_count <= 0 or legacy_count > vnext_count, "methodology_inventory",
+              "legacy scenario minimum is incompatible with the vNext exact account-kind matrix",
+              "methodology.arrays.scenario_tree.min_items")
     for group in ("objects", "arrays"):
         for name, spec in contract["methodology"][group].items():
+            record_spec = spec.get("item") if group == "arrays" else spec
             try:
-                _blank_record(
-                    spec.get("item") if group == "arrays" else spec,
-                    full_policy=full_policy,
-                )
-                for enum_spec in (
-                    (spec.get("item") if group == "arrays" else spec).get(
-                        "enum_fields"
-                    )
-                    or {}
-                ).values():
-                    if "policy_path" in enum_spec:
-                        allowed = _policy_value(
-                            full_policy, str(enum_spec["policy_path"])
-                        )
-                        if not isinstance(allowed, list) or not allowed:
-                            raise ValueError("enum policy path is not a non-empty array")
+                _blank_record(record_spec, full_policy=full_policy)
+                for enum_spec in (record_spec.get("enum_fields") or {}).values():
+                    if "policy_path" not in enum_spec:
+                        continue
+                    allowed = _policy_value(full_policy, str(enum_spec["policy_path"]))
+                    if not isinstance(allowed, list) or not allowed:
+                        raise ValueError("enum policy path is not a non-empty array")
             except (KeyError, TypeError, ValueError) as exc:
-                issues.append(
-                    SubmissionShapeIssue(
-                        "reasoning_contract.policy_binding",
-                        str(exc),
-                        f"methodology.{group}.{name}",
-                    )
-                )
+                add("policy_binding", str(exc), f"methodology.{group}.{name}")
     return issues

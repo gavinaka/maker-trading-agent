@@ -1,7 +1,10 @@
 """Unique deterministic owner for the vNext typed domain contract.
 
 Everything in this module is code-owned and may be projected into JSON,
-runtime compatibility views, documentation and tests.  No model-authored
+runtime compatibility views, documentation and tests.  Deterministic owners
+are classified exactly once as semantic, presentation, or metadata.  Only the
+semantic class participates in the semantic cohort identity; the exact release
+and methodology manifest still bind all three classes.  No model-authored
 semantic value is synthesized here.
 """
 
@@ -12,7 +15,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable
 
-from .canonical import canonical_json_bytes, canonical_sha256
 from .types import (
     Account,
     ClaimType,
@@ -30,6 +32,8 @@ from .types import (
     ReachDirection,
     ScenarioType,
     TriggerOperator,
+    canonical_json_bytes,
+    canonical_sha256,
 )
 
 
@@ -351,6 +355,13 @@ SCENARIO_TYPE_ORDER = _values(
 )
 SCENARIO_ACCOUNT_ORDER = _values((Account.MAIN, Account.MAKER))
 SCENARIO_FIELD_ORDER = ("id", "account", "scenario_type", "owner_claim_id")
+METHODOLOGY_SCENARIO_FIELD_ORDER = (
+    "account",
+    "kind",
+    "claim_id",
+    "trigger_claim_ids",
+    "action",
+)
 SCENARIO_OWNER_CLAIM_TYPE_BY_ACCOUNT = {
     Account.MAIN.value: {
         ScenarioType.BASE.value: ClaimType.MAIN_ACCOUNT_THESIS.value,
@@ -597,6 +608,7 @@ DECISION_MODEL_FIELD_ORDER = (
     "continuity_contract",
 )
 
+REPORT_MODEL_SCHEMA_VERSION = "canonical-report-model-v11"
 REPORT_MODEL_FIELD_ORDER = (
     "schema_version",
     "presentation_contract_version",
@@ -1109,11 +1121,12 @@ DOMAIN_ENUM_VOCABULARIES = {
     )
 }
 
-# Every module-level deterministic owner must be classified here.  The identity
-# payload is materialized from this exact inventory, while the companion test
-# compares it with the module's uppercase assignments.  Adding a new owner
-# without deciding whether it belongs to semantic identity therefore fails
-# closed instead of silently preserving the old authority epoch.
+# Every module-level deterministic owner must be classified exactly once below.
+# The semantic identity is materialized only from ``SEMANTIC_COMPONENT_NAMES``;
+# presentation and metadata remain exact release/manifest authority without
+# resetting a clean semantic cohort.  The companion test compares the union of
+# all three classes with the module's uppercase assignments, so adding an owner
+# without deciding its class fails closed.
 SEMANTIC_COMPONENT_NAMES = frozenset(
     {
         "ACCOUNT_CLAIM_BINDINGS",
@@ -1152,15 +1165,14 @@ SEMANTIC_COMPONENT_NAMES = frozenset(
         "MINIMUM_OBSERVATION_METRICS",
         "MODEL_OWNED_SEMANTIC_SURFACES",
         "NON_ACTION_REPORT_SECTIONS",
-        "NON_DIRECTIONAL_SUBJECT_DIRECTION_ORDER",
         "NON_TRACEABLE_REPORT_SECTIONS",
+        "NON_DIRECTIONAL_SUBJECT_DIRECTION_ORDER",
         "OBSERVATION_FIELD_ORDER_BY_CONTRACT_SOURCE",
         "OBSERVATION_ID_BY_SOURCE",
         "OBSERVATION_KIND_BY_CONTRACT_SOURCE",
         "OBSERVATION_MECHANICAL_OWNERSHIP",
         "ORDERFLOW_FINAL_DIRECTION_TO_CLAIM_DIRECTION",
         "ORDER_LIFECYCLE_APPLICABILITY",
-        "ORDER_LIFECYCLE_DISPLAY_BY_STATE",
         "ORDER_LIFECYCLE_PATH_FLAGS",
         "PIPELINE_ACCOUNT_CONTROL_CLAIM_TYPES",
         "PIPELINE_ACCOUNT_STRATEGY_OWNER",
@@ -1178,26 +1190,21 @@ SEMANTIC_COMPONENT_NAMES = frozenset(
         "RELATIVE_TRIGGER_OPERATOR_PROJECTION",
         "REPORT_BINDING_SECTION_MODEL_PATHS",
         "REPORT_BINDINGS_SCHEMA_VERSION",
-        "REPORT_MODEL_FIELD_ORDER",
         "REPORT_SECTIONS",
-        "BLOCKBEATS_CARDS_SCHEMA_VERSION",
         "EXECUTION_AUTHORIZATION_FIELDS",
         "MAKER_SEMANTIC_STATE_SCHEMA_VERSION",
         "SCENARIO_TYPES",
         "SCENARIO_ACCOUNT_ORDER",
-        "SCENARIO_BASE_CONDITION_BY_ACCOUNT_DIRECTION",
-        "SCENARIO_CANONICAL_AUDIT_FIELD_ORDER",
         "SCENARIO_CONDITION_OWNER_BY_TYPE",
         "SCENARIO_EXECUTION_LIFECYCLE_OWNER",
         "SCENARIO_FIELD_ORDER",
+        "METHODOLOGY_SCENARIO_FIELD_ORDER",
         "SCENARIO_FREE_PROSE_PROJECTABLE",
         "SCENARIO_OWNER_CLAIM_TYPE_BY_ACCOUNT",
         "SCENARIO_OWNERSHIP_SCHEMA_VERSION",
-        "SCENARIO_PROJECTION_SCHEMA_VERSION",
         "SCENARIO_TRANSITION_CODES",
         "SCENARIO_TRANSITION_OWNER",
         "SCENARIO_TYPE_ORDER",
-        "SCENARIO_VISIBLE_PROJECTION_BY_ACCOUNT_AND_TRANSITION_CODE",
         "SCAFFOLD_POLICY",
         "SECTION_REQUIRED_CLAIM_TYPES",
         "SHADOW_CONTINUITY_FIELDS",
@@ -1221,54 +1228,119 @@ SEMANTIC_COMPONENT_NAMES = frozenset(
         "TRIGGER_SCALAR_CLAUSE_FIELD_ORDER",
         "TRIGGER_SCALAR_CLAUSE_FIELDS",
         "TYPED_NARRATIVE_OWNERSHIP",
-        "TIMEFRAME_DISPLAY_SCHEMA_VERSION",
         "VISUAL_CITATION_POLICY",
         "VISUAL_EVIDENCE_SOURCES",
     }
 )
 
-SEMANTIC_IDENTITY_METADATA_NAMES = frozenset(
+PRESENTATION_COMPONENT_NAMES = frozenset(
+    {
+        "BLOCKBEATS_CARDS_SCHEMA_VERSION",
+        "ORDER_LIFECYCLE_DISPLAY_BY_STATE",
+        "REPORT_MODEL_FIELD_ORDER",
+        "REPORT_MODEL_SCHEMA_VERSION",
+        "SCENARIO_BASE_CONDITION_BY_ACCOUNT_DIRECTION",
+        "SCENARIO_CANONICAL_AUDIT_FIELD_ORDER",
+        "SCENARIO_PROJECTION_SCHEMA_VERSION",
+        "SCENARIO_VISIBLE_PROJECTION_BY_ACCOUNT_AND_TRANSITION_CODE",
+        "TIMEFRAME_DISPLAY_SCHEMA_VERSION",
+    }
+)
+
+METADATA_COMPONENT_NAMES = frozenset(
     {
         "REGISTRY",
         "SEMANTIC_COMPONENT_NAMES",
-        "SEMANTIC_IDENTITY_METADATA_NAMES",
+        "PRESENTATION_COMPONENT_NAMES",
+        "METADATA_COMPONENT_NAMES",
     }
 )
 
 
-def _semantic_component_payload() -> dict[str, Any]:
+def _classified_component_payload(names: frozenset[str]) -> dict[str, Any]:
     public_constants = {name for name in globals() if name.isupper()}
-    classified = SEMANTIC_COMPONENT_NAMES | SEMANTIC_IDENTITY_METADATA_NAMES
+    classified = (
+        SEMANTIC_COMPONENT_NAMES
+        | PRESENTATION_COMPONENT_NAMES
+        | METADATA_COMPONENT_NAMES
+    )
     unclassified = sorted(public_constants - classified)
-    missing = sorted(SEMANTIC_COMPONENT_NAMES - public_constants)
-    if unclassified or missing:
+    multiply_classified = sorted(
+        (SEMANTIC_COMPONENT_NAMES & PRESENTATION_COMPONENT_NAMES)
+        | (SEMANTIC_COMPONENT_NAMES & METADATA_COMPONENT_NAMES)
+        | (PRESENTATION_COMPONENT_NAMES & METADATA_COMPONENT_NAMES)
+    )
+    missing = sorted(classified - public_constants)
+    if unclassified or multiply_classified or missing:
         raise RuntimeError(
-            "domain registry semantic owner classification is incomplete: "
-            f"unclassified={unclassified}; missing={missing}"
+            "domain registry owner classification is incomplete: "
+            f"unclassified={unclassified}; "
+            f"multiply_classified={multiply_classified}; missing={missing}"
         )
-    raw = {name: globals()[name] for name in sorted(SEMANTIC_COMPONENT_NAMES)}
+    raw = {name: globals()[name] for name in sorted(names)}
     return json.loads(canonical_json_bytes(raw).decode("utf-8"))
 
 
 @dataclass(frozen=True)
 class DomainRegistry:
-    schema_version: str = "vnext-domain-registry-v2"
+    schema_version: str = "vnext-domain-registry-v3"
+    account_current_basis_schema_version: str = "account-current-basis-v2"
+    account_trigger_logic_schema_version: str = "account-trigger-logic-v5"
     reasoning_submission_schema_version: str = "reasoning-submission-contract-v6"
     reasoning_model_schema_version: str = "reasoning-model-v5"
+    reasoning_server_projection_schema_version: str = "reasoning-server-projection-v4"
     decision_model_schema_version: str = "decision-model-v7"
-    report_model_schema_version: str = "canonical-report-model-v11"
+    maker_entry_semantics_schema_version: str = "maker-entry-semantics-v1"
     maker_order_lifecycle_schema_version: str = "maker-order-lifecycle-v1"
     evidence_polarity_schema_version: str = "evidence-polarity-v1"
-    report_bindings_schema_version: str = REPORT_BINDINGS_SCHEMA_VERSION
-    blockbeats_cards_schema_version: str = BLOCKBEATS_CARDS_SCHEMA_VERSION
-    shadow_continuity_schema_version: str = SHADOW_CONTINUITY_SCHEMA_VERSION
-    scenario_ownership_schema_version: str = SCENARIO_OWNERSHIP_SCHEMA_VERSION
-    scenario_projection_schema_version: str = SCENARIO_PROJECTION_SCHEMA_VERSION
-    maker_semantic_state_schema_version: str = MAKER_SEMANTIC_STATE_SCHEMA_VERSION
-    timeframe_display_schema_version: str = TIMEFRAME_DISPLAY_SCHEMA_VERSION
-    report_model_field_order: tuple[str, ...] = REPORT_MODEL_FIELD_ORDER
-    reasoning_model_field_order: tuple[str, ...] = TOP_LEVEL_FIELD_ORDER
-    decision_model_field_order: tuple[str, ...] = DECISION_MODEL_FIELD_ORDER
+    report_presentation_contract_schema_version: str = (
+        "vnext-report-presentation-contract-v12"
+    )
+    scenario_control_binding_schema_version: str = "scenario-control-binding-v2"
+
+    @property
+    def report_bindings_schema_version(self) -> str:
+        return REPORT_BINDINGS_SCHEMA_VERSION
+
+    @property
+    def report_model_schema_version(self) -> str:
+        return REPORT_MODEL_SCHEMA_VERSION
+
+    @property
+    def blockbeats_cards_schema_version(self) -> str:
+        return BLOCKBEATS_CARDS_SCHEMA_VERSION
+
+    @property
+    def shadow_continuity_schema_version(self) -> str:
+        return SHADOW_CONTINUITY_SCHEMA_VERSION
+
+    @property
+    def scenario_ownership_schema_version(self) -> str:
+        return SCENARIO_OWNERSHIP_SCHEMA_VERSION
+
+    @property
+    def scenario_projection_schema_version(self) -> str:
+        return SCENARIO_PROJECTION_SCHEMA_VERSION
+
+    @property
+    def maker_semantic_state_schema_version(self) -> str:
+        return MAKER_SEMANTIC_STATE_SCHEMA_VERSION
+
+    @property
+    def timeframe_display_schema_version(self) -> str:
+        return TIMEFRAME_DISPLAY_SCHEMA_VERSION
+
+    @property
+    def report_model_field_order(self) -> tuple[str, ...]:
+        return REPORT_MODEL_FIELD_ORDER
+
+    @property
+    def reasoning_model_field_order(self) -> tuple[str, ...]:
+        return TOP_LEVEL_FIELD_ORDER
+
+    @property
+    def decision_model_field_order(self) -> tuple[str, ...]:
+        return DECISION_MODEL_FIELD_ORDER
 
     @property
     def report_binding_section_model_paths(
@@ -1280,23 +1352,48 @@ class DomainRegistry:
         return {
             "schema_version": self.schema_version,
             "contract_schema_versions": {
+                "account_current_basis": self.account_current_basis_schema_version,
+                "account_trigger_logic": self.account_trigger_logic_schema_version,
                 "decision_model": self.decision_model_schema_version,
                 "evidence_polarity": self.evidence_polarity_schema_version,
+                "maker_entry_semantics": self.maker_entry_semantics_schema_version,
                 "maker_order_lifecycle": (
                     self.maker_order_lifecycle_schema_version
                 ),
                 "reasoning_model": self.reasoning_model_schema_version,
+                "reasoning_server_projection": (
+                    self.reasoning_server_projection_schema_version
+                ),
                 "reasoning_submission": self.reasoning_submission_schema_version,
-                "report_model": self.report_model_schema_version,
                 "report_bindings": self.report_bindings_schema_version,
-                "blockbeats_cards": self.blockbeats_cards_schema_version,
+                "scenario_control_binding": (
+                    self.scenario_control_binding_schema_version
+                ),
                 "shadow_continuity": self.shadow_continuity_schema_version,
                 "scenario_ownership": self.scenario_ownership_schema_version,
-                "scenario_projection": self.scenario_projection_schema_version,
                 "maker_semantic_state": self.maker_semantic_state_schema_version,
+            },
+            "semantic_components": _classified_component_payload(
+                SEMANTIC_COMPONENT_NAMES
+            ),
+        }
+
+    def presentation_payload(self) -> dict[str, Any]:
+        """Return deterministic display authority without creating an identity."""
+
+        return {
+            "contract_schema_versions": {
+                "blockbeats_cards": self.blockbeats_cards_schema_version,
+                "report_presentation_contract": (
+                    self.report_presentation_contract_schema_version
+                ),
+                "report_model": self.report_model_schema_version,
+                "scenario_projection": self.scenario_projection_schema_version,
                 "timeframe_display": self.timeframe_display_schema_version,
             },
-            "semantic_components": _semantic_component_payload(),
+            "presentation_components": _classified_component_payload(
+                PRESENTATION_COMPONENT_NAMES
+            ),
         }
 
     @property

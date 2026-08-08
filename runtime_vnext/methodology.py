@@ -11,13 +11,13 @@ from typing import Any, Mapping
 
 from runtime.golden_methodology import get_methodology_runtime_inventory
 
-from .domain_ir.canonical import canonical_json_bytes
-from .domain_ir.legacy_v6_adapter import (
+from .domain_ir.projection import (
     deterministic_projection_drift,
     report_presentation_projection_drift,
     scoring_projection_drift,
 )
 from .domain_ir.registry import REGISTRY, DomainRegistry
+from .domain_ir.types import canonical_json_bytes
 from .reasoning_submission import (
     load_reasoning_submission_contract,
     validate_contract_runtime_compatibility,
@@ -68,6 +68,24 @@ PHASE_FILES: dict[str, tuple[str, ...]] = {
     "report": (
         "governance/vnext_golden_sample_contract.json",
         "governance/vnext_report_presentation_contract.json",
+        "governance/vnext_report_language_contract.md",
+    ),
+}
+
+# Exact phase inventory remains the run-time authority boundary.  Evidence and
+# reasoning are wholly semantic; report is intentionally mixed because its
+# golden/language contracts govern report meaning while the generated
+# presentation contract governs display only.
+PHASE_AUTHORITY_CLASS: dict[str, str] = {
+    "evidence": "semantic",
+    "reasoning": "semantic",
+    "report": "mixed",
+}
+PHASE_SEMANTIC_FILES: dict[str, tuple[str, ...]] = {
+    "evidence": PHASE_FILES["evidence"],
+    "reasoning": PHASE_FILES["reasoning"],
+    "report": (
+        "governance/vnext_golden_sample_contract.json",
         "governance/vnext_report_language_contract.md",
     ),
 }
@@ -142,6 +160,41 @@ def discover_control_plane_files(*, root: Path = ROOT) -> tuple[str, ...]:
 # supplied root, so an added package module cannot be hidden by import timing.
 CONTROL_PLANE_FILES: tuple[str, ...] = discover_control_plane_files(root=ROOT)
 
+# Exact runtime files that can change business interpretation, validation,
+# decision certification or clean-sample classification.  They are also part
+# of the release inventory; this subset additionally closes semantic identity.
+# Pure display projection in report_compiler.py is deliberately release-only.
+SEMANTIC_RUNTIME_FILES: tuple[str, ...] = (
+    "outputs/report_lint.py",
+    "outputs/report_structure_gate.py",
+    "runtime/golden_methodology.py",
+    "runtime_vnext/artifacts.py",
+    "runtime_vnext/controller.py",
+    "runtime_vnext/delivery_renderer.py",
+    "runtime_vnext/domain_ir/__init__.py",
+    "runtime_vnext/domain_ir/projection.py",
+    "runtime_vnext/domain_ir/types.py",
+    "runtime_vnext/effort_policy.py",
+    "runtime_vnext/errors.py",
+    "runtime_vnext/gates.py",
+    "runtime_vnext/golden_samples.py",
+    "runtime_vnext/legacy_capture_adapter.py",
+    "runtime_vnext/methodology.py",
+    "runtime_vnext/plan_semantics.py",
+    "runtime_vnext/pretrade_gate.py",
+    "runtime_vnext/rate_expectation.py",
+    "runtime_vnext/reasoning_pipeline.py",
+    "runtime_vnext/reasoning_submission.py",
+    "runtime_vnext/sample_outcome.py",
+    "runtime_vnext/validation/__init__.py",
+    "runtime_vnext/validation/common.py",
+    "runtime_vnext/validation/decision.py",
+    "runtime_vnext/validation/delivery.py",
+    "runtime_vnext/validation/evidence.py",
+    "runtime_vnext/validation/reasoning.py",
+    "runtime_vnext/validation/report.py",
+)
+
 ADDITIVE_METHOD_MARKERS = {
     "scoring/chart_methodology.md": ("VRVP", "流动性猎杀"),
     "scoring/scoring_contract.json": ("liquidation", "etf"),
@@ -149,9 +202,9 @@ ADDITIVE_METHOD_MARKERS = {
 
 MANIFEST_V2_SCHEMA = "methodology-manifest-v2"
 MANIFEST_V3_SCHEMA = "methodology-manifest-v3"
-SEMANTIC_CONTRACT_SCHEMA = "vnext-semantic-contract-v1"
-RELEASE_IDENTITY_SCHEMA = "vnext-runtime-release-v1"
-MANIFEST_V3_POLICY = "phase-scoped-semantic-plus-release-authority-v1"
+SEMANTIC_CONTRACT_SCHEMA = "vnext-semantic-contract-v2"
+RELEASE_IDENTITY_SCHEMA = "vnext-runtime-release-v2"
+MANIFEST_V3_POLICY = "phase-runtime-scoped-semantic-plus-release-authority-v2"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -214,6 +267,7 @@ def _semantic_file_record(path: Path, relative: str) -> dict[str, str]:
 def _semantic_contract_sha256(
     domain_registry_sha256: str,
     phases: Mapping[str, Mapping[str, Any]],
+    semantic_runtime_sha256: str,
 ) -> str:
     return canonical_sha256(
         {
@@ -223,15 +277,26 @@ def _semantic_contract_sha256(
                 phase: value["semantic_phase_sha256"]
                 for phase, value in sorted(phases.items())
             },
+            "semantic_runtime_sha256": semantic_runtime_sha256,
         }
     )
 
 
-def _release_sha256(control_sha256: str) -> str:
+def _release_sha256(
+    control_sha256: str,
+    phases: Mapping[str, Mapping[str, Any]],
+) -> str:
+    """Bind executable code plus exact presentation authority to one release."""
+
     return canonical_sha256(
         {
             "schema_version": RELEASE_IDENTITY_SCHEMA,
             "control_sha256": control_sha256,
+            "presentation_phase_sha256": {
+                phase: value["phase_sha256"]
+                for phase, value in sorted(phases.items())
+                if PHASE_AUTHORITY_CLASS[phase] != "semantic"
+            },
         }
     )
 
@@ -246,6 +311,7 @@ def build_methodology_manifest(
     missing: list[str] = []
     marker_failures: list[str] = []
     for phase, relatives in PHASE_FILES.items():
+        semantic_relatives = set(PHASE_SEMANTIC_FILES[phase])
         records: list[dict[str, Any]] = []
         semantic_records: list[dict[str, str]] = []
         for relative in relatives:
@@ -265,7 +331,8 @@ def build_methodology_manifest(
                     "bytes": path.stat().st_size,
                 }
             )
-            semantic_records.append(_semantic_file_record(path, relative))
+            if relative in semantic_relatives:
+                semantic_records.append(_semantic_file_record(path, relative))
         phase_payload = {
             "files": records,
             "semantic_files": semantic_records,
@@ -335,6 +402,17 @@ def build_methodology_manifest(
         )
     control_plane: dict[str, Any] = {"files": control_records}
     control_plane["control_sha256"] = canonical_sha256(control_plane)
+    semantic_runtime_records: list[dict[str, str]] = []
+    for relative in SEMANTIC_RUNTIME_FILES:
+        path = (root / relative).resolve()
+        path.relative_to(root)
+        if not path.is_file():
+            raise ValueError(f"semantic runtime file missing: {relative}")
+        semantic_runtime_records.append(_semantic_file_record(path, relative))
+    semantic_runtime: dict[str, Any] = {"files": semantic_runtime_records}
+    semantic_runtime["semantic_runtime_sha256"] = canonical_sha256(
+        semantic_runtime
+    )
     domain_registry_sha256 = registry.semantic_contract_sha256
     payload: dict[str, Any] = {
         "schema_version": MANIFEST_V3_SCHEMA,
@@ -342,11 +420,16 @@ def build_methodology_manifest(
         "domain_registry_sha256": domain_registry_sha256,
         "phases": phases,
         "control_plane": control_plane,
+        "semantic_runtime": semantic_runtime,
         "semantic_contract_sha256": _semantic_contract_sha256(
             domain_registry_sha256,
             phases,
+            semantic_runtime["semantic_runtime_sha256"],
         ),
-        "release_sha256": _release_sha256(control_plane["control_sha256"]),
+        "release_sha256": _release_sha256(
+            control_plane["control_sha256"],
+            phases,
+        ),
     }
     payload["manifest_sha256"] = canonical_sha256(payload)
     validate_methodology_manifest(payload)
@@ -358,8 +441,9 @@ def _validate_file_records(
     *,
     semantic: bool,
     label: str,
+    allow_empty: bool = False,
 ) -> list[str]:
-    if not isinstance(records, list) or not records:
+    if not isinstance(records, list) or (not records and not allow_empty):
         raise ValueError(f"{label} file inventory is missing")
     paths: list[str] = []
     expected_fields = (
@@ -459,6 +543,7 @@ def validate_methodology_manifest(
         "domain_registry_sha256",
         "phases",
         "control_plane",
+        "semantic_runtime",
         "semantic_contract_sha256",
         "release_sha256",
         "manifest_sha256",
@@ -479,7 +564,12 @@ def validate_methodology_manifest(
         raise ValueError("methodology manifest v3 identities are invalid")
 
     phases = manifest.get("phases")
-    if not isinstance(phases, dict) or set(phases) != set(PHASE_FILES):
+    if (
+        not isinstance(phases, dict)
+        or set(phases) != set(PHASE_FILES)
+        or set(PHASE_AUTHORITY_CLASS) != set(PHASE_FILES)
+        or set(PHASE_SEMANTIC_FILES) != set(PHASE_FILES)
+    ):
         raise ValueError("methodology manifest v3 phase inventory is invalid")
     for phase, value in phases.items():
         if not isinstance(value, dict) or set(value) != {
@@ -493,10 +583,16 @@ def validate_methodology_manifest(
             value.get("files"), semantic=False, label=f"phase {phase}"
         )
         semantic_paths = _validate_file_records(
-            value.get("semantic_files"), semantic=True, label=f"phase {phase}"
+            value.get("semantic_files"),
+            semantic=True,
+            label=f"phase {phase}",
+            allow_empty=not PHASE_SEMANTIC_FILES[phase],
         )
-        if semantic_paths != exact_paths:
-            raise ValueError(f"methodology phase semantic inventory differs: {phase}")
+        expected_semantic_paths = list(PHASE_SEMANTIC_FILES[phase])
+        if semantic_paths != expected_semantic_paths:
+            raise ValueError(
+                f"methodology phase semantic ownership differs: {phase}"
+            )
         if value.get("phase_sha256") != canonical_sha256(
             {"files": value["files"]}
         ):
@@ -505,6 +601,24 @@ def validate_methodology_manifest(
             {"files": value["semantic_files"]}
         ):
             raise ValueError(f"methodology semantic phase hash is invalid: {phase}")
+
+    semantic_runtime = manifest.get("semantic_runtime")
+    if not isinstance(semantic_runtime, dict) or set(semantic_runtime) != {
+        "files",
+        "semantic_runtime_sha256",
+    }:
+        raise ValueError("methodology semantic runtime shape is invalid")
+    semantic_runtime_paths = _validate_file_records(
+        semantic_runtime.get("files"),
+        semantic=True,
+        label="semantic runtime",
+    )
+    if semantic_runtime_paths != list(SEMANTIC_RUNTIME_FILES):
+        raise ValueError("methodology semantic runtime ownership differs")
+    if semantic_runtime.get("semantic_runtime_sha256") != canonical_sha256(
+        {"files": semantic_runtime["files"]}
+    ):
+        raise ValueError("methodology semantic runtime hash is invalid")
 
     control_plane = manifest.get("control_plane")
     if not isinstance(control_plane, dict) or set(control_plane) != {
@@ -517,6 +631,8 @@ def validate_methodology_manifest(
     )
     if control_paths != sorted(control_paths):
         raise ValueError("methodology control-plane inventory is not sorted")
+    if not set(semantic_runtime_paths).issubset(control_paths):
+        raise ValueError("methodology semantic runtime escapes control plane")
     if control_plane.get("control_sha256") != canonical_sha256(
         {"files": control_plane["files"]}
     ):
@@ -524,9 +640,13 @@ def validate_methodology_manifest(
     if semantic_contract_sha256 != _semantic_contract_sha256(
         str(domain_registry_sha256),
         phases,
+        str(semantic_runtime["semantic_runtime_sha256"]),
     ):
         raise ValueError("methodology semantic contract hash is invalid")
-    if release_sha256 != _release_sha256(str(control_plane["control_sha256"])):
+    if release_sha256 != _release_sha256(
+        str(control_plane["control_sha256"]),
+        phases,
+    ):
         raise ValueError("methodology release hash is invalid")
 
     return MethodologyIdentity(

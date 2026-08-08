@@ -20,13 +20,20 @@ from pathlib import Path
 from unittest.mock import patch
 
 from runtime_vnext.artifacts import ArtifactStore
-from runtime_vnext.controller import RunController
+from runtime_vnext.controller import (
+    AUTOMATIC_ATTEMPT_LIMIT_BY_STAGE,
+    DEFAULT_AUTOMATIC_ATTEMPT_LIMIT,
+    RunController,
+    _load_blockbeats_rows,
+    _load_report_presentation_contract,
+)
 from runtime_vnext.errors import FailureClass, WorkflowFailure
 from runtime_vnext.delivery_renderer import (
     WORD_QA_REVIEW_CHECKLIST_KEYS,
     WORD_QA_REVIEW_CHECKLIST_VERSION,
     prepare_run_qa,
 )
+from runtime_vnext.domain_ir import to_plain
 from runtime_vnext.domain_ir.registry import REGISTRY
 from runtime_vnext.golden_samples import load_contract
 from runtime_vnext.gates import (
@@ -39,12 +46,16 @@ from runtime_vnext.gates import (
     evidence_snapshot_sha256,
     evaluate_reasoning,
     evaluate_shadow_delivery,
+    decision_model_sha256,
     reasoning_model_sha256,
     _typed_direction_prose_issue,
 )
 from runtime_vnext.methodology import (
     CONTROL_PLANE_FILES,
+    MANIFEST_V3_POLICY,
     PHASE_FILES,
+    PHASE_SEMANTIC_FILES,
+    SEMANTIC_RUNTIME_FILES,
     build_methodology_manifest,
     canonical_sha256,
     load_scoring_policy,
@@ -61,31 +72,38 @@ from runtime_vnext.reasoning_submission import (
     assemble_reasoning_submission,
     load_reasoning_submission_contract,
 )
-from runtime_vnext.semantic_validation import (
+from runtime_vnext.report_compiler import compile_projected_report
+from runtime_vnext.validation.evidence import (
     _extreme_proof_failures,
-    _validate_claim_layers,
     _validate_tradingview,
     _validate_tradingview_profile_sidecar_binding,
 )
+from runtime_vnext.validation.reasoning import _validate_claim_layers
 from runtime_vnext.legacy_capture_adapter import (
     _rate_expectation_meta,
     adapt_legacy_capture,
 )
 from outputs.render_from_combined import render_canonical
-from runtime_vnext.report_compiler import (
-    _display_decimal,
-    _human_observation_fact,
-    _typed_account_controls,
+from runtime_vnext.validation.report import (
+    certify_report_projection_input,
+    certify_presentation_contract,
     evaluate_gold_template_fidelity,
     evaluate_human_reasoning_depth,
-    load_presentation_contract,
-    render_combined_markdown,
     run_compatibility_lint,
 )
 from tests.test_rate_expectation import _fixture as rate_expectation_fixture
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_presentation_contract(root: Path) -> dict:
+    payload = json.loads(
+        (root / "governance" / "vnext_report_presentation_contract.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    return certify_presentation_contract(payload)
 
 
 class VNextWorkflowTests(unittest.TestCase):
@@ -1784,21 +1802,31 @@ class VNextWorkflowTests(unittest.TestCase):
         self.assertEqual(manifest["schema_version"], "methodology-manifest-v3")
         self.assertEqual(
             manifest["policy"],
-            "phase-scoped-semantic-plus-release-authority-v1",
+            MANIFEST_V3_POLICY,
         )
         self.assertRegex(manifest["domain_registry_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(set(manifest["phases"]), {"evidence", "reasoning", "report"})
-        for phase in manifest["phases"].values():
+        for phase_name, phase in manifest["phases"].items():
             self.assertTrue(phase["files"])
             self.assertEqual(
                 [record["path"] for record in phase["semantic_files"]],
-                [record["path"] for record in phase["files"]],
+                list(PHASE_SEMANTIC_FILES[phase_name]),
             )
             self.assertRegex(phase["phase_sha256"], r"^[0-9a-f]{64}$")
             self.assertRegex(
                 phase["semantic_phase_sha256"],
                 r"^[0-9a-f]{64}$",
             )
+        self.assertEqual(
+            tuple(
+                record["path"] for record in manifest["semantic_runtime"]["files"]
+            ),
+            SEMANTIC_RUNTIME_FILES,
+        )
+        self.assertRegex(
+            manifest["semantic_runtime"]["semantic_runtime_sha256"],
+            r"^[0-9a-f]{64}$",
+        )
         self.assertRegex(manifest["semantic_contract_sha256"], r"^[0-9a-f]{64}$")
         self.assertRegex(manifest["release_sha256"], r"^[0-9a-f]{64}$")
         self.assertRegex(manifest["manifest_sha256"], r"^[0-9a-f]{64}$")
@@ -1813,7 +1841,10 @@ class VNextWorkflowTests(unittest.TestCase):
             encoding="utf-8",
         )
         changed = build_methodology_manifest(root=self.root)
-        self.assertEqual(
+        # The public gate facade participates in semantic dispatch.  A byte
+        # change can redirect which stage validator runs, so it must rotate
+        # both semantic and release identity even though it owns no policy.
+        self.assertNotEqual(
             changed["semantic_contract_sha256"],
             manifest["semantic_contract_sha256"],
         )
@@ -3622,6 +3653,59 @@ class VNextWorkflowTests(unittest.TestCase):
             allowed_result.facts["expected_plan_state"],
         )
 
+        evidence = self.controller.store.load_stage_payload(
+            self.run_root, "evidence", "evidence"
+        )
+        methodology = json.loads(
+            (self.run_root / "methodology_manifest.json").read_text(encoding="utf-8")
+        )
+        contract, contract_sha256 = _load_report_presentation_contract(self.root)
+
+        def compile_candidate(decision: dict):
+            certified_decision = copy.deepcopy(decision)
+            certified_decision["decision_sha256"] = decision_model_sha256(
+                certified_decision
+            )
+            source = certify_report_projection_input(
+                evidence=evidence,
+                reasoning=reasoning,
+                decision=certified_decision,
+                blockbeats_rows=_load_blockbeats_rows(self.root, evidence),
+                presentation_contract=contract,
+                presentation_contract_sha256=contract_sha256,
+                methodology_sha256=methodology["phases"]["reasoning"]["phase_sha256"],
+                report_contract_sha256=methodology["phases"]["report"]["phase_sha256"],
+            )
+            return compile_projected_report(source, contract)
+
+        allowed_report = compile_candidate(allowed_payload)
+        blocked_report = compile_candidate(blocked_payload)
+        allowed_model = to_plain(allowed_report.model)
+        blocked_model = to_plain(blocked_report.model)
+        self.assertEqual(
+            allowed_model["frontstage"]["maker_execution"],
+            blocked_model["frontstage"]["maker_execution"],
+        )
+        self.assertEqual(
+            allowed_model["maker_summary"]["risk_plan"],
+            blocked_model["maker_summary"]["risk_plan"],
+        )
+        self.assertEqual(
+            allowed_model["audit"]["risk_scenarios"],
+            blocked_model["audit"]["risk_scenarios"],
+        )
+        self.assertNotEqual(
+            allowed_model["frontstage"]["maker_authorization"],
+            blocked_model["frontstage"]["maker_authorization"],
+        )
+        self.assertNotEqual(
+            allowed_model["frontstage"]["maker_execution_status"],
+            blocked_model["frontstage"]["maker_execution_status"],
+        )
+        for report in (allowed_report, blocked_report):
+            self.assertIn("候选计划已通过认证；计划结论成立", report.markdown)
+            self.assertIn("Maker风险计划：入场区间", report.markdown)
+
         missing_gate_result = evaluate_decision(
             allowed_payload,
             reasoning=reasoning,
@@ -3764,10 +3848,6 @@ class VNextWorkflowTests(unittest.TestCase):
             "reasoning.actual_position_coupling",
             {item.code for item in result.defects},
         )
-
-    def test_risk_math_display_rounds_machine_precision(self):
-        self.assertEqual(_display_decimal("2.857142857142857142857"), "2.86")
-        self.assertEqual(_display_decimal("2.749410840534171249"), "2.75")
 
     def test_winrate_rubric_must_recompute_to_the_final_value(self):
         _, reasoning = self.prepare_through_reasoning()
@@ -4797,23 +4877,6 @@ class VNextWorkflowTests(unittest.TestCase):
         text = (self.root / combined["path"]).read_text(encoding="utf-8")
         self.assertIn("清算图周期：48H、24H", text)
 
-    def test_liquidation_fact_projection_is_idempotent(self):
-        observation = {
-            "source": "Coinglass",
-            "fact": "上方65000存在清算密集区；清算图周期：48H、24H。",
-            "metrics": {
-                "liquidation_map": {
-                    "captured_timeframes": ["48h", "24h"],
-                }
-            },
-        }
-
-        projected = _human_observation_fact(observation)
-
-        self.assertEqual(projected, observation["fact"])
-        self.assertEqual(projected.count("48H"), 1)
-        self.assertEqual(projected.count("24H"), 1)
-
     def test_report_compiles_when_optional_15m_sma20_is_absent(self):
         raw_evidence = self.evidence()
         self.controller.accept_evidence(
@@ -4878,11 +4941,8 @@ class VNextWorkflowTests(unittest.TestCase):
         self.assertIn("已提交候选未通过认证，不可执行", text)
         self.assertIn("第一层：", text)
         self.assertIn("第二层：", text)
-        self.assertIn(
-            "### BTC（被拒候选审计）\n"
-            "BTC（被拒候选审计）：候选策略类型：",
-            text,
-        )
+        self.assertIn("### BTC（未通过认证）", text)
+        self.assertNotIn("### BTC（被拒候选审计）", text)
         self.assertTrue(
             all(len(line.removeprefix("### ")) <= 70 for line in text.splitlines() if line.startswith("### "))
         )
@@ -4890,6 +4950,11 @@ class VNextWorkflowTests(unittest.TestCase):
         self.assertNotIn("### BTC（候选策略）", text)
         self.assertNotIn("first_trigger_formula", text)
         self.assertNotIn("实际加权成交价", text)
+        frontstage, appendix_d = text.split("### D. 风险、情景与机械校验", maxsplit=1)
+        self.assertNotIn("订单生命周期：", frontstage)
+        self.assertNotIn("候选名义持仓750", frontstage)
+        self.assertIn("被拒候选参数审计（不可执行，不得用于下单）", appendix_d)
+        self.assertIn("被拒候选订单生命周期审计（不可执行，不得用于下单）", appendix_d)
 
     def test_shadow_observe_report_compiles_without_defense_trigger_formula(self):
         _, reasoning = self.prepare_through_reasoning()
@@ -4912,12 +4977,18 @@ class VNextWorkflowTests(unittest.TestCase):
         )
         text = (self.root / combined["path"]).read_text(encoding="utf-8")
         self.assertIn("被拒候选机械结论（不可执行，不得用于下单）", text)
-        self.assertIn("### BTC（被拒候选审计）", text)
+        self.assertIn("### BTC（未通过认证）", text)
+        self.assertNotIn("### BTC（被拒候选审计）", text)
         self.assertIn("真实执行状态：未尝试真实执行", text)
         self.assertIn("第一层：无可执行 Maker 计划，第一层防守暂不触发。", text)
         self.assertIn("第二层：无可执行 Maker 计划，第二层防守暂不触发。", text)
         self.assertNotIn("first_trigger_formula", text)
         self.assertNotIn("实际加权成交价", text)
+        frontstage, appendix_d = text.split("### D. 风险、情景与机械校验", maxsplit=1)
+        self.assertNotIn("订单生命周期：", frontstage)
+        self.assertNotIn("候选名义持仓750", frontstage)
+        self.assertIn("被拒候选参数审计（不可执行，不得用于下单）", appendix_d)
+        self.assertIn("被拒候选订单生命周期审计（不可执行，不得用于下单）", appendix_d)
 
     def test_report_projection_moves_audit_meta_and_owns_defense_triggers_once(self):
         raw_evidence = self.evidence()
@@ -4956,23 +5027,21 @@ class VNextWorkflowTests(unittest.TestCase):
             frontstage,
         )
 
-    @patch("runtime_vnext.report_compiler.subprocess.run")
-    def test_compatibility_lint_forces_utf8_child_process(self, run_mock):
-        run_mock.return_value.returncode = 0
-        run_mock.return_value.stdout = "[OK] 中文输出"
-        run_mock.return_value.stderr = ""
-        result = run_compatibility_lint(self.root / "report.md", root=self.root)
-        self.assertTrue(result["passed"])
-        kwargs = run_mock.call_args.kwargs
-        self.assertEqual(kwargs["encoding"], "utf-8")
-        self.assertEqual(kwargs["env"]["PYTHONUTF8"], "1")
-        self.assertEqual(kwargs["env"]["PYTHONIOENCODING"], "utf-8")
-        command = run_mock.call_args.args[0]
-        contract_flag = command.index("--timeframe-contract")
-        self.assertEqual(
-            command[contract_flag + 1],
-            str(self.root / "governance" / "vnext_report_presentation_contract.json"),
+    def test_compatibility_lint_certifies_the_in_memory_projection(self):
+        self.prepare_through_decision()
+        self.controller.compile_report(self.run_root)
+        combined = self.controller.store.load_stage_output_record(
+            self.run_root, "report", "combined"
         )
+        markdown = (self.root / combined["path"]).read_text(encoding="utf-8")
+        result = run_compatibility_lint(
+            markdown,
+            report_filename=f"{self.date}_{self.slot}_combined.md",
+            trading_date=self.date,
+            slot=self.slot,
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["exit_code"], 0)
 
     def test_vnext_certified_report_renders_without_legacy_analysis_lock(self):
         self.prepare_through_decision()
@@ -5921,7 +5990,7 @@ class VNextWorkflowTests(unittest.TestCase):
     def test_report_failure_retries_report_only(self):
         self.prepare_through_decision()
         before = copy.deepcopy(self.controller.store.load_checkpoint(self.run_root)["completed"])
-        with patch("runtime_vnext.controller.render_combined_markdown", side_effect=ValueError("format defect")):
+        with patch("runtime_vnext.controller.compile_projected_report", side_effect=ValueError("format defect")):
             with self.assertRaises(WorkflowFailure) as caught:
                 self.controller.compile_report(self.run_root)
         self.assertEqual(caught.exception.failure_class, FailureClass.COMPILATION)
@@ -5935,7 +6004,7 @@ class VNextWorkflowTests(unittest.TestCase):
 
     def test_second_report_failure_requires_manual_review(self):
         self.prepare_through_decision()
-        with patch("runtime_vnext.controller.render_combined_markdown", side_effect=ValueError("format defect")):
+        with patch("runtime_vnext.controller.compile_projected_report", side_effect=ValueError("format defect")):
             with self.assertRaises(WorkflowFailure) as first:
                 self.controller.compile_report(self.run_root)
             with self.assertRaises(WorkflowFailure) as second:
@@ -5985,8 +6054,8 @@ class VNextWorkflowTests(unittest.TestCase):
         report = fresh_controller.store.load_stage_payload(self.run_root, "report", "canonical_report")
         contract = load_presentation_contract(self.root)
         broken = copy.deepcopy(report)
-        broken["audit"]["reasoning_proof"].pop("orderflow_anchor")
-        broken["audit"]["source_explanations"]["Farside"]["boundary"] = "短"
+        broken["audit"]["reasoning_proof_blocks"] = {}
+        broken["audit"]["sources"].pop("Farside")
         depth = evaluate_human_reasoning_depth(broken, contract=contract)
         self.assertFalse(depth["passed"])
         self.assertGreaterEqual(len(depth["defects"]), 2)
@@ -5995,41 +6064,17 @@ class VNextWorkflowTests(unittest.TestCase):
             contract=contract,
         )
         self.assertFalse(template["passed"])
-        self.assertGreaterEqual(len(template["defects"]), 4)
+        self.assertGreaterEqual(len(template["defects"]), 3)
 
-    def test_gold_template_gate_rejects_duplicate_full_scenario_projection(self):
-        self.prepare_through_decision()
-        self.controller.compile_report(self.run_root)
-        report = self.controller.store.load_stage_payload(
-            self.run_root,
-            "report",
-            "canonical_report",
-        )
+    def test_display_contract_rejects_deleted_business_mirrors(self):
         contract = load_presentation_contract(self.root)
-        markdown = render_combined_markdown(report)
-        duplicated = markdown.replace(
-            "### D. 风险、情景与机械校验",
-            "**主账户基准情景**：触发条件为重复条件。预期路径为重复路径。执行动作为重复动作。\n\n"
-            "### D. 风险、情景与机械校验",
-            1,
-        )
-        result = evaluate_gold_template_fidelity(duplicated, contract=contract)
-        self.assertFalse(result["passed"])
-        self.assertIn(
-            "template.scenario_projection_duplicate",
-            {item["code"] for item in result["defects"]},
-        )
+        contract["retry_policy"] = {"maximum_failed_attempts": 2}
+        with self.assertRaisesRegex(ValueError, "business mirrors"):
+            certify_presentation_contract(contract)
 
     def test_third_reasoning_failure_requires_manual_review(self):
-        retry_policy = load_presentation_contract(self.root)["retry_policy"]
-        self.assertEqual(
-            retry_policy["maximum_failed_attempts_before_manual_review_per_stage"],
-            2,
-        )
-        self.assertEqual(
-            retry_policy["maximum_failed_attempts_before_manual_review_stage_overrides"],
-            {"reasoning": 3},
-        )
+        self.assertEqual(DEFAULT_AUTOMATIC_ATTEMPT_LIMIT, 2)
+        self.assertEqual(AUTOMATIC_ATTEMPT_LIMIT_BY_STAGE, {"reasoning": 3})
         self.controller.accept_evidence(self.run_root, self.evidence(), evidence_files_root=self.root)
         evidence = self.controller.store.load_stage_payload(self.run_root, "evidence", "evidence")
         broken = self.reasoning(evidence)
@@ -6562,9 +6607,12 @@ class VNextWorkflowTests(unittest.TestCase):
             canonical["audit"]["order_lifecycle"]["state"],
             "not_applicable_no_candidate_geometry",
         )
-        self.assertIn("本轮无方向观察（风险与执行均不适用）", combined)
+        self.assertIn(
+            "本轮无方向观察（未提交候选计划，风险与执行均不适用）",
+            combined,
+        )
+        self.assertIn("影子无方向观察状态；未读取个人持仓/订单状态；未创建、撤销或挂出真实订单", combined)
         self.assertIn("BTC（无方向观察）", combined)
-        self.assertIn("影子无方向观察状态", combined)
         self.assertNotIn("被拒候选", combined)
         self.assertNotIn("候选已被否决", combined)
         self.assertNotIn("本轮候选计划未同时通过", combined)
@@ -7798,27 +7846,14 @@ class VNextWorkflowTests(unittest.TestCase):
                 codes = {item.code for item in result.defects}
                 self.assertIn("claim.trigger_no_state_change", codes)
 
-    def test_a4r2_compiler_refuses_incomplete_or_weakened_typed_triggers(self):
+    def test_a4r2_validation_owns_incomplete_or_weakened_typed_triggers(self):
         evidence = self.evidence()
         payload = self.reasoning(evidence)
-        exocharts = next(
-            item for item in payload["observations"]
-            if item["source"] == "Exocharts"
-        )
-        exocharts["metrics"]["cross_check_result"] = "weaken"
-        trigger_policy = load_scoring_policy(root=self.root)["gold_methodology"][
-            "account_trigger_logic"
-        ]
-        controls = _typed_account_controls(
-            payload,
-            maker={"direction": "short"},
-            main={"direction": "short"},
-            trigger_policy=trigger_policy,
-        )
-        rendered_controls = json.dumps(controls, ensure_ascii=False)
-        self.assertIn("当前为削弱", rendered_controls)
-        self.assertIn("触发时必须为确认", rendered_controls)
-        self.assertNotIn("保持确认", rendered_controls)
+        compiler_source = (
+            self.root / "runtime_vnext" / "report_compiler.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("_typed_account_controls", compiler_source)
+        self.assertNotIn("trigger_policy", compiler_source)
 
         one_clause = copy.deepcopy(payload)
         main_counter = next(
@@ -7830,13 +7865,7 @@ class VNextWorkflowTests(unittest.TestCase):
         main_counter["trigger_logic"]["clauses"] = main_counter["trigger_logic"][
             "clauses"
         ][:1]
-        with self.assertRaisesRegex(ValueError, "requires typed clauses"):
-            _typed_account_controls(
-                one_clause,
-                maker={"direction": "short"},
-                main={"direction": "short"},
-                trigger_policy=trigger_policy,
-            )
+        self.assertFalse(self.evaluate_reasoning_candidate(evidence, one_clause).passed)
 
         weakened = copy.deepcopy(payload)
         main_invalidation = next(
@@ -7846,13 +7875,7 @@ class VNextWorkflowTests(unittest.TestCase):
             and item["account"] == "main"
         )
         main_invalidation["trigger_logic"]["mode"] = "any"
-        with self.assertRaisesRegex(ValueError, "invalidation trigger mode"):
-            _typed_account_controls(
-                weakened,
-                maker={"direction": "short"},
-                main={"direction": "short"},
-                trigger_policy=trigger_policy,
-            )
+        self.assertFalse(self.evaluate_reasoning_candidate(evidence, weakened).passed)
 
     def test_a4r2_claims_cannot_add_execution_or_score_second_truths(self):
         evidence = self.evidence()

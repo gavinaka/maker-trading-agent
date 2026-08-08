@@ -222,9 +222,19 @@ _LIQ_PRICE_CONTEXT = re.compile(
     r"认证区间|密集(?:区|带)?|猎杀|清算|流动性|磁吸|辅助位置|上方|下方|价位"
 )
 _TIMEFRAME_DISPLAY_SCHEMA_VERSION = "timeframe-display-v1"
-_PRESENTATION_CONTRACT_SCHEMA_VERSION = "vnext-report-presentation-contract-v11"
 _TIMEFRAME_DISPLAY_CODES = frozenset({"1d", "4h", "1h", "15m", "3d", "48h", "24h"})
 _TRADINGVIEW_TIMEFRAME_CODES = ("1d", "4h", "1h", "15m")
+
+
+def _presentation_contract_schema_version():
+    """Resolve the registry owner lazily to keep the standalone lint acyclic."""
+
+    try:
+        from runtime_vnext.domain_ir.registry import REGISTRY
+    except ModuleNotFoundError:  # pragma: no cover - direct script execution path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from runtime_vnext.domain_ir.registry import REGISTRY
+    return REGISTRY.report_presentation_contract_schema_version
 
 
 def canonical_timeframe_pattern(presentation_contract):
@@ -236,7 +246,7 @@ def canonical_timeframe_pattern(presentation_contract):
     if (
         not isinstance(presentation_contract, dict)
         or presentation_contract.get("schema_version")
-        != _PRESENTATION_CONTRACT_SCHEMA_VERSION
+        != _presentation_contract_schema_version()
         or not isinstance(value, dict)
         or value.get("schema_version") != _TIMEFRAME_DISPLAY_SCHEMA_VERSION
         or not isinstance(mapping, dict)
@@ -1161,6 +1171,151 @@ def golden_quality_check(lines):
     return hits
 
 
+def _collect_lint_findings(lines, report_filename, *, period_pattern=_PERIOD_TOK):
+    """Collect the complete legacy lint set without reading or writing files."""
+
+    structure_hits = []
+    report_match = re.match(
+        r"^(20\d{2}-\d{2}-\d{2})_(morning|midday|evening)_",
+        Path(report_filename).name,
+    )
+    if report_match:
+        _, structure_issues = validate_combined_structure(
+            lines,
+            report_match.group(1),
+            report_match.group(2),
+        )
+        structure_hits = [
+            (issue.line, issue.code, issue.message, "")
+            for issue in structure_issues
+        ]
+    hard_hits, warn_hits = [], []
+    for i, ln in enumerate(lines, 1):
+        for pat, desc in HARD:
+            for match in re.finditer(pat, ln):
+                hard_hits.append((i, desc, match.group(0), ln.strip()[:60]))
+        for pat, desc in WARN:
+            for match in re.finditer(pat, ln):
+                warn_hits.append((i, desc, match.group(0), ln.strip()[:60]))
+    ledger_issues, ledger_skip = ledger_check(lines)
+    wr_band, wr_chain, wr_scoped = winrate_anchor_check(lines)
+    return {
+        "structure_hits": structure_hits,
+        "hard_hits": hard_hits,
+        "warn_hits": warn_hits,
+        "ledger_issues": ledger_issues,
+        "ledger_skip": ledger_skip,
+        "coupling_hits": coupling_check(lines),
+        "tool_wrapper_hits": tool_wrapper_leak_check(lines),
+        "meta_hits": meta_narrative_check(lines),
+        "wr_band": wr_band,
+        "wr_chain": wr_chain,
+        "wr_scoped": wr_scoped,
+        "wr_fail": bool(wr_band) and not wr_chain,
+        "liq_hits": liquidity_check(lines, period_pattern=period_pattern),
+        "en_hits": en_jargon_check(lines),
+        "panel_hits": panel_mainjudge_check(lines),
+        "manual_profile_hits": manual_profile_boundary_check(lines),
+        "defense_hits": maker_defense_check(lines),
+        "exo_hits": exocharts_ohlc_check(lines),
+        "depth_hits": analysis_depth_check(lines),
+        "anchor_dump_hits": numeric_anchor_dump_check(lines),
+        "strict_trace_hits": strict_reasoning_trace_check(lines, report_filename),
+        "v3_hits": v3_semantics_check(lines, report_filename),
+        "golden_hits": golden_surface_proxy_check(lines),
+    }
+
+
+def lint_report_text(text, *, report_filename, period_pattern=_PERIOD_TOK):
+    """Run the complete report lint in memory for the vNext controller.
+
+    The CLI and controller deliberately share ``_collect_lint_findings`` so a
+    compiler migration cannot silently reduce anti-hallucination coverage to
+    the combined-report structure check alone.
+    """
+
+    if not isinstance(text, str):
+        raise TypeError("report text must be a string")
+    findings = _collect_lint_findings(
+        text.splitlines(),
+        report_filename,
+        period_pattern=period_pattern,
+    )
+    defects = []
+
+    def add_hits(code, hits):
+        for line, description, hit, _context in hits:
+            defects.append({
+                "code": f"report.lint.{code}",
+                "message": f"{description}: {hit}",
+                "path": f"markdown:{line or 1}",
+                "severity": "hard",
+            })
+
+    for line, code, message, _context in findings["structure_hits"]:
+        defects.append({
+            "code": f"report.lint.structure.{code}",
+            "message": message,
+            "path": f"markdown:{line or 1}",
+            "severity": "hard",
+        })
+    add_hits("forbidden_text", findings["hard_hits"])
+    for description, reference_lines in findings["ledger_issues"]:
+        line = reference_lines[0][0] if reference_lines else 1
+        defects.append({
+            "code": "report.lint.position_ledger",
+            "message": description,
+            "path": f"markdown:{line}",
+            "severity": "hard",
+        })
+    for code, key in (
+        ("account_coupling", "coupling_hits"),
+        ("tool_wrapper", "tool_wrapper_hits"),
+        ("meta_narrative", "meta_hits"),
+        ("maker_defense", "defense_hits"),
+        ("exocharts_ohlc", "exo_hits"),
+        ("analysis_depth", "depth_hits"),
+        ("manual_profile_boundary", "manual_profile_hits"),
+        ("numeric_anchor_dump", "anchor_dump_hits"),
+        ("strict_reasoning_trace", "strict_trace_hits"),
+        ("v3_semantics", "v3_hits"),
+    ):
+        add_hits(code, findings[key])
+    for line, hit, context in findings["liq_hits"]:
+        defects.append({
+            "code": "report.lint.liquidity_timeframe",
+            "message": f"流动性/猎杀价位缺周期标注: {hit}; {context}",
+            "path": f"markdown:{line or 1}",
+            "severity": "hard",
+        })
+    for line, translation, hit, context in findings["en_hits"]:
+        defects.append({
+            "code": "report.lint.english_jargon",
+            "message": f"未中译叙事英文 {hit} -> {translation}; {context}",
+            "path": f"markdown:{line or 1}",
+            "severity": "hard",
+        })
+    if findings["wr_fail"]:
+        defects.append({
+            "code": "report.lint.winrate_anchor",
+            "message": f"胜率临界带{findings['wr_band']}缺少 rubric 推导链",
+            "path": "markdown:1",
+            "severity": "hard",
+        })
+    warnings = [
+        *({"code": "report.lint.warning", "line": row[0], "message": row[1]} for row in findings["warn_hits"]),
+        *({"code": "report.lint.golden_surface", "line": row[0], "message": row[1]} for row in findings["golden_hits"]),
+        *({"code": "report.lint.panel", "line": 0, "message": row[1]} for row in findings["panel_hits"]),
+    ]
+    return {
+        "passed": not defects,
+        "exit_code": 0 if not defects else 1,
+        "defects": defects,
+        "warnings": warnings,
+        "findings": findings,
+    }
+
+
 def main(argv=None):
     # GBK 控制台防崩：正文里的 emoji（如🔴）无法编码时替换为 ?，不让 lint 自身崩溃
     if hasattr(sys.stdout, "reconfigure"):
@@ -1180,46 +1335,30 @@ def main(argv=None):
         period_pattern = _PERIOD_TOK
     txt = open(path, encoding="utf-8").read()
     lines = txt.splitlines()
-    structure_hits = []
-    report_match = re.match(
-        r"^(20\d{2}-\d{2}-\d{2})_(morning|midday|evening)_",
-        Path(path).name,
-    )
-    if report_match:
-        _, structure_issues = validate_combined_structure(
-            lines,
-            report_match.group(1),
-            report_match.group(2),
-        )
-        structure_hits = [
-            (issue.line, issue.code, issue.message, "")
-            for issue in structure_issues
-        ]
-    hard_hits, warn_hits = [], []
-    for i, ln in enumerate(lines, 1):
-        for pat, desc in HARD:
-            for m in re.finditer(pat, ln):
-                hard_hits.append((i, desc, m.group(0), ln.strip()[:60]))
-        for pat, desc in WARN:
-            for m in re.finditer(pat, ln):
-                warn_hits.append((i, desc, m.group(0), ln.strip()[:60]))
-    ledger_issues, ledger_skip = ledger_check(lines)
-    coupling_hits = coupling_check(lines)
-    tool_wrapper_hits = tool_wrapper_leak_check(lines)
-    meta_hits = meta_narrative_check(lines)
-    wr_band, wr_chain, wr_scoped = winrate_anchor_check(lines)
-    wr_fail = bool(wr_band) and not wr_chain
-    liq_hits = liquidity_check(lines, period_pattern=period_pattern)
-    en_hits = en_jargon_check(lines)
-    panel_hits = panel_mainjudge_check(lines)  # 软提醒·WARN-only·不进 FAIL
-    manual_profile_hits = manual_profile_boundary_check(lines)
-    defense_hits = maker_defense_check(lines)
-    exo_hits = exocharts_ohlc_check(lines)
-    depth_hits = analysis_depth_check(lines)
-    anchor_dump_hits = numeric_anchor_dump_check(lines)
-    strict_trace_hits = strict_reasoning_trace_check(lines, path)
-    v3_hits = v3_semantics_check(lines, path)
-    golden_hits = golden_surface_proxy_check(lines)
+    findings = _collect_lint_findings(lines, path, period_pattern=period_pattern)
+    structure_hits = findings["structure_hits"]
+    hard_hits = findings["hard_hits"]
+    warn_hits = findings["warn_hits"]
+    ledger_issues = findings["ledger_issues"]
+    ledger_skip = findings["ledger_skip"]
+    coupling_hits = findings["coupling_hits"]
+    tool_wrapper_hits = findings["tool_wrapper_hits"]
+    meta_hits = findings["meta_hits"]
+    wr_band = findings["wr_band"]
+    wr_chain = findings["wr_chain"]
+    wr_scoped = findings["wr_scoped"]
+    wr_fail = findings["wr_fail"]
+    liq_hits = findings["liq_hits"]
+    en_hits = findings["en_hits"]
+    panel_hits = findings["panel_hits"]  # 软提醒·WARN-only·不进 FAIL
+    manual_profile_hits = findings["manual_profile_hits"]
+    defense_hits = findings["defense_hits"]
+    exo_hits = findings["exo_hits"]
+    depth_hits = findings["depth_hits"]
+    anchor_dump_hits = findings["anchor_dump_hits"]
+    strict_trace_hits = findings["strict_trace_hits"]
+    v3_hits = findings["v3_hits"]
+    golden_hits = findings["golden_hits"]
     for i, desc, hit, ctx in warn_hits:
         print(f"[WARN] L{i} {desc}: '{hit}'  | {ctx}")
     for i, desc, hit, ctx in hard_hits:

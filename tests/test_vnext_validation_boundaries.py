@@ -4,145 +4,88 @@ import ast
 import unittest
 from pathlib import Path
 
-from runtime_vnext import controller
-import runtime_vnext.report_compiler as report_compiler
-from runtime_vnext.validation import (
-    claim_graph,
-    decision_main,
-    decision_maker,
-    delivery,
-    evidence,
-    reasoning_semantics,
-    reasoning_shape,
-    report_quality,
-    report_semantics,
-    risk_math,
-)
-from runtime_vnext.validation.common import LegacyDelegate, legacy_callable
+from runtime_vnext import controller, gates
+from runtime_vnext.validation import common, decision, delivery, evidence, reasoning, report
+
+
+ROOT = Path(__file__).resolve().parents[1]
+VALIDATION_ROOT = ROOT / "runtime_vnext" / "validation"
 
 
 class VNextValidationBoundaryTests(unittest.TestCase):
-    def test_report_scenario_and_lifecycle_certifiers_are_validation_owned(self) -> None:
-        compatibility_names = (
-            "_maker_semantic_state",
-            "_typed_order_lifecycle",
-            "_order_lifecycle_display",
-            "_scenario_projection_policy",
-            "_scenario_audit",
-            "_validate_scenario_projection",
-        )
-        self.assertTrue(
-            all(
-                getattr(report_compiler, name).__module__
-                == "runtime_vnext.validation.report_semantics"
-                for name in compatibility_names
-            )
-        )
+    def test_controller_enters_stage_owned_validators(self) -> None:
+        expected = {
+            controller.evaluate_evidence: evidence,
+            controller.evaluate_reasoning: reasoning,
+            controller.evaluate_decision: decision,
+            controller.evaluate_delivery: delivery,
+            controller.evaluate_shadow_delivery: delivery,
+            controller.certify_report_projection_input: report,
+            controller.evaluate_human_reasoning_depth: report,
+            controller.evaluate_gold_template_fidelity: report,
+            controller.run_compatibility_lint: report,
+        }
+        for function, module in expected.items():
+            with self.subTest(function=function.__name__):
+                self.assertEqual(function.__module__, module.__name__)
 
-        compiler_path = (
-            Path(__file__).resolve().parents[1]
-            / "runtime_vnext"
-            / "report_compiler.py"
-        )
-        compiler_source = compiler_path.read_text(encoding="utf-8")
-        tree = ast.parse(compiler_source)
+    def test_gates_is_a_stable_entrypoint_not_an_implementation_owner(self) -> None:
+        path = ROOT / "runtime_vnext" / "gates.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        self.assertLessEqual(len(source.splitlines()), 300)
         locally_defined = {
             node.name
             for node in tree.body
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         }
-        self.assertFalse(set(compatibility_names) & locally_defined)
-        for former_owner_literal in (
-            "not_estimated_lifecycle_only",
-            "撤单价会先于所有入场档触发，订单没有可成交路径",
-            "retain_certified_assessment",
-            "scenario_main_base",
-        ):
-            self.assertNotIn(former_owner_literal, compiler_source)
+        self.assertFalse(
+            locally_defined
+            & {
+                "evaluate_evidence",
+                "evaluate_reasoning",
+                "evaluate_decision",
+                "evaluate_shadow_delivery",
+                "evaluate_delivery",
+            }
+        )
+        self.assertIs(gates.GateResult, common.GateResult)
 
-        semantic_path = (
-            Path(__file__).resolve().parents[1]
-            / "runtime_vnext"
-            / "validation"
-            / "report_semantics.py"
-        )
-        semantic_tree = ast.parse(semantic_path.read_text(encoding="utf-8"))
-        imported_modules = {
-            node.module
-            for node in ast.walk(semantic_tree)
-            if isinstance(node, ast.ImportFrom) and node.module
-        }
-        self.assertNotIn("runtime_vnext.report_compiler", imported_modules)
-        self.assertNotIn("report_compiler", imported_modules)
-
-    def test_controller_enters_the_four_stage_facades(self) -> None:
+    def test_validation_package_has_only_stage_owned_modules(self) -> None:
         self.assertEqual(
-            controller.evaluate_evidence.__module__,
-            "runtime_vnext.validation.evidence",
-        )
-        self.assertEqual(
-            controller.evaluate_reasoning.__module__,
-            "runtime_vnext.validation.reasoning_shape",
-        )
-        self.assertEqual(
-            controller.evaluate_decision.__module__,
-            "runtime_vnext.validation.decision_main",
-        )
-        self.assertEqual(
-            controller.evaluate_delivery.__module__,
-            "runtime_vnext.validation.delivery",
-        )
-        self.assertEqual(
-            controller.evaluate_shadow_delivery.__module__,
-            "runtime_vnext.validation.delivery",
+            {path.name for path in VALIDATION_ROOT.glob("*.py")},
+            {
+                "__init__.py",
+                "common.py",
+                "evidence.py",
+                "reasoning.py",
+                "decision.py",
+                "report.py",
+                "delivery.py",
+            },
         )
 
-    def test_report_quality_is_not_owned_by_the_projector_entrypoint(self) -> None:
-        self.assertEqual(
-            controller.evaluate_human_reasoning_depth.__module__,
-            "runtime_vnext.validation.report_quality",
+    def test_no_transitional_legacy_delegation_remains(self) -> None:
+        source = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in VALIDATION_ROOT.glob("*.py")
         )
-        self.assertEqual(
-            controller.evaluate_gold_template_fidelity.__module__,
-            "runtime_vnext.validation.report_quality",
-        )
-        self.assertEqual(
-            controller.run_compatibility_lint.__module__,
-            "runtime_vnext.validation.report_quality",
-        )
+        for forbidden in ("LegacyDelegate", "invoke_legacy", "full_stage"):
+            self.assertNotIn(forbidden, source)
 
-    def test_every_declared_legacy_delegate_is_explicit_and_callable(self) -> None:
-        delegates: list[LegacyDelegate] = [
-            evidence.LEGACY_GATE_DELEGATE,
-            evidence.LEGACY_VISUAL_DELEGATE,
-            evidence.LEGACY_PROFILE_DELEGATE,
-            reasoning_shape.LEGACY_DELEGATE,
-            reasoning_semantics.LEGACY_DELEGATE,
-            claim_graph.LEGACY_DELEGATE,
-            decision_main.LEGACY_DELEGATE,
-            decision_maker.LEGACY_DELEGATE,
-            risk_math.LEGACY_DELEGATE,
-            report_quality.LEGACY_REASONING_DEPTH_DELEGATE,
-            report_quality.LEGACY_TEMPLATE_FIDELITY_DELEGATE,
-            report_quality.LEGACY_COMPATIBILITY_LINT_DELEGATE,
-            delivery.LEGACY_SHADOW_DELEGATE,
-            delivery.LEGACY_PRODUCTION_DELEGATE,
-        ]
-        self.assertEqual(len(delegates), 14)
-        for delegate in delegates:
-            with self.subTest(stage=delegate.stage, domain=delegate.domain):
-                self.assertIn(delegate.coverage, {"domain", "full_stage", "projection"})
-                self.assertTrue(callable(legacy_callable(delegate)))
+    def test_report_semantic_compatibility_names_are_validation_owned(self) -> None:
+        import runtime_vnext.report_compiler as compiler
 
-    def test_domain_facades_do_not_claim_partial_defect_filtering(self) -> None:
-        full_stage = {
-            reasoning_shape.LEGACY_DELEGATE,
-            claim_graph.LEGACY_DELEGATE,
-            decision_main.LEGACY_DELEGATE,
-            decision_maker.LEGACY_DELEGATE,
-            risk_math.LEGACY_DELEGATE,
-        }
-        self.assertTrue(all(item.coverage == "full_stage" for item in full_stage))
+        names = (
+            "certify_maker_semantic_state",
+            "certify_order_lifecycle",
+            "order_lifecycle_display",
+            "scenario_projection_policy",
+            "project_scenario_audit",
+            "validate_scenario_projection",
+        )
+        self.assertTrue(all(hasattr(report, name) for name in names))
+        self.assertTrue(all(not hasattr(compiler, name) for name in names))
 
 
 if __name__ == "__main__":

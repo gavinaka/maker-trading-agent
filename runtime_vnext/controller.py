@@ -21,16 +21,13 @@ from .effort_policy import (
     satisfies_requested_effort,
 )
 from .errors import FailureClass, RetryScope, WorkflowFailure
-from .gates import GateResult
-from .domain_ir.report_projection import (
-    project_blockbeats_cards_spec,
-    project_canonical_report_model,
-    project_report_bindings,
-)
+from .validation.common import GateResult
+from .domain_ir import project_report_bindings, to_plain
 from .methodology import (
     build_methodology_manifest,
     canonical_sha256,
     load_scoring_policy,
+    sha256_file,
     validate_run_authority_binding,
     validate_run_authority_profile,
     verify_manifest_files,
@@ -41,26 +38,21 @@ from .reasoning_submission import (
     load_reasoning_submission_contract,
     validate_contract_runtime_compatibility,
 )
-from .report_compiler import (
-    load_presentation_contract,
-    render_blockbeats_cards,
-    render_combined_markdown,
-)
-from .validation.decision_main import validate_main_decision as evaluate_decision
+from .report_compiler import compile_projected_report
+from .validation.decision import evaluate_decision
 from .validation.delivery import (
-    validate_delivery as evaluate_delivery,
-    validate_shadow_delivery as evaluate_shadow_delivery,
+    evaluate_delivery,
+    evaluate_shadow_delivery,
 )
-from .validation.evidence import validate_evidence as evaluate_evidence
-from .validation.reasoning_shape import (
-    validate_reasoning_shape as evaluate_reasoning,
-)
-from .validation.report_quality import (
+from .validation.evidence import evaluate_evidence
+from .validation.reasoning import evaluate_reasoning
+from .validation.report import (
+    certify_presentation_contract,
+    certify_report_projection_input,
     evaluate_gold_template_fidelity,
     evaluate_human_reasoning_depth,
     run_compatibility_lint,
 )
-from .validation.report_projection import certify_report_projection_input
 from .legacy_capture_adapter import adapt_legacy_capture
 
 
@@ -72,6 +64,93 @@ SAFE_CAPTURE_DEFECT_CODE = re.compile(r"^capture\.exocharts\.[A-Za-z0-9_.-]{1,96
 REPLAY_AUTHORIZATION_REF = re.compile(
     r"(?:test|replay):[A-Za-z0-9][A-Za-z0-9._-]{7,127}"
 )
+
+
+def _load_report_presentation_contract(
+    repo_root: Path,
+) -> tuple[dict[str, Any], str]:
+    """Load and certify the display-only report contract at the I/O boundary."""
+
+    contract_path = repo_root / "governance" / "vnext_report_presentation_contract.json"
+    payload = json.loads(contract_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("report presentation contract must be an object")
+    return certify_presentation_contract(payload), sha256_file(contract_path)
+
+
+def _load_blockbeats_rows(
+    repo_root: Path,
+    evidence: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Load the hash-bound BlockBeats rows before typed certification."""
+
+    sources = evidence.get("sources")
+    if not isinstance(sources, dict):
+        raise ValueError("evidence sources must be an object")
+    blockbeats = sources.get("BlockBeats")
+    if not isinstance(blockbeats, dict):
+        raise ValueError("BlockBeats evidence source is missing")
+    artifacts = blockbeats.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ValueError("BlockBeats artifacts must be a list")
+    matches = [
+        record
+        for record in artifacts
+        if isinstance(record, dict)
+        and Path(str(record.get("path") or "")).name == "blockbeats.json"
+    ]
+    if len(matches) != 1:
+        raise ValueError("BlockBeats evidence must bind exactly one blockbeats.json")
+    record = matches[0]
+    artifact_path = (repo_root / str(record["path"])).resolve()
+    artifact_path.relative_to(repo_root)
+    if not artifact_path.is_file():
+        raise ValueError("BlockBeats evidence artifact is missing")
+    if sha256_file(artifact_path) != record.get("sha256"):
+        raise ValueError("BlockBeats evidence artifact hash mismatch")
+    if artifact_path.stat().st_size != record.get("bytes"):
+        raise ValueError("BlockBeats evidence artifact byte count mismatch")
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    rows = payload.get("selected_rows") if isinstance(payload, dict) else None
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("BlockBeats selected_rows must be a list of objects")
+    return [dict(row) for row in rows]
+
+
+def _render_report_cards(
+    cards_spec: dict[str, Any],
+    *,
+    attempt_root: Path,
+    repo_root: Path,
+) -> list[dict[str, Any]]:
+    """Render certified card projections and return immutable artifact records."""
+
+    from outputs.blockbeats_card import make_card
+
+    rows = cards_spec.get("cards")
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("BlockBeats cards projection must contain object rows")
+    records: list[dict[str, Any]] = []
+    for row in rows:
+        rendered = Path(
+            make_card(
+                row["filename"],
+                row["time"],
+                row["title"],
+                row["body"],
+                output_dir=attempt_root,
+                quiet=True,
+            )
+        ).resolve()
+        rendered.relative_to(attempt_root.resolve())
+        records.append(
+            {
+                "path": rendered.relative_to(repo_root).as_posix(),
+                "sha256": sha256_file(rendered),
+                "bytes": rendered.stat().st_size,
+            }
+        )
+    return records
 
 
 class RunController:
@@ -898,18 +977,31 @@ class RunController:
         methodology = self._assert_methodology_phase(run_root, "report")
         attempt, attempt_root = self.store.begin_attempt(run_root, "report")
         try:
+            presentation_contract, presentation_contract_sha256 = (
+                _load_report_presentation_contract(self.repo_root)
+            )
+            blockbeats_rows = _load_blockbeats_rows(self.repo_root, evidence)
             projection_input = certify_report_projection_input(
                 evidence=evidence,
                 reasoning=reasoning,
                 decision=decision,
+                blockbeats_rows=blockbeats_rows,
+                presentation_contract=presentation_contract,
+                presentation_contract_sha256=presentation_contract_sha256,
                 methodology_sha256=methodology["phases"]["reasoning"]["phase_sha256"],
                 report_contract_sha256=methodology["phases"]["report"]["phase_sha256"],
-                root=self.repo_root,
             )
-            model = project_canonical_report_model(projection_input)
+            projected = compile_projected_report(
+                projection_input,
+                presentation_contract,
+            )
+            model = to_plain(projected.model)
+            cards_spec = to_plain(projected.cards_spec)
+            if not isinstance(model, dict) or not isinstance(cards_spec, dict):
+                raise TypeError("typed report projections must serialize to objects")
             report_bindings = project_report_bindings(projection_input)
-            markdown = render_combined_markdown(model)
-            presentation_contract = load_presentation_contract(self.repo_root)
+            markdown = projected.markdown
+            report_filename = f"{decision['trading_date']}_{decision['slot']}_combined.md"
             depth_gate = evaluate_human_reasoning_depth(
                 model,
                 contract=presentation_contract,
@@ -918,9 +1010,16 @@ class RunController:
                 markdown,
                 contract=presentation_contract,
             )
+            lint = run_compatibility_lint(
+                markdown,
+                report_filename=report_filename,
+                trading_date=str(decision["trading_date"]),
+                slot=str(decision["slot"]),
+            )
             presentation_defects = [
                 *depth_gate["defects"],
                 *template_gate["defects"],
+                *lint["defects"],
             ]
             if presentation_defects:
                 self._bounded_failure(
@@ -939,24 +1038,17 @@ class RunController:
                 "report_bindings.json",
                 report_bindings,
             )
-            report_filename = f"{decision['trading_date']}_{decision['slot']}_combined.md"
             report_record = self.store.write_text(attempt_root, report_filename, markdown)
-            cards_spec = project_blockbeats_cards_spec(projection_input)
             cards_spec_record = self.store.write_payload(
                 attempt_root,
                 "blockbeats_cards.json",
                 cards_spec,
             )
-            card_records = render_blockbeats_cards(
-                model,
+            card_records = _render_report_cards(
+                cards_spec,
                 attempt_root=attempt_root,
                 repo_root=self.repo_root,
             )
-            lint = run_compatibility_lint(
-                self.repo_root / report_record["path"], root=self.repo_root
-            )
-            if not lint["passed"]:
-                raise ValueError("legacy compatibility lint failed:\n" + lint["output"])
         except WorkflowFailure:
             raise
         except Exception as exc:

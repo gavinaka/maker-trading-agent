@@ -1,4 +1,4 @@
-"""Materialize or verify registry-owned sections of legacy contract JSON."""
+"""Materialize or verify code-owned deterministic contract JSON views."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Sequence
 from runtime.golden_methodology import get_methodology_runtime_inventory
 
 from ..methodology import load_scoring_policy
-from .legacy_v6_adapter import (
+from .projection import (
     projected_report_presentation_contract,
     projected_scoring_contract,
     projected_v6_contract,
