@@ -1,5 +1,5 @@
 {
-  "schema_version": "vnext-semantic-replays-v3",
+  "schema_version": "vnext-semantic-replays-v4",
   "cases": [
     {
       "case_id": "a5-fresh-01-short-below-market",
@@ -67,6 +67,66 @@
         {"artifact": "reasoning", "json_path": "claims[15].structural_noise_buffer.anchor_price"},
         {"artifact": "reasoning", "json_path": "claims[15].structural_noise_buffer.noise_outer_boundary"}
       ]
+    }
+  ],
+  "downstream_cases": [
+    {
+      "case_id": "v7-non-directional",
+      "source_run_id": "run-20260729-evening-a5-r2g2-fresh-01",
+      "source_run_relpath": "runtime_state_vnext/2026-07-29/evening/run-20260729-evening-a5-r2g2-fresh-01",
+      "contract_class": "current",
+      "expected_semantic_state": "non_directional_observation",
+      "expected_stage_boundary": "report_complete",
+      "clean_eligible": false,
+      "artifacts": {
+        "run.json": {"sha256": "6a077bf6cc6d20fc04d1f16aced0610a19381112bc8520cda2a4cba5f7fd4d39", "bytes": 759},
+        "methodology_manifest.json": {"sha256": "0f5eb3c5a2590e8c682d7c13997cfa8b78d06f132d134725a69da3fedc37d695", "bytes": 16228},
+        "evidence/attempt-001/evidence.json": {"sha256": "f45e3e1fc4a7f32b6686b2f3cba8ee20696b46a6ab78d88f5972bccd0c1fc32a", "bytes": 8566},
+        "reasoning/attempt-001/reasoning.json": {"sha256": "f674f47ebcc23660e088d6d5d27842d37c9c28756a5a6388f69036d27ce9ee2f", "bytes": 57203},
+        "decision/attempt-001/decision.json": {"sha256": "6ff1cdfa9524d41c628afb1641bb6beb2cca550f0543465ffb38bb0b10890080", "bytes": 6710},
+        "report/attempt-001/canonical_report.json": {"sha256": "efcd246ca844b8833f39acff7b68121cb21b9334dd263870165f020206728767", "bytes": 79592},
+        "report/attempt-001/2026-07-29_evening_combined.md": {"sha256": "5d0f2c482c3b713d8795610c8952d3ec4e9501fca91b573066ce6d555a4600d1", "bytes": 24898}
+      }
+    },
+    {
+      "case_id": "v7-rejected-submitted",
+      "source_run_id": "run-20260801-midday-a5-r2g4-fresh-01",
+      "source_run_relpath": "runtime_state_vnext/2026-08-01/midday/run-20260801-midday-a5-r2g4-fresh-01",
+      "contract_class": "current",
+      "expected_semantic_state": "rejected_submitted_candidate",
+      "expected_stage_boundary": "report_rejected",
+      "clean_eligible": false,
+      "artifacts": {
+        "run.json": {"sha256": "31fe7e65d56d0b128e79de511b3c1262b18c65775952ca54b09057a314cccdd0", "bytes": 651},
+        "methodology_manifest.json": {"sha256": "19e8f0ff7792d03867f4066e1832225c499f3aa0e4974dfb5a8cee1856967de2", "bytes": 16228},
+        "evidence/attempt-001/evidence.json": {"sha256": "98bd26c0326a36d28cdfdce8f46d2763dfbee4376e55162f88b214009b759e0c", "bytes": 8253},
+        "reasoning/attempt-001/reasoning.json": {"sha256": "17b0440b5b54b0f3d7bd924090d72b22d6b453b464420b91427eb6b67e8d127d", "bytes": 56203},
+        "decision/attempt-001/decision.json": {"sha256": "b1a1947ca2b04919d45ce0ad4feb04f2f1d3e4024c23a919e3e847cae1a688ce", "bytes": 7656},
+        "report/attempt-001/canonical_report.json": {"sha256": "3bbefc815b7f283537db40996e857d4cc9ddc5fc0f6365e5199d477313da7ae0", "bytes": 80314},
+        "report/attempt-001/2026-08-01_midday_combined.md": {"sha256": "57caa7dfc0a6faf18aa431390da98f0b20c08459b097f76b9e5df9e7e59333b9", "bytes": 26387},
+        "report/attempt-001/failure.json": {"sha256": "8760cce9f23db434a0da21ba9e9f44cf1e3973ffb80ad54c40a6b46dfa1cc07a", "bytes": 1533}
+      }
+    },
+    {
+      "case_id": "v4-directional-compat",
+      "source_run_id": "run-20260728-midday-a5-r2b-fresh-01",
+      "source_run_relpath": "runtime_state_vnext/2026-07-28/midday/run-20260728-midday-a5-r2b-fresh-01",
+      "contract_class": "compatibility_only",
+      "expected_semantic_state": "directional_thesis_only",
+      "expected_stage_boundary": "shadow_complete",
+      "clean_eligible": false,
+      "artifacts": {
+        "run.json": {"sha256": "503acad6567ccdabf1d47e3f46e4ca2ca3011cc8d8d97658083651f844aa44b0", "bytes": 650},
+        "methodology_manifest.json": {"sha256": "31e9d49a26c34dd4b0256966405e4098b9ddcf05f547acba295e2f4855e40ee7", "bytes": 15844},
+        "evidence/attempt-001/evidence.json": {"sha256": "bdeb0b9fc3619f2d78aeacda251fa80568b727dcb4e7e0a0947939f5879fd5e2", "bytes": 8544},
+        "reasoning/attempt-001/reasoning.json": {"sha256": "333723aaa4a2850064088bde6e2d67af1273b9f3e66dda8b5f363ae63ebf2aa3", "bytes": 58941},
+        "decision/attempt-001/decision.json": {"sha256": "941012a0bfc2782b0099244c867d52c6acba51a2e3dcb7d16136b1ed8edd7773", "bytes": 7237},
+        "report/attempt-001/canonical_report.json": {"sha256": "2d824cd0b1f2f79e36313ec409ca5bbfcdd5d550fc6b2c43558958b05402892d", "bytes": 86563},
+        "report/attempt-001/2026-07-28_midday_combined.md": {"sha256": "1242cb6168e9b27ea57c92cd4f867ca2fb111be64a7a680785152013d82d27b3", "bytes": 24692},
+        "delivery/attempt-001/shadow_delivery.json": {"sha256": "aab2915d81971a8b5aafaa45e2a2f1fbf2fdbc9b3fe76f461ab24aaf5dc89a2a", "bytes": 2326},
+        "delivery_assets/render_manifest.json": {"sha256": "d9a1d5be49d60e43d18dcaaee6c1f56fcd13a3366b1bcac6715dcde595899b51", "bytes": 1083},
+        "delivery_assets/word_qa.json": {"sha256": "9858d274eb4a53de2b267b6cceda4105089b541b6f4dac76d6a06b5c7f33c193", "bytes": 4531}
+      }
     }
   ],
   "reasoning_gate_cases": [

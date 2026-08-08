@@ -707,6 +707,33 @@ class VNextSampleOutcomeTests(unittest.TestCase):
         self.assertFalse(contract["emission"]["blocking"])
         self.assertFalse(contract["consumer_boundary"]["production_context_may_read"])
         self.assertFalse(contract["consumer_boundary"]["may_modify_code_or_methodology_automatically"])
+        self.assertTrue(
+            contract["consumer_boundary"][
+                "v6_run_attestation_requires_complete_triple"
+            ]
+        )
+        self.assertEqual(
+            contract["consumer_boundary"]["clean_cohort_key"],
+            "semantic_contract_sha256",
+        )
+        self.assertFalse(
+            contract["consumer_boundary"][
+                "release_sha256_may_partition_clean_cohort"
+            ]
+        )
+        self.assertFalse(
+            contract["consumer_boundary"][
+                "methodology_manifest_sha256_may_partition_clean_cohort"
+            ]
+        )
+        self.assertFalse(
+            contract["consumer_boundary"][
+                "presentation_or_metadata_change_creates_semantic_epoch"
+            ]
+        )
+        self.assertFalse(
+            contract["consumer_boundary"]["fourth_identity_allowed"]
+        )
         self.assertFalse(
             contract["consumer_boundary"]["legacy_without_authority_epoch_may_count_as_clean"]
         )

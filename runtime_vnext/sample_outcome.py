@@ -190,9 +190,7 @@ def _load_authority_identity(
     try:
         return validate_run_authority_binding(run, payload)
     except ValueError as exc:
-        raise ValueError(
-            "sample outcome authority epoch binding is invalid"
-        ) from exc
+        raise ValueError("sample outcome authority binding is invalid") from exc
 
 
 def _load_completed_manifest(
