@@ -17,7 +17,7 @@
 | 层 | 真相源 | 不允许替代它的内容 |
 |---|---|---|
 | 证据 | `evidence-snapshot-v1` | Prompt 摘要、旧报告、旧评分 |
-| 方法 | `methodology-manifest-v3` 分离的 `semantic_contract_sha256`、`release_sha256` 与组合 `manifest_sha256`；历史 v2 仅作 immutable combined identity 读取 | ignored 镜像、历史报告事实、从旧 combined hash 反推 semantic identity |
+| 方法 | `methodology-manifest-v3` 分离的 `semantic_contract_sha256`、`release_sha256` 与组合 `manifest_sha256`；完整 triple 是单 run 的精确 attestation，只有 semantic hash 是 clean cohort key；历史 v2 仅作 immutable combined identity 读取 | ignored 镜像、历史报告事实、从旧 combined hash 反推 semantic identity、用 release/manifest hash 切分 semantic cohort |
 | 推理 | `reasoning-model-v5` 的 observation/claim/scenario DAG、固定 `pipeline_units`、`scenario-ownership-v1` 与结构化触发条款 | 后补理由、自由文本 scenario、渲染层猜测反证或失效条件 |
 | 决策 | `decision-model-v7`（绑定 v2 run 身份/哈希/模式，并只接受 closed typed 业务语义） | 手算评分、手算风险、自由 rationale 或正文反推决策 |
 | 报告 | `canonical-report-model-v11` | Agent 手写 `combined.md`、reasoning 自由报告段落、把备用源伪装成 CME |
@@ -28,6 +28,16 @@
 `run_mode=shadow|production` 与批准引用。运行态只保存批准引用的 SHA-256
 和该模式的固定授权类型，不保存批准原文。v1 终态只读兼容；v1 非终态禁止
 推断模式或继续执行，只能经显式授权退役后另起 v2 run。
+
+确定性 domain registry 的每个 owner 必须且只能归入 `semantic`、
+`presentation`、`metadata` 三类之一。enum、operator、typed state、业务 ownership
+和承重投影、执行连续性属于 semantic；中文 display／label／visible wording 及纯报告布局属于
+presentation；registry 分类清单与实例等非业务自描述信息属于 metadata。semantic identity 只哈希 semantic
+owner、Evidence phase 与 Reasoning phase 的 semantic authority；Report phase 的三份
+纯 presentation 文件不进入 semantic phase hash。三类 owner 及全部 phase 文件仍由
+release／exact phase／combined manifest 精确绑定，因此展示修改不会伪装成旧 release，
+也不会无业务语义变化地重置 clean cohort。不得再增加 presentation hash、authority
+epoch alias 或其它第四种 identity。
 
 vNext 的运行时阶段仍固定为 `evidence -> reasoning -> decision -> report -> delivery`。
 `reasoning-model-v5.pipeline_units` 只是单个原子 reasoning attempt 内部的逻辑
@@ -241,8 +251,8 @@ vNext 的 Word、PDF、逐页截图与渲染状态只能写入当前 run 的 `de
 
 ## 7. 切换自动化前的完成标准
 
-- 至少连续 5 份状态为 `shadow_complete`、`bindings.semantic_contract_sha256` 等于当前 semantic contract，且 `sample_outcome.evidence_provenance.mode=fresh_full_recollection`、`provider_id=cme_fedwatch_ui`、`method_class=cme_target_rate_probability`、`sample_source_class=cme_canonical` 的真实全量重采影子样本；每份样本还必须保留 `release_sha256` 与 `methodology_manifest_sha256` 供 rollback/bisect。该 provenance 只能由本 run 密封 evidence 的 `capture_mode=full_base`（morning）或 `capture_mode=full_recollection`（midday/evening）及 FedWatch source meta 确定性映射，禁止跨 semantic epoch、使用仅有 legacy combined identity 的 v1-v5 样本或复用旧证据累计；
-- immutable replay、测试注入、fixture、历史报告回放以及无故障的 Kalshi Plan C 只可验证合同或提供备用观察，统一记为 observation；即使其余产品门通过、机械全绿或终态为 `shadow_complete`，Kalshi 也永远不是 clean，不增加 stability evidence、不进入 production switch。该边界不得隐藏备用链工程故障：同 authority epoch、同 provider/method/source class 的两个独立 run 出现同一可复核 failure fingerprint 时，仍可形成 `candidate_defect`，但不得跨 CME/Kalshi 方法聚类，也不得自动修复、改方法或新增硬门；
+- 至少连续 5 份状态为 `shadow_complete`、`bindings.semantic_contract_sha256` 等于当前 semantic contract，且 `sample_outcome.evidence_provenance.mode=fresh_full_recollection`、`provider_id=cme_fedwatch_ui`、`method_class=cme_target_rate_probability`、`sample_source_class=cme_canonical` 的真实全量重采影子样本；每份样本的 sealed run attestation 仍必须完整、逐项匹配 `semantic_contract_sha256 + release_sha256 + methodology_manifest_sha256`，其中后二者只供精确复现、rollback/bisect 与 release 归因，不得成为 clean cohort 分组键。该 provenance 只能由本 run 密封 evidence 的 `capture_mode=full_base`（morning）或 `capture_mode=full_recollection`（midday/evening）及 FedWatch source meta 确定性映射，禁止跨 semantic epoch、使用仅有 legacy combined identity 的 v1-v5 样本或复用旧证据累计；
+- immutable replay、测试注入、fixture、历史报告回放以及无故障的 Kalshi Plan C 只可验证合同或提供备用观察，统一记为 observation；即使其余产品门通过、机械全绿或终态为 `shadow_complete`，Kalshi 也永远不是 clean，不增加 stability evidence、不进入 production switch。该边界不得隐藏备用链工程故障：同 semantic contract、同 provider/method/source class 的两个独立 run 出现同一可复核 failure fingerprint 时，仍可形成 `candidate_defect`，但不得跨 CME/Kalshi 方法聚类，也不得自动修复、改方法或新增硬门；
 - 覆盖早、午、晚三个时段；
 - 0 次 Technical expert 临时修复；
 - 0 次 Agent 手写正式 `combined.md`；
@@ -260,7 +270,7 @@ vNext 的 Word、PDF、逐页截图与渲染状态只能写入当前 run 的 `de
 
 每个 `complete`、`shadow_complete` 或 `retired` run 在终态 checkpoint 密封后，必须尽最大努力生成同 run 内不可变的 `sample_outcome.json`。其合同见 `vnext_sample_outcome_contract.json`。
 
-新 `methodology-manifest-v3` run 生成 `vnext-sample-outcome-v6`，必须逐项复制 run 创建时密封的 `semantic_contract_sha256`、`release_sha256` 与 `methodology_manifest_sha256`，并从本 run 密封 evidence 确定性导出 `provider_id/method_class/sample_source_class`；不得再输出含义重复的 `authority_epoch_sha256` alias，也不得输出模式批准原文或任何业务结论。既有 v1-v5 文件保持逐字节不可变；legacy v2 manifest 的终态 run 如需补发仍生成 v5，并且只能作为 observation，禁止伪造 v6 semantic identity。缺少 semantic triple、provider 未知、immutable replay、测试注入、fixture、历史报告回放与 Kalshi Plan C 都不得计入当前 semantic epoch 的 clean 连续样本；不同 semantic epoch 的 clean 样本禁止累加。
+新 `methodology-manifest-v3` run 生成 `vnext-sample-outcome-v6`，必须逐项复制 run 创建时密封的 `semantic_contract_sha256`、`release_sha256` 与 `methodology_manifest_sha256`，并从本 run 密封 evidence 确定性导出 `provider_id/method_class/sample_source_class`；不得再输出含义重复的 `authority_epoch_sha256` alias，也不得输出模式批准原文或任何业务结论。完整 triple 只证明该 observation 精确绑定哪一个 run/release/envelope；外置 evaluator 的 clean cohort 只能按 `semantic_contract_sha256` 聚合，禁止用 release 或 manifest 差异制造新 semantic epoch。既有 v1-v5 文件保持逐字节不可变；legacy v2 manifest 的终态 run 如需补发仍生成 v5，并且只能作为 observation，禁止伪造 v6 semantic identity。缺少完整 triple、provider 未知、immutable replay、测试注入、fixture、历史报告回放与 Kalshi Plan C 都不得计入当前 semantic epoch 的 clean 连续样本；不同 semantic epoch 的 clean 样本禁止累加。
 
 - 该文件只记录 run 身份、哈希、attempt／failure／orphan／人工复核次数、耗时、报告产品门布尔结果和去文本化故障指纹；禁止记录价格、方向、仓位、盈亏、评分、胜率或交易结论。
 - 生成失败只能留下观察事件，不能阻断终态密封、释放 active run 或正式交付；下次终态对账可补发，但禁止覆盖不一致的既有结果。

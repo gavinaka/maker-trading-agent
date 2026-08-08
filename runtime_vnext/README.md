@@ -30,11 +30,15 @@ class only; production stages must never read it.  A new
 semantic, release, and combined-manifest hashes.  v1-v5 artifacts remain
 immutable read-only legacy inputs; a legacy v2-manifest run that is missing an
 outcome still emits v5 and never invents a semantic identity.
+The complete three-hash binding is mandatory run attestation. Only
+`semantic_contract_sha256` groups clean samples; `release_sha256` and
+`methodology_manifest_sha256` remain exact reproduction, rollback, and bisect
+evidence and never create a separate clean cohort.
 Only `cme_fedwatch_ui + cme_target_rate_probability + cme_canonical` can add a
 clean stability sample.  Kalshi Plan C remains an observation even when every
 mechanical contract passes; it adds no stability increment, switch eligibility,
 or clean evidence.  This does not suppress engineering defects: two independent
-runs in the same authority epoch with the same reproducible Plan C failure
+runs under the same semantic contract with the same reproducible Plan C failure
 fingerprint may still become `candidate_defect`, without automatic repair or a
 new hard gate.
 
@@ -121,6 +125,15 @@ exactly `semantic_contract_sha256`, `release_sha256`, and
 sample epoch; release and combined identities remain mandatory rollback and
 bisect evidence, so a release-only refactor does not silently reset the clean
 cohort.
+Every deterministic domain-registry owner is classified exactly once as
+semantic, presentation, or metadata. Typed enums, operators, states, ownership,
+load-bearing projections, and execution continuity enter the semantic hash.
+Chinese display labels, visible wording, and pure report layout do not;
+metadata is limited to the registry's non-business classification self-description.
+The report phase remains exact manifest authority but has an empty semantic-file
+inventory; presentation or metadata changes still rotate the applicable release
+and combined-manifest hashes. No presentation hash, authority-epoch alias, or
+fourth identity is created.
 Legacy v1 terminal runs remain readable for audit only. A legacy v1
 non-terminal run cannot infer a mode or resume execution and must be explicitly
 retired before replacement.
@@ -229,8 +242,9 @@ slot without reopening the collection stage.
   present in Decision must exactly equal the reasoning owner; Gate separately
   reads the reasoning status, visual evidence, and noise boundary and verifies
   the derived stop. Maker 3%, Main 8%, and R:R are later validation inputs and cannot shrink the
-  structural stop. The compiler validates and projects the sealed judgment and
-  may not infer one. No fixed minimum distance, ATR multiple, or risk-threshold
+  structural stop. The report validator certifies the sealed judgment; the
+  compiler only projects that certified IR and may not infer one. No fixed
+  minimum distance, ATR multiple, or risk-threshold
   backsolve is authority.
 - No Agent-written `combined.md`; it is compiled from
   `canonical-report-model-v11`.  Account scenarios accept only the six
