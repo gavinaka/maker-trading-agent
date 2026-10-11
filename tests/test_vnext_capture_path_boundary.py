@@ -42,6 +42,10 @@ class VNextCapturePathBoundaryTests(unittest.TestCase):
             if getattr(action, "choices", None) is not None
         )
         self.assertNotIn("evidence", subparsers.choices)
+        self.assertNotIn("compile", subparsers.choices)
+        self.assertNotIn("word-qa-export", subparsers.choices)
+        self.assertNotIn("word-qa-approve", subparsers.choices)
+        self.assertNotIn("word-qa-reject", subparsers.choices)
         self.assertIn("capture", subparsers.choices)
         self.assertIn("replay-evidence", subparsers.choices)
 

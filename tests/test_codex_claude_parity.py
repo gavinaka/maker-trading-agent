@@ -71,7 +71,7 @@ class CodexClaudeParityTests(unittest.TestCase):
         self.assertNotIn("运行命令以 `.claude/skills/daily-report/SKILL.md", sop)
         self.assertIn(".agents/skills/daily-report/SKILL.md", sop)
         self.assertIn("committed executable authority for legacy Codex runs", entry)
-        self.assertIn("compatibility mirror", entry)
+        self.assertIn("Local ignored files never override committed authority", entry)
 
     def test_vnext_business_manifest_isolated_from_legacy_parity_material(self):
         phase_files = {item for values in PHASE_FILES.values() for item in values}

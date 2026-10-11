@@ -1,0 +1,15 @@
+{
+  "presentation_contract": "maker-handwritten-notion-telegram-v1",
+  "telegram_bot_token_env": "TELEGRAM_BOT_TOKEN",
+  "telegram_chat_id_env": "TELEGRAM_CHAT_ID",
+  "max_message_chars": 3900,
+  "slots": ["morning", "midday", "evening"],
+  "default_mode": "preview_only",
+  "schedule": {
+    "timezone": "Asia/Shanghai",
+    "morning": "09:00",
+    "midday": "16:30",
+    "evening": "20:30",
+    "on_missing_same_day_certified_decision": "block_without_telegram_message"
+  }
+}

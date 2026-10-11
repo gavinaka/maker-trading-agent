@@ -4184,7 +4184,7 @@ class VNextWorkflowTests(unittest.TestCase):
             {item.code for item in main_result.defects},
         )
 
-    def test_decision_cannot_claim_candidate_failures_after_erasing_risk_input(self):
+    def test_directional_thesis_can_retain_constructibility_diagnostics_without_risk_input(self):
         _, reasoning = self.prepare_through_reasoning()
         payload = self.decision(reasoning)
         maker = payload["maker"]
@@ -4239,17 +4239,100 @@ class VNextWorkflowTests(unittest.TestCase):
             pretrade_gate=self.gate,
             root=self.root,
         )
-        self.assertFalse(result.passed, result.to_dict())
-        self.assertIn(
-            "maker.position_notional_invalid",
-            {item.code for item in result.defects},
-        )
+        self.assertTrue(result.passed, result.to_dict())
         self.assertEqual(
             result.facts["maker_candidate_failure_codes"],
             [
                 "structural_stop_invalid",
                 "risk_math_invalid",
             ],
+        )
+
+    def test_directional_thesis_with_structure_zones_is_not_forced_into_candidate_fields(self):
+        _, reasoning = self.prepare_through_reasoning()
+        payload = self.decision(reasoning)
+        maker = payload["maker"]
+        maker["risk_plan"] = {}
+        maker["defense_plan"] = {}
+        maker["position_notional_usdt"] = None
+        maker["entry_type"] = "not_applicable"
+        maker["entry_reach_probability"] = None
+        maker["entry_reach_probability_basis"].update(
+            {
+                "applicability": "not_applicable_no_certified_entry_geometry",
+                "reference_entry": None,
+                "entry_distance": None,
+                "reach_direction": None,
+            }
+        )
+        maker["order_lifecycle"] = {
+            "schema_version": "maker-order-lifecycle-v1",
+            "state": "not_applicable_no_candidate_geometry",
+            "legal_fill_path_exists": False,
+            "legal_cancel_path_exists": False,
+            "fill_probability": None,
+            "fill_probability_applicability": "not_applicable_no_candidate_geometry",
+            "reason_code": "not_applicable_no_candidate_geometry",
+        }
+        maker["plan_constructible"] = False
+        maker["plan_state"] = "observe"
+        maker["execution_action"] = "observe"
+        maker["order_transition_action"] = "observe"
+        maker["plan_constructibility"].update(
+            {
+                "status": "not_constructible",
+                "primary_reason_code": "entry_zone_binding_invalid",
+                "failure_codes": [
+                    "entry_zone_binding_invalid",
+                    "structural_stop_invalid",
+                    "risk_math_invalid",
+                ],
+                "entry_zone_basis": None,
+            }
+        )
+        payload["continuity_contract"]["current_plan"].update(
+            {
+                "action": "observe",
+                "new_order_created": False,
+                "executable_order_count_after": 0,
+            }
+        )
+
+        result = evaluate_decision(
+            payload,
+            reasoning=reasoning,
+            run=self.controller.store.load_run(self.run_root),
+            pretrade_gate=self.gate,
+            root=self.root,
+        )
+
+        self.assertTrue(result.passed, result.to_dict())
+        self.assertEqual(
+            result.facts["maker_candidate_failure_codes"],
+            [
+                "entry_zone_binding_invalid",
+                "structural_stop_invalid",
+                "risk_math_invalid",
+            ],
+        )
+
+    def test_submitted_candidate_still_requires_entry_zone_basis(self):
+        _, reasoning = self.prepare_through_reasoning()
+        payload = self.decision(reasoning)
+        payload["maker"]["plan_constructibility"]["entry_zone_basis"] = None
+
+        result = evaluate_decision(
+            payload,
+            reasoning=reasoning,
+            run=self.controller.store.load_run(self.run_root),
+            pretrade_gate=self.gate,
+            root=self.root,
+        )
+
+        self.assertFalse(result.passed, result.to_dict())
+        self.assertIn(
+            "maker.entry_zone_basis_schema",
+            {item.code for item in result.defects},
         )
 
     def test_chart_score_component_must_trace_to_tradingview(self):

@@ -2968,11 +2968,7 @@ def _prepare_decision_risk(claimed_total_value, conviction_policy, defects, make
                 "maker.position_notional_usdt",
             )
         )
-    elif (
-        not non_directional_maker
-        and maker_position_notional is None
-        and (risk or certified_zone_available)
-    ):
+    elif risk and maker_position_notional is None:
         defects.append(
             Defect(
                 "maker.position_notional_invalid",
@@ -3013,7 +3009,7 @@ def _prepare_decision_risk(claimed_total_value, conviction_policy, defects, make
                 "maker.plan_constructibility.entry_zone_basis",
             )
         )
-    elif not non_directional_maker and (
+    elif risk and (
         not isinstance(entry_zone_basis, dict)
         or set(entry_zone_basis)
         != {"observation_id", "zone_kind", "zone_index"}

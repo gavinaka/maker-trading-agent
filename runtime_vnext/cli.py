@@ -1,7 +1,8 @@
-"""Safe, compact CLI for the vNext controller.
+"""Safe, compact CLI for the Maker Trading Agent.
 
-The user-facing automation still starts one daily-report task.  This CLI is
-the deterministic internal boundary used by that task.
+The strategy kernel remains intact, but this agent exposes no Word or visual
+report commands.  Its sole user-facing delivery is a sealed Maker Telegram
+strategy.
 """
 
 from __future__ import annotations
@@ -11,14 +12,16 @@ import json
 from pathlib import Path
 
 from .controller import RunController
-from .delivery_renderer import (
-    approve_run_qa,
-    delivery_control_state,
-    prepare_run_qa,
-    reject_run_qa,
-)
 from .errors import WorkflowFailure
 from .effort_policy import REQUESTED_EFFORT, REQUESTED_MODEL
+from .kernel_lock import assert_kernel_lock
+from .maker_delivery_gate import certify_maker_delivery
+from .maker_delivery_lifecycle import (
+    finalize_delivered_maker_delivery,
+    prepare_maker_delivery,
+    send_prepared_maker_delivery,
+)
+from .telegram_delivery import TelegramCredentials, send_maker_message
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,10 +39,7 @@ def _run_root(controller: RunController, args: argparse.Namespace) -> Path:
 
 
 def _status(controller: RunController, run_root: Path) -> dict:
-    result = controller.status(run_root)
-    if result.get("status") == "running" and result.get("next_stage") == "delivery":
-        result["delivery_control"] = delivery_control_state(ROOT, run_root)
-    return result
+    return controller.status(run_root)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -77,9 +77,6 @@ def build_parser() -> argparse.ArgumentParser:
         "reasoning-scaffold",
         "reasoning",
         "decision",
-        "compile",
-        "delivery",
-        "shadow-delivery",
         "resume-review",
         "retire",
         "status",
@@ -88,7 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--date", required=True)
         command.add_argument("--slot", required=True, choices=("morning", "midday", "evening"))
         command.add_argument("--run-id", required=True)
-        if name in {"host", "replay-evidence", "reasoning", "decision", "delivery", "shadow-delivery", "resume-review", "retire"}:
+        if name in {"host", "replay-evidence", "reasoning", "decision", "resume-review", "retire"}:
             command.add_argument("--input", required=True)
         if name == "replay-evidence":
             command.add_argument("--evidence-files-root")
@@ -97,18 +94,18 @@ def build_parser() -> argparse.ArgumentParser:
                 required=True,
                 help="test:<opaque-ref> or replay:<opaque-ref>; must match the reference sealed at begin",
             )
-    word_export = commands.add_parser("word-qa-export")
-    word_approve = commands.add_parser("word-qa-approve")
-    word_reject = commands.add_parser("word-qa-reject")
-    for command in (word_export, word_approve, word_reject):
+    for name in ("telegram-preview", "prepare-maker-delivery", "telegram-send", "finalize-delivered-maker"):
+        command = commands.add_parser(name)
         command.add_argument("--date", required=True)
         command.add_argument("--slot", required=True, choices=("morning", "midday", "evening"))
         command.add_argument("--run-id", required=True)
-    word_export.add_argument("--pdftoppm")
-    word_export.add_argument("--export-timeout", type=int, default=600)
-    word_approve.add_argument("--confirm-visual-pass", action="store_true", required=True)
-    word_approve.add_argument("--reviewer", required=True)
-    word_reject.add_argument("--reason", required=True)
+        if name == "telegram-send":
+            command.add_argument(
+                "--send",
+                action="store_true",
+                required=True,
+                help="explicitly permit one external Telegram sendMessage call",
+            )
     return parser
 
 
@@ -116,6 +113,7 @@ def main() -> int:
     args = build_parser().parse_args()
     controller = RunController(ROOT)
     try:
+        assert_kernel_lock(ROOT)
         if args.command == "begin":
             root = controller.begin(
                 args.date,
@@ -168,31 +166,42 @@ def main() -> int:
             elif args.command == "decision":
                 controller.accept_decision(root, _json(args.input))
                 result = _status(controller, root)
-            elif args.command == "compile":
-                controller.compile_report(root)
-                result = _status(controller, root)
-            elif args.command == "word-qa-export":
-                result = prepare_run_qa(
-                    ROOT,
+            elif args.command == "telegram-preview":
+                message = certify_maker_delivery(controller, root).message
+                result = {
+                    "status": "preview",
+                    "message": message.text,
+                    "message_sha256": message.message_sha256,
+                    "decision_sha256": message.decision_sha256,
+                }
+            elif args.command == "prepare-maker-delivery":
+                certified = prepare_maker_delivery(controller, root)
+                result = {
+                    "status": "prepared",
+                    "message_sha256": certified.message.message_sha256,
+                    "decision_sha256": certified.message.decision_sha256,
+                }
+            elif args.command == "telegram-send":
+                manifest = send_prepared_maker_delivery(
+                    controller,
                     root,
-                    pdftoppm=args.pdftoppm,
-                    export_timeout=args.export_timeout,
+                    lambda sealed_message: send_maker_message(
+                        sealed_message,
+                        TelegramCredentials.from_environment(),
+                    ),
                 )
-            elif args.command == "word-qa-approve":
-                result = approve_run_qa(
-                    ROOT,
-                    root,
-                    reviewer=args.reviewer,
-                    confirm_visual_pass=args.confirm_visual_pass,
-                )
-            elif args.command == "word-qa-reject":
-                result = reject_run_qa(ROOT, root, reason=args.reason)
-            elif args.command == "delivery":
-                controller.accept_delivery(root, _json(args.input))
-                result = _status(controller, root)
-            elif args.command == "shadow-delivery":
-                controller.accept_shadow_delivery(root, _json(args.input))
-                result = _status(controller, root)
+                result = {
+                    "status": "delivered",
+                    "terminal_status": "complete",
+                    "message_sha256": manifest["gate"]["facts"]["message_sha256"],
+                }
+            elif args.command == "finalize-delivered-maker":
+                manifest = finalize_delivered_maker_delivery(controller, root)
+                result = {
+                    "status": "finalized_known_delivery",
+                    "terminal_status": "complete",
+                    "message_sha256": manifest["gate"]["facts"]["message_sha256"],
+                }
             elif args.command == "resume-review":
                 controller.authorize_manual_review(root, _json(args.input))
                 result = _status(controller, root)

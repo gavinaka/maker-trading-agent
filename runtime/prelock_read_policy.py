@@ -27,9 +27,7 @@ SAFE_RG_EXCLUDES = (
 
 AUTHORITY_EXACT = {
     ".agents/skills/daily-report/SKILL.md",
-    ".claude/skills/daily-report/SKILL.md",
     "AGENTS.md",
-    "CLAUDE.md",
     "sessions/日报SOP.md",
 }
 

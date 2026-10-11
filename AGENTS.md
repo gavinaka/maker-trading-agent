@@ -1,40 +1,42 @@
-# Trading-System 工作区路由与推理宪法
+# Maker Trading Agent
 
-## 意图优先级
+## 角色与唯一交付
 
-- 用户要求“写/出/跑/生成日报、早报、早间日报、午报、午间日报、晚报、晚间日报”时，只运行项目级 `daily-report`。
-- 上述精确时段日报意图绝对优先，禁止触发、串联或输出任何外部报告、总结或跨工作流流程。
-- Trading-System 工作区只提供本仓库明确定义的交易日报流程；非日报请求不做跨工作流路由。
-- 本仓库是七 Agent 生态中的交易生产所有者；生态清单以 `../Technical expert/ecosystem/registry.json` 为准，但日报正式分析不得读取该注册表或其它 Agent 内容。跨库修复只归 Technical expert 且需用户批准。
-- 确定性分类规则见 `runtime/intent_router.py`，回归测试见 `tests/test_report_intent_routing.py`。
+本工作区是独立的 **Maker Trading Agent**。它在早、午、晚各完成一次完整的六源证据、认证推理、Maker 风控和决策流程；唯一面向用户的交付是 Telegram Maker 策略消息。
 
-## 执行权威
+不得生成、导出或发布 Word、Notion、PDF、HTML 日报。它们不是本 Agent 的交付门禁。
 
-- Codex 入口：`.agents/skills/daily-report/SKILL.md`
-- 周报入口：`.agents/skills/weekly-review/SKILL.md`；月报入口：`.agents/skills/monthly-review/SKILL.md`。两者必须先读 `governance/periodic_review_contract.md`，且不得承担外置交易准确性评估。
-- 日报必须在任何 run-specific 动作前选定且只选定一个引擎：
-  - **vNext**：仅限明确的 `runtime_vnext` / `runtime_state_vnext` / shadow / cutover 任务。开始后只以当次 run 密封的 `methodology_manifest.json` 中当前 phase 文件为业务权威，逐文件复核路径、字节数和 SHA-256。禁止读取或运输 `sessions/日报SOP.md`，禁止运行 legacy `context_pack` / `phase_contract` / `session_runner`，禁止混入 legacy state。切换前只允许本地 `shadow-delivery`，`notion_published=false`，不读写 Notion。
-  - **legacy**：提交态完整执行权威为 `sessions/日报SOP.md`，仅此分支使用 `runtime/session_runner.py` 及其有界上下文传输。
-- Claude Code 本机兼容镜像：`.claude/skills/daily-report/SKILL.md`（该目录被 `.gitignore` 排除，不得覆盖提交态 SOP 权威）
-- `.claude/skills/weekly-review`、`.claude/skills/monthly-review` 或其它 ignored 镜像都不是 Codex 执行权威。
+## 隔离边界
 
-## 宪法级推理边界
+- `../Trading-System`、`../Trading-System-vNext`、`../交易机会触发（预警）` 和其它桌面 Agent 一律只读；不得修改其代码、配置、调度、Notion、运行状态或凭据。
+- 本仓库由 `Trading-System-vNext` 已提交快照 `00069a618de237d44beb6f67621b123105f70c58` 初始化；该快照是新 Agent 的策略内核基线。升级内核只能整体地、经用户批准后更新，不得跨仓库补丁式同步。
+- 原仓库未提交改动不是本 Agent 的方法论来源，也没有被复制进来。
+- Telegram 只是一条单向通知通道，不下单、不创建、撤销或修改交易所订单，也不读取真实持仓。
 
-- 只在网络抓取、文件处理、纯算术、lint、verifier、渲染和发布等确定性机械层优化 token。评分/胜率/风险的“解释”属于推理层，其算术一致性必须由 `decision_contract.py` 机械复算。
-- 从源有效性验真、图表阅读和指标转录开始，生产模型固定为 `gpt-5.6-sol`。新 vNext run 请求的推理努力固定且只能为 `xhigh`，并保持完整工作流深度；宿主实际观测为 `xhigh|max|ultra` 只表示满足 `>= xhigh` 的能力证明，不是更改 run 请求值或正确性依赖，不得换成其它模型。历史已密封 run 的 effort 不得改写；legacy engine 仍遵守其独立的 exact `high` 合同。
-- 每份早/午/晚报均从完整有效六源重新分析、评分、估算胜率、验算风险并形成决策；禁止复用前序派生特征、评分、胜率、风险或判断。
-- 推理资源不足时硬停，禁止降档或降质继续。
+## 反漂移宪法
 
-## legacy 引擎专属机械链
+1. 每个时段必须重新获得完整有效的六源证据；不得复用前一时段的评分、概率、风险或结论。
+2. 推理与决策继续使用既有 typed evidence / reasoning / decision 合同。评分、计划时置信度、梯度入场、全成交组合风险、止损、反证、失效和 `cannot_do` 都保留。
+3. Telegram 投影只接受 `CertifiedReportProjectionInput`；不得读取或解析 Markdown、Word、Notion、自由文本报告或模型回答以重建策略。
+4. 投影层不得调用模型、网络、文件或外部工具来补全策略语义。字段未被认证时，构建失败并且不发送。
+5. `qualified_candidate` 仅表示通过认证的 Maker 候选计划；是否有真实执行授权必须单独展示。影子运行不得被表述为可执行或已下单。
+6. `rejected_submitted_candidate`、`directional_thesis_only` 与 `non_directional_observation` 必须明确推送“**不做**”。证据或门禁失败必须写“本时段未产生策略”，不得伪装成“不做”。
+7. 推送正文与 `evidence_snapshot_sha256`、`reasoning_sha256`、`decision_sha256`、`methodology_sha256` 绑定；重试只允许发送同一 `message_sha256`。
 
-以下条款只属于 legacy `runtime/session_runner.py` 分支，不得被 vNext 读作命令或缺失依赖：
+## Telegram 安全
 
-- 进入推理层前，通过 legacy host manifest 传入精确 `--capture-manifest`、整链 `--lease-token` 与完整深度确认。
-- 从 2026-07-06 午报起，正式 `combined.md` 生成前完成 `runtime_state/<date>/reasoning_work_<slot>.md` 并运行 `session_runner.py certify-reasoning` 形成 pre-MD readiness；后补理由、后补 rubric 或后补任何推理均禁止。
-- 分析前只读取 `context_pack.py` 生成的最小包，禁止直接读取完整 `context_log.md`、聚合 `MEMORY.md` 或前序分析／决策。
-- 分析锁前读取与搜索必须遵守 `context_pack.py` 输出的 `read_policy.prelock_safe_read_policy`；禁止裸全仓库搜索命中 `sessions/archive/**`、旧 `outputs/**`、旧 `runtime_state/**`、`reviews/**` 或 quarantine。
-- lint 后必须先建立与报告哈希绑定且包含 pre-MD readiness 的 `lock-analysis`，再允许事后读取前序计划；完成撤旧挂新／漂移对照后运行 `finalize-post-lock`，commit 缺任一道门或完整节点时硬停。晚报交付后的准确性评估由 `Technical expert` 外置流程异步执行，不属于交易生产门禁。
-- 最终三门和台账记录完成后必须运行 `session_runner.py deliver`，形成最终交付状态。
-- 采集前必须 `begin-session` 并把 lease token 传给采集及所有 runner 阶段；租约持续到 hash-closed delivery，禁止时段交叠或静默抢锁。
-- 逻辑版本变化只触发本时段 MAX 全量分析失效，不触发证据重采；完整采集回退只允许证据失败、缺失、过期或无效。
-- DOCX 仅允许 canonical 文件；渲染/Word 导出哈希幂等且最多两次，且从 2026-07-06 午报起必须有 hash-bound analysis lock。producer 遇到 Windows `80070520` 时，只能经共享 heartbeat 与 canonical、nonce/SHA-256 绑定的 attempt 请求使用预安装的常驻交互式 Word broker；sandbox 不得查询/触发 Task Scheduler，禁止任意路径或任意参数任务。两次历史失败后的基础设施迁移例外仅可使用一次，成功或失败均永久消耗；delivery 必须复核 broker request/response 与迁移证据，并读取真实 render/Word-QA/publish/context_log manifest，禁止布尔自证。
+- 仅从环境变量读取 `TELEGRAM_BOT_TOKEN` 和 `TELEGRAM_CHAT_ID`；禁止读取、打印、写入或提交 `.env`、token、chat ID 或完整 HTTP 响应。
+- 默认仅 `telegram-preview`，不会发送任何消息。`telegram-send` 需要显式 `--send`，且当前 Agent 的展示合同已经由用户确认。
+- 只可调用 Telegram `sendMessage`，禁用入站命令、键盘按钮、网页预览与任何交易所 API。
+
+## 定时投递
+
+- 本机任务计划只调用 `runtime_vnext.maker_schedule`；它只读取本仓库当前日期、当前 slot、已封存的 evidence / reasoning / decision 三阶段和已封存的 Maker 认证证书。
+- 缺少同日认证决策、决策处于 `needs_review` / `retired`、投影失败或凭据缺失时，任务必须以非零状态硬停，且不得发送 Telegram 文本；“不做”只能来自认证的 Maker 决策。
+- 时间固定为 Windows 本地 Asia/Shanghai：早 `09:00`、午 `16:30`、晚 `20:30`。任务以当前交互式用户运行、限制为单实例、5 分钟超时；它是精确定点投递器，不启动 Codex CLI、常驻服务或其它 Agent。每个时段的完整分析必须先在本 Agent 内完成并封存；来不及完成时不发送。
+
+## 验证
+
+- 每次改动 Telegram 投影、中文字段或投递器，至少运行 `py -m unittest -v tests.test_vnext_maker_telegram`。
+- 任何策略内核或合同改动还必须运行相关 vNext 语义测试；不得把测试通过表述为交易正确性或实际收益证明。
+- 不得在未经用户明确批准时创建 Windows 任务计划、启动常驻服务或发送 Telegram 测试消息。

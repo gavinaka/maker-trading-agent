@@ -99,7 +99,6 @@ def authoritative_runtime_files(root: Path = ROOT) -> list[str]:
         ".agents/skills/daily-report/SKILL.md",
         "sessions/日报SOP.md",
         "AGENTS.md",
-        "CLAUDE.md",
     ]
     refs: set[str] = set()
     for relative in reference_sources:

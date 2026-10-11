@@ -1,0 +1,46 @@
+{
+  "schema_version": "maker-handwritten-notion-telegram-v2",
+  "timezone": "Asia/Shanghai",
+  "slot_labels": {
+    "morning": "早09：00",
+    "midday": "午16：30",
+    "evening": "晚20：30"
+  },
+  "only_user_delivery": "telegram_sendMessage",
+  "free_text_generation": "forbidden",
+  "semantic_source": "CertifiedReportProjectionInput",
+  "qualified_field_order": [
+    "时段标题",
+    "不能做",
+    "执行概率",
+    "胜率自估（计划时置信度，非回测命中率）",
+    "策略类型 / 入场区间 / 持仓（计划）/ 交易所 / 左右侧 / Maker / 杠杆",
+    "入场梯度",
+    "止盈",
+    "止损",
+    "盈亏比（TP1，全成交，显示到2位）",
+    "全成交组合校验",
+    "防守计划：第一层 / 第二层",
+    "未成交取消价",
+    "开仓理由 / 最强反证 / 失效条件"
+  ],
+  "surface_forbidden": [
+    "审计哈希",
+    "报告渲染状态",
+    "执行边界",
+    "订单状态"
+  ],
+  "non_candidate_rule": "必须显示不做和cannot_do_code；不得显示被拒候选的入场、仓位、止损、止盈或防守参数。",
+  "notion_opening_plan_samples_2026": [
+    {"date": "2026.8.7", "page_id": "3b5fda35-a098-8004-81cc-fe1e976e95fe"},
+    {"date": "2026.8.5", "page_id": "3b3fda35-a098-80f5-8210-c7b9a0df41c3"},
+    {"date": "2026.7.31", "page_id": "3aefda35-a098-80dd-aa1a-e05e32fdc493"},
+    {"date": "2026.7.13", "page_id": "39cfda35-a098-8012-8349-d0ec952de7f9"},
+    {"date": "2026.7.6", "page_id": "395fda35-a098-80e4-9a27-d6dd19a6212f"},
+    {"date": "2026.6.25", "page_id": "38afda35-a098-8038-bd73-d23b862821b9"},
+    {"date": "2026.6.21", "page_id": "386fda35-a098-8054-8cd8-cf684f847de2"},
+    {"date": "2026.5.24", "page_id": "36afda35-a098-804d-80cf-f2c4924a8b80"},
+    {"date": "2026.5.18", "page_id": "364fda35-a098-8007-a248-e77f24a8716c"},
+    {"date": "2026.5.8", "page_id": "35afda35-a098-807e-b906-df6835082539"}
+  ]
+}

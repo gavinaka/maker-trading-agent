@@ -42,13 +42,11 @@ class ReportIntentRoutingTests(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertEqual(classify_intent(prompt), "none")
 
-    def test_claude_and_codex_workspace_entries_enforce_isolation(self):
+    def test_codex_workspace_entries_enforce_isolation(self):
         root = Path(__file__).resolve().parents[1]
         for relative in (
             "AGENTS.md",
-            "CLAUDE.md",
             ".agents/skills/daily-report/SKILL.md",
-            ".claude/skills/daily-report/SKILL.md",
         ):
             text = (root / relative).read_text(encoding="utf-8")
             with self.subTest(relative=relative):

@@ -1,0 +1,25 @@
+{
+  "schema_version": "maker-trading-agent-kernel-lock-v3",
+  "source_agent": "Trading-System-vNext",
+  "source_commit": "00069a618de237d44beb6f67621b123105f70c58",
+  "source_worktree_uncommitted_changes_included": false,
+  "delivery_contract": "typed-certified-decision-to-maker-telegram-v2-handwritten-notion-aligned",
+  "prohibited_delivery_formats": ["word", "notion", "pdf", "html"],
+  "allowed_user_delivery": ["telegram_sendMessage"],
+  "approved_kernel_integrity_patch": {
+    "path": "runtime_vnext/validation/decision.py",
+    "baseline_sha256": "80222ee73e0d1627ed57dcdcd3088423d631e1a3ab6776cebf458778a7c7120e",
+    "patched_sha256": "1283c625803bbfb5363876f33edbe14cf3091909699137c6c82d698ef09c27a7",
+    "rationale": "directional_thesis_only_does_not_imply_submitted_candidate"
+  },
+  "delivery_adapter_paths": [
+    "runtime_vnext/cli.py",
+    "runtime_vnext/kernel_lock.py",
+    "runtime_vnext/maker_delivery_lifecycle.py",
+    "runtime_vnext/maker_delivery_gate.py",
+    "runtime_vnext/maker_telegram.py",
+    "runtime_vnext/maker_schedule.py",
+    "runtime_vnext/telegram_delivery.py",
+    "runtime_vnext/telegram_outbox.py"
+  ]
+}
